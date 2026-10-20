@@ -1,0 +1,19 @@
+# Rust build output
+/target/
+
+# Local toolchains used for Windows builds (not source)
+/tools/
+/installer/tools/
+
+# Built launcher artifacts: rebuild with `cargo build --release`.
+# Publish them through GitHub Releases instead of history.
+/dist/
+/site/downloads/*.exe
+/site/downloads/*.zip
+
+# Scratch renders and captures
+/media/tmp/
+*.pdb
+
+# Editor/agent workspace metadata
+/.freebuff/

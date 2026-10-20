@@ -1,0 +1,5 @@
+[build]
+# No `target-cpu=native`: the launcher is distributed as one portable .exe, and
+# a native build both crashes at start-up on some hosts and runs illegal
+# instructions on every older CPU. The baseline target is fast enough for a GUI
+# and keeps the binary identical wherever it is compiled.

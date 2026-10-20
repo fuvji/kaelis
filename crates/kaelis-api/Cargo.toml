@@ -1,0 +1,34 @@
+[package]
+name = "kaelis-api"
+version = "0.1.0"
+edition.workspace = true
+description = "Kaelis API: Mojang versions, Modrinth, CurseForge, auth, and launch"
+homepage = "https://github.com/epufk/kaelis"
+repository = "https://github.com/epufk/kaelis"
+
+[dependencies]
+kaelis-core = { path = "../kaelis-core" }
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+futures = "0.3"
+sha1 = "0.10"
+sha2 = "0.10"
+rand = "0.8"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+zip = "2"
+url = "2"
+base64 = "0.22"
+md-5 = "0.10"
+zeroize = "1"
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", default-features = false, features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["sync-secret-service"] }

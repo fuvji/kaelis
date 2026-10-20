@@ -1,0 +1,19 @@
+[package]
+name = "kaelis-launcher"
+version = "0.1.0"
+edition.workspace = true
+description = "Kaelis — native Rust Minecraft launcher"
+homepage = "https://github.com/epufk/kaelis"
+repository = "https://github.com/epufk/kaelis"
+
+[[bin]]
+name = "kaelis"
+path = "src/main.rs"
+
+[dependencies]
+kaelis-core = { path = "../kaelis-core" }
+kaelis-api = { path = "../kaelis-api" }
+kaelis-gui = { path = "../kaelis-gui" }
+eframe = { version = "0.28", features = ["default_fonts", "glow"] }
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }

@@ -1,0 +1,18 @@
+[package]
+name = "kaelis-core"
+version = "0.1.0"
+edition.workspace = true
+description = "Kaelis core: brand, instances, JVM flags, and local runtime primitives"
+homepage = "https://github.com/epufk/kaelis"
+repository = "https://github.com/epufk/kaelis"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+directories = "6"
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Pipes", "Win32_System_Threading"] }

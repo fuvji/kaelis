@@ -1,0 +1,18 @@
+[workspace]
+members = ["crates/kaelis-core", "crates/kaelis-api", "crates/kaelis-gui", "crates/kaelis-launcher"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+description = "Kaelis — a native Rust Minecraft launcher"
+homepage = "https://github.com/epufk/kaelis"
+repository = "https://github.com/epufk/kaelis"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
