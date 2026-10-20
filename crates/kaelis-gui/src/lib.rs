@@ -4689,9 +4689,7 @@ impl KaelisApp {
                 ui.set_width(ui.available_width());
                 ui.heading("Create an instance");
                 let conflict = instance_name_conflict(&self.instances, &self.new_instance_name)
-                    .map(|instance| {
-                        name_conflict_text(self.new_instance_name.trim(), instance)
-                    });
+                    .map(|instance| name_conflict_text(self.new_instance_name.trim(), instance));
                 let name_taken = conflict.is_some();
                 let busy = self.installing_instance.is_some() || self.installing_runtime.is_some();
                 let ready = !self.new_instance_name.trim().is_empty()
@@ -7123,14 +7121,11 @@ impl KaelisApp {
                 );
                 let fps = self.governor.target_fps();
                 ui.label(
-                    egui::RichText::new(format!(
-                        "UI {} · focused only",
-                        if fps == 0 {
-                            "idle".to_owned()
-                        } else {
-                            format!("{fps} FPS")
-                        }
-                    ))
+                    egui::RichText::new(if fps == 0 {
+                        "UI idle · event-driven".to_owned()
+                    } else {
+                        format!("UI {fps} FPS · while working")
+                    })
                     .size(9.5)
                     .color(MUTED),
                 );

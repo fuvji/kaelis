@@ -28,7 +28,11 @@ instances, modpacks, mods, resource packs, and shaders.
 </p>
 
 <p align="center">
-  <img src="screenshots/settings.png" alt="Kaelis settings: compact performance, automation, integrations, and community groups" width="960">
+  <img src="screenshots/settings.png" alt="Kaelis settings: interface scale, compact performance, automation, integrations, and community groups" width="960">
+</p>
+
+<p align="center">
+  <img src="screenshots/account.png" alt="Kaelis Account tab: an offline Steve profile with the vanilla skin head, Microsoft device sign-in, and offline UUID" width="960">
 </p>
 
 Kaelis is a local-first desktop launcher for Windows 10 and 11. It pairs a
@@ -75,7 +79,9 @@ runtime, no telemetry, and no background analytics.
 - **Creation that explains itself.** The Instances form states what will be
   installed (`Minecraft 26.3 · fabric · mods supported`), offers the newest
   release in one click, and refuses a duplicate or empty name before any
-  download starts.
+  download starts. Names are compared against the instance that actually owns
+  them, so the warning names the collision instead of blocking unrelated names;
+  non-Latin names get a stable hashed folder id rather than a false conflict.
 - **Loader-aware installs.** Mod dependency graphs are resolved breadth-first
   with cycle detection, strict game-version/loader validation, and a bounded
   request budget.
@@ -97,16 +103,23 @@ runtime, no telemetry, and no background analytics.
   deleted from every instance at startup, with a `Clean junk now` button for an
   immediate pass. Saves, mods, configs, resource packs, shaders, and options are
   outside the cleaner by design, so the pass can never cost a world or a jar.
-- **Settings that stay small.** One screen, four compact groups: heap and JVM
-  arguments with an explicit apply target, launch automation and cleanup,
-  provider keys, and a community card with Website and Discord buttons, an
-  `Open data folder` shortcut, and `Copy diagnostics` (version, OS, paths,
-  instance summary — never tokens, keys, or account ids).
+- **Settings that stay small.** One screen, five compact groups: interface
+  scale (80–200 %, also `Ctrl` `+`/`-`/`0`), heap and JVM arguments with an
+  explicit apply target, launch automation and cleanup, provider keys, and a
+  community card with Website and Discord buttons, an `Open data folder`
+  shortcut, and `Copy diagnostics` (version, OS, paths, instance summary —
+  never tokens, keys, or account ids).
 - **Accounts that stay put.** Microsoft device-code sign-in with refresh tokens
-  in the OS credential store, plus a clearly labelled offline profile. Profile
-  heads and access tokens are held in memory only.
-- **Managed runtime.** The launcher can provision a matching Java runtime for
-  the selected Minecraft version instead of relying on a hand-built install.
+  in the OS credential store, plus a clearly labelled offline profile that
+  survives a restart. Offline accounts wear the real Steve head — the vanilla
+  skin's 8×8 face, drawn as a nearest-neighbour texture, not a lookalike —
+  while Microsoft accounts use their own skin. Profile heads and access tokens
+  are held in memory only.
+- **Managed runtime, used automatically.** Pressing Play on an instance with
+  no Java installs the Mojang runtime that the version metadata asks for (into
+  `runtime/<component>/<version>` inside the instance) and then launches with
+  it. An explicit Java path accepts either `java.exe` or a JDK home. If nothing
+  can be started, the error says so instead of "program not found".
 - **Honest logging.** The instance log is a bounded in-memory ring buffer. It
   is discarded with the process and exported only when the user asks.
 
@@ -158,7 +171,8 @@ own single-instance guard, so a portable copy never blocks the installed one.
 ## Design rules
 
 - Native first: every hot path stays in Rust; the UI is immediate-mode and
-  paints only when needed.
+  paints only when needed — forced repaints run at 60 FPS only while an install
+  or progress bar is on screen, and an idle launcher is fully event-driven.
 - Bounded everything: image decodes, log lines, dependency walks, download
   concurrency, archive extraction, and retry loops all have hard limits.
 - One pass per download: SHA-1 is computed from the stream while bytes are
