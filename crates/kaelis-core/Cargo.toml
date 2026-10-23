@@ -1,6 +1,6 @@
 [package]
 name = "kaelis-core"
-version = "0.1.1"
+version = "0.1.2"
 edition.workspace = true
 description = "Kaelis core: brand, instances, JVM flags, and local runtime primitives"
 homepage = "https://github.com/fuvji/kaelis"

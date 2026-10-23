@@ -1,6 +1,6 @@
 [package]
 name = "kaelis-launcher"
-version = "0.1.1"
+version = "0.1.2"
 edition.workspace = true
 description = "Kaelis — native Rust Minecraft launcher"
 homepage = "https://github.com/fuvji/kaelis"
