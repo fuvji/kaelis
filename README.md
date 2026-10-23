@@ -9,19 +9,19 @@ shaders.
 
 ## Performance
 
-Measured on the shipped Windows build with `tools/bench.ps1` (5 runs, warm disk
+Measured on the shipped Windows build with `tools/bench.ps1` (7 runs, warm disk
 cache, window detected through UI Automation) on 2026-10-23:
 
 | Metric | Result |
 | --- | --- |
-| `kaelis --version` | 62 ms median, 95 ms p95 |
-| Window, empty data root | 166 ms median |
-| Window, 200-jar instance | 171 ms median |
-| Working set (idle) | 89 MB empty, 99 MB with 200 jars |
-| Private bytes (idle) | 90-91 MB |
+| `kaelis --version` | 78 ms median, 92 ms p95 |
+| Window, empty data root | 362 ms median |
+| Window, 200-jar instance | 356 ms median |
+| Working set (idle) | 80 MB empty, 81 MB with 200 jars |
+| Private bytes (idle) | 90 MB |
 | Idle CPU | 0.00% (event-driven, no repaint loop) |
-| Handles | 489 |
-| Release binary | 17,971,712 B |
+| Handles | 553 |
+| Release binary | 16,890,368 B |
 
 The window does not wait for mod metadata: jar scanning and artwork decoding
 run on workers, so a 200-mod instance opens in the same time as an empty one.
@@ -32,7 +32,10 @@ both renderers, so a session without OpenGL 2.0 still opens a window through
 Direct3D 12; that fallback is the largest part of the size above. Run the same benchmark after a change with
 `powershell -NoProfile -ExecutionPolicy Bypass -File tools/bench.ps1`; it writes
 `target/bench-report.json`. These are single-machine numbers, not a ranking
-against other launchers.
+against other launchers, and the absolute window time moves with the host:
+re-measuring 0.1.2 and 0.1.3 back to back on this machine lands within a few
+milliseconds of each other, so a number that looks slower here is the machine,
+not the launcher.
 
 ## Quick start
 
