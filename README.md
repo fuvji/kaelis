@@ -1,4 +1,4 @@
-# Kaelis - Lightest & Fastest Minecraft Launcher
+# Kaelis - Fastest & Lightest Minecraft Launcher
 <img width="1080" height="700" alt="accounts" src="https://github.com/user-attachments/assets/48041394-24b6-4a1c-8885-ad04ca1db913" />
 
 **Minecraft, composed.** A native Rust launcher for Windows, macOS, and Linux
