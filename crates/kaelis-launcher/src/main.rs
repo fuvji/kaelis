@@ -1423,7 +1423,9 @@ fn run_gui(handoff: Option<HandoffServer>) -> ExitCode {
         Ok(client) => client,
         Err(error) => return fail(error),
     };
-    let _ = kaelis_core::sweeper::sweep_stale(3600);
+    // The sweeper's first tick fires immediately, so it already performs the
+    // startup sweep on the runtime instead of walking the temp folder on the
+    // thread that is about to create the window.
     let sweeper = kaelis_core::sweeper::spawn_background_sweeper(runtime.handle(), 300, 3600);
     let handle = runtime.handle().clone();
     // Capture runs may ask for a larger stage so the marketing stills stay
