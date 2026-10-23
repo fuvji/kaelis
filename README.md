@@ -228,6 +228,8 @@ with every artifact, the generated `KAELIS-LINKS.txt`, and a combined
 from the same fresh binary as the portable download rather than reusing an old
 local setup. `tools/release.ps1` is the same Windows path used locally.
 
+<img width="1240" height="430" alt="account-skin" src="https://github.com/user-attachments/assets/9d54e89e-e081-4bc1-a7d4-005c93bb83b6" />
+
 ## License
 
 MIT · Kaelis Labs · [@epufk](https://github.com/epufk)
