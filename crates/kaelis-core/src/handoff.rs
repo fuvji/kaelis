@@ -380,10 +380,10 @@ mod platform {
                     if stream.read_exact(&mut payload).is_err() {
                         continue;
                     }
-                    if let Ok(arguments) = serde_json::from_slice(&payload) {
-                        if sender.send(arguments).is_err() {
-                            break;
-                        }
+                    if let Ok(arguments) = serde_json::from_slice(&payload)
+                        && sender.send(arguments).is_err()
+                    {
+                        break;
                     }
                 }
             })?;
