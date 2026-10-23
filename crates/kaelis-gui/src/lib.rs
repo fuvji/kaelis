@@ -1019,6 +1019,10 @@ pub struct KaelisApp {
     auth_busy: bool,
     auth_status: String,
     auth_device: Option<DeviceCodeResponse>,
+    /// When the shown code stops being accepted, so the panel can count down
+    /// instead of failing only when the poll expires.
+    auth_device_until: Option<std::time::Instant>,
+    auth_code_copied: bool,
     auth_cancel: Option<watch::Sender<bool>>,
     microsoft_session: Option<AuthSession>,
     last_account: String,
@@ -1278,8 +1282,7 @@ impl KaelisApp {
                 .flatten()
                 .unwrap_or_default();
         let integrations_status = if saved_cf_key.is_empty() {
-            "CurseForge needs an API key; Microsoft sign-in needs an Azure public client ID."
-                .to_owned()
+            "CurseForge needs an API key; Microsoft sign-in works without any setup.".to_owned()
         } else {
             "CurseForge key loaded from the OS credential store.".to_owned()
         };
@@ -1291,16 +1294,18 @@ impl KaelisApp {
         // Restore the last Microsoft account from the OS keychain without a
         // device-code round trip. A stale or missing token simply leaves the
         // account signed out; the Account tab still offers a fresh sign-in.
-        if account_mode == AccountMode::Microsoft
-            && !launcher_settings.last_account.is_empty()
-            && !launcher_settings.ms_client_id.trim().is_empty()
-        {
+        if account_mode == AccountMode::Microsoft && !launcher_settings.last_account.is_empty() {
             let restore_name = launcher_settings.last_account.clone();
             let restore_client_id = launcher_settings.ms_client_id.clone();
             let sender = sender.clone();
             let repaint = creation.egui_ctx.clone();
             runtime.spawn(async move {
-                let result = match MicrosoftAuth::with_client_id(restore_client_id) {
+                // A configured application keeps its own refresh tokens; an
+                // install that never added one refreshes through the bundled
+                // public client it signed in with.
+                let result = match MicrosoftAuth::with_client_id(restore_client_id)
+                    .or_else(|_| MicrosoftAuth::new())
+                {
                     Ok(auth) => auth
                         .login_with_refresh_token(&restore_name)
                         .await
@@ -1432,6 +1437,8 @@ impl KaelisApp {
             auth_busy: false,
             auth_status: initial_auth_status,
             auth_device: None,
+            auth_device_until: None,
+            auth_code_copied: false,
             auth_cancel: None,
             microsoft_session: None,
             last_account: launcher_settings.last_account,
@@ -3172,7 +3179,7 @@ impl KaelisApp {
     /// Saves, mods, configs, and options are outside the cleaner by design.
     /// Sweep one instance once its game has exited, so the session's logs,
     /// caches, and crash dumps never outlive the process that wrote them.
-    fn clean_finished_instance(&self, instance_id: &str) {
+    fn clean_finished_instance(&self, instance_id: &str, context: &egui::Context) {
         if !self.auto_clean_junk {
             return;
         }
@@ -3184,8 +3191,25 @@ impl KaelisApp {
         else {
             return;
         };
+        // The shared staging root is only safe to empty once no other game is
+        // extracting natives into it.
+        let sweep_temp = self.running_instances.is_empty();
+        let sender = self.sender.clone();
+        let repaint = context.clone();
         self.runtime.spawn_blocking(move || {
-            let _ = kaelis_core::junk::clean_instance(&root);
+            let report = kaelis_core::junk::clean_instance(&root).unwrap_or_default();
+            if sweep_temp {
+                let _ = kaelis_core::sweeper::sweep_stale(0);
+            }
+            // Say what the cleanup actually reclaimed: a silent delete is
+            // indistinguishable from one that never ran.
+            if !report.is_empty() {
+                send_event(
+                    &sender,
+                    &repaint,
+                    GuiEvent::Notice(format!("Session cleanup · {}", report.summary())),
+                );
+            }
         });
     }
 
@@ -3796,7 +3820,7 @@ impl KaelisApp {
             (!key.is_empty()).then_some(key),
         );
         self.integrations_status = if self.ms_client_id.is_empty() {
-            "Saved. Add a Microsoft client ID to enable sign-in.".to_owned()
+            "Saved. Microsoft sign-in uses the built-in client until you add your own.".to_owned()
         } else {
             "Integration settings saved.".to_owned()
         };
@@ -4658,8 +4682,18 @@ impl KaelisApp {
                 }
             }
             GuiEvent::DeviceCode(Ok(device)) => {
+                // The code is on screen for a few seconds before anyone can
+                // retype it, so it is also placed on the clipboard: the player
+                // opens the page, pastes, and is done.
+                context.copy_text(device.user_code.clone());
+                self.auth_code_copied = true;
+                self.auth_device_until = Some(
+                    std::time::Instant::now()
+                        + std::time::Duration::from_secs(device.expires_in.max(1)),
+                );
                 self.auth_status =
-                    "Enter the code in your browser to finish signing in.".to_owned();
+                    "Code copied. Paste it on the Microsoft page; this window finishes on its own."
+                        .to_owned();
                 // The user just asked to sign in, so opening the verification
                 // page is expected and removes a step from the device flow.
                 let url = device
@@ -5396,7 +5430,7 @@ impl KaelisApp {
                 message,
             } => {
                 self.running_instances.remove(&instance_id);
-                self.clean_finished_instance(&instance_id);
+                self.clean_finished_instance(&instance_id, context);
                 self.set_status(
                     StatusKind::Info,
                     if self.running_instances.is_empty() {
@@ -5413,7 +5447,7 @@ impl KaelisApp {
             }
             GuiEvent::GameFailed { instance_id, error } => {
                 self.running_instances.remove(&instance_id);
-                self.clean_finished_instance(&instance_id);
+                self.clean_finished_instance(&instance_id, context);
                 self.set_status(StatusKind::Error, error);
                 if self.running_instances.is_empty() {
                     self.restart_sweeper();
@@ -7253,57 +7287,65 @@ impl KaelisApp {
                             .hint_text("Instance name")
                             .desired_width((ui.available_width() * 0.24).clamp(176.0, 360.0)),
                     );
-                    ui.label("Minecraft");
-                    if self.new_instance_version.is_empty()
-                        && let Some(latest) = self
-                            .versions
-                            .iter()
-                            .find(|version| version.kind == "release")
-                        && ui
-                            .small_button(format!("Latest · {}", latest.id))
-                            .on_hover_text("Use the newest Mojang release.")
-                            .clicked()
-                    {
-                        self.new_instance_version = latest.id.clone();
-                    }
-                    let filtered =
-                        self.versions
-                            .iter()
-                            .filter(|version| match version.kind.as_str() {
-                                "old_alpha" => self.show_alpha,
-                                "old_beta" => self.show_beta,
-                                "snapshot" => self.show_snapshots,
-                                _ => true,
-                            });
-                    egui::ComboBox::from_id_source("kaelis-instance-version")
-                        .selected_text(if self.versions.is_empty() {
-                            "Loading versions…"
-                        } else if self.new_instance_version.is_empty() {
-                            "Select version"
-                        } else {
-                            &self.new_instance_version
-                        })
-                        .show_ui(ui, |ui| {
-                            if self.versions.is_empty() {
-                                ui.label(
-                                    egui::RichText::new("Fetching the Mojang manifest…")
-                                        .size(10.0)
-                                        .color(MUTED),
-                                );
-                            }
-                            for version in filtered.into_iter().take(400) {
-                                if ui
-                                    .selectable_label(
-                                        self.new_instance_version == version.id,
-                                        &version.id,
-                                    )
-                                    .clicked()
-                                {
-                                    self.new_instance_version = version.id.clone();
+                    // Each label stays on the same line as its own control:
+                    // a wrapped row that splits "Minecraft" from the version
+                    // box reads as two unrelated columns.
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        ui.label("Minecraft");
+                        if self.new_instance_version.is_empty()
+                            && let Some(latest) = self
+                                .versions
+                                .iter()
+                                .find(|version| version.kind == "release")
+                            && ui
+                                .small_button(format!("Latest · {}", latest.id))
+                                .on_hover_text("Use the newest Mojang release.")
+                                .clicked()
+                        {
+                            self.new_instance_version = latest.id.clone();
+                        }
+                        let filtered =
+                            self.versions
+                                .iter()
+                                .filter(|version| match version.kind.as_str() {
+                                    "old_alpha" => self.show_alpha,
+                                    "old_beta" => self.show_beta,
+                                    "snapshot" => self.show_snapshots,
+                                    _ => true,
+                                });
+                        egui::ComboBox::from_id_source("kaelis-instance-version")
+                            .selected_text(if self.versions.is_empty() {
+                                "Loading versions…"
+                            } else if self.new_instance_version.is_empty() {
+                                "Select version"
+                            } else {
+                                &self.new_instance_version
+                            })
+                            .show_ui(ui, |ui| {
+                                if self.versions.is_empty() {
+                                    ui.label(
+                                        egui::RichText::new("Fetching the Mojang manifest…")
+                                            .size(10.0)
+                                            .color(MUTED),
+                                    );
                                 }
-                            }
-                        });
-                    ui.label("Loader");
+                                for version in filtered.into_iter().take(400) {
+                                    if ui
+                                        .selectable_label(
+                                            self.new_instance_version == version.id,
+                                            &version.id,
+                                        )
+                                        .clicked()
+                                    {
+                                        self.new_instance_version = version.id.clone();
+                                    }
+                                }
+                            });
+                    });
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        ui.label("Loader");
                     egui::ComboBox::from_id_source("kaelis-instance-loader")
                         .selected_text(&self.new_instance_loader)
                         .show_ui(ui, |ui| {
@@ -7315,6 +7357,7 @@ impl KaelisApp {
                                 );
                             }
                         });
+                    });
                     let install_label = if busy { "Installing…" } else { "Create" };
                     if ui
                         .add_enabled(!busy && ready, egui::Button::new(install_label))
@@ -7359,8 +7402,7 @@ impl KaelisApp {
                     {
                         self.export_instance_archive(instance, context);
                     }
-                });
-                ui.horizontal_wrapped(|ui| {
+                });                ui.horizontal_wrapped(|ui| {
                     ui.checkbox(&mut self.show_snapshots, "Snapshots");
                     ui.checkbox(&mut self.show_alpha, "Old alpha");
                     ui.checkbox(&mut self.show_beta, "Old beta");
@@ -7371,31 +7413,42 @@ impl KaelisApp {
                     {
                         self.request_versions(context.clone());
                     }
-                    let plan = if self.new_instance_name.trim().is_empty() {
-                        ("Name it to begin.".to_owned(), MUTED)
-                    } else if let Some(message) = &conflict {
-                        (message.clone(), StatusKind::Warning.color())
-                    } else if self.new_instance_version.trim().is_empty() {
-                        ("Pick a Minecraft version.".to_owned(), MUTED)
-                    } else if self.new_instance_loader.eq_ignore_ascii_case("vanilla") {
-                        (
-                            format!(
-                                "Minecraft {} · vanilla · no mods",
-                                self.new_instance_version
-                            ),
-                            MUTED,
-                        )
-                    } else {
-                        (
-                            format!(
-                                "Minecraft {} · {} · mods supported",
-                                self.new_instance_version, self.new_instance_loader
-                            ),
-                            accent_soft(),
-                        )
-                    };
+                });
+                // The summary line gets its own row: sharing one with the
+                // version filters made three unrelated controls read as a
+                // single wrapped paragraph.
+                let plan = if self.new_instance_name.trim().is_empty() {
+                    ("Name it to begin.".to_owned(), MUTED)
+                } else if let Some(message) = &conflict {
+                    (message.clone(), StatusKind::Warning.color())
+                } else if self.new_instance_version.trim().is_empty() {
+                    ("Pick a Minecraft version.".to_owned(), MUTED)
+                } else if self
+                    .new_instance_loader
+                    .eq_ignore_ascii_case("vanilla")
+                {
+                    (
+                        format!(
+                            "Minecraft {} · vanilla · no mods",
+                            self.new_instance_version
+                        ),
+                        MUTED,
+                    )
+                } else {
+                    (
+                        format!(
+                            "Minecraft {} · {} · mods supported",
+                            self.new_instance_version, self.new_instance_loader
+                        ),
+                        accent_soft(),
+                    )
+                };
+                ui.add_space(2.0);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
                     ui.label(egui::RichText::new(plan.0).size(10.0).color(plan.1));
                 });
+                ui.add_space(2.0);
                 ui.label(
                     egui::RichText::new(
                         "Java installs on first play. Existing instances stay as they are.",
@@ -10010,18 +10063,26 @@ impl KaelisApp {
                 }
                 ui.separator();
                 if ui
-                    .add_enabled(!self.auth_busy, egui::Button::new("Microsoft sign-in"))
-                    .on_hover_text("Authorization code + PKCE through your default browser.")
-                    .clicked()
-                {
-                    self.start_browser_sign_in(context.clone());
-                }
-                if ui
-                    .add_enabled(!self.auth_busy, egui::Button::new("Device code"))
-                    .on_hover_text("Short code for tenants that block a localhost callback.")
+                    .add_enabled(!self.auth_busy, egui::Button::new("Sign in with Microsoft"))
+                    .on_hover_text(
+                        "Shows a short code, opens the Microsoft page, and finishes by itself once you approve. No setup.",
+                    )
                     .clicked()
                 {
                     self.start_sign_in(context.clone());
+                }
+                // Only a registered v2.0 application has a loopback redirect;
+                // showing the button on the bundled client would fail at the
+                // authorize endpoint with unauthorized_client.
+                if !self.microsoft_client_id().is_empty()
+                    && ui
+                        .add_enabled(!self.auth_busy, egui::Button::new("Browser sign-in"))
+                        .on_hover_text(
+                            "Authorization code + PKCE with your registered client; no code to type.",
+                        )
+                        .clicked()
+                {
+                    self.start_browser_sign_in(context.clone());
                 }
                 if self.auth_busy && ui.button("Cancel").clicked() {
                     if let Some(cancel) = self.auth_cancel.take() {
@@ -10032,8 +10093,13 @@ impl KaelisApp {
                     self.auth_status = "Sign-in cancelled.".to_owned();
                 }
             });
+            // Import is its own row: it starts under the name field, not in
+            // the avatar column, and a single leading label names it.
+            ui.add_space(2.0);
             ui.horizontal(|ui| {
-                ui.separator();
+                ui.spacing_mut().item_spacing.x = 7.0;
+                // Line the row up under the name field, past the head.
+                ui.add_space(31.0);
                 ui.label(
                     egui::RichText::new("IMPORT")
                         .size(9.0)
@@ -10062,59 +10128,104 @@ impl KaelisApp {
                     .size(9.5)
                     .color(MUTED),
             );
-            if self.microsoft_client_id().is_empty() {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new("Microsoft sign-in needs a public client ID.")
-                            .size(9.0)
-                            .color(StatusKind::Warning.color()),
-                    );
-                    if ui.small_button("Open Integrations").clicked() {
-                        self.current_tab = Tab::Settings;
-                    }
-                });
-            }
             if let Some(device) = &self.auth_device {
-                ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = 2.0;
-                        ui.label(
-                            egui::RichText::new(&device.user_code)
-                                .size(24.0)
-                                .strong()
-                                .color(accent()),
-                        );
-                        let uri = device
-                            .verification_uri_complete
-                            .clone()
-                            .unwrap_or_else(|| device.verification_uri.clone());
+                ui.add_space(2.0);
+                egui::Frame::none()
+                    .fill(GLASS_LIGHT)
+                    .stroke(egui::Stroke::new(1.0_f32, BORDER_BRIGHT))
+                    .rounding(egui::Rounding::same(CORNER_MD))
+                    .inner_margin(egui::Margin::symmetric(12.0, 10.0))
+                    .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            if ui.small_button("Open page").clicked() {
-                                context.open_url(egui::OpenUrl::new_tab(uri.clone()));
-                            }
-                            if ui.small_button("Copy code").clicked() {
-                                ui.output_mut(|output| {
-                                    output.copied_text = device.user_code.clone();
+                            ui.spacing_mut().item_spacing.x = 14.0;
+                            ui.vertical(|ui| {
+                                ui.spacing_mut().item_spacing.y = 3.0;
+                                ui.label(
+                                    egui::RichText::new("ENTER THIS CODE")
+                                        .size(8.5)
+                                        .strong()
+                                        .color(MUTED),
+                                );
+                                ui.label(
+                                    egui::RichText::new(&device.user_code)
+                                        .size(30.0)
+                                        .strong()
+                                        .color(accent()),
+                                );
+                                let uri = device
+                                    .verification_uri_complete
+                                    .clone()
+                                    .unwrap_or_else(|| device.verification_uri.clone());
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 6.0;
+                                    if ui.small_button("Open Microsoft page").clicked() {
+                                        context.open_url(egui::OpenUrl::new_tab(uri.clone()));
+                                    }
+                                    let copy = if self.auth_code_copied {
+                                        "Copied"
+                                    } else {
+                                        "Copy code"
+                                    };
+                                    if ui.small_button(copy).clicked() {
+                                        context.copy_text(device.user_code.clone());
+                                        self.auth_code_copied = true;
+                                    }
                                 });
-                            }
+                                let remaining = self
+                                    .auth_device_until
+                                    .map(|until| {
+                                        until.saturating_duration_since(std::time::Instant::now())
+                                    })
+                                    .unwrap_or_default();
+                                let expired = remaining.is_zero();
+                                ui.label(
+                                    egui::RichText::new(if expired {
+                                        "This code expired. Start sign-in again.".to_owned()
+                                    } else {
+                                        format!(
+                                            "Expires in {:02}:{:02} · this window finishes automatically",
+                                            remaining.as_secs() / 60,
+                                            remaining.as_secs() % 60
+                                        )
+                                    })
+                                    .size(9.0)
+                                    .color(if expired {
+                                        StatusKind::Warning.color()
+                                    } else {
+                                        MUTED
+                                    }),
+                                );
+                                if let Some(message) = &device.message {
+                                    ui.label(egui::RichText::new(message).size(9.0).weak());
+                                }
+                            });
+                            // A fixed box keeps the code column and the QR
+                            // side by side instead of letting the layout
+                            // stretch the QR into the middle of the panel.
+                            ui.allocate_ui(egui::vec2(140.0, 168.0), |ui| {
+                                ui.with_layout(
+                                    egui::Layout::top_down(egui::Align::Center),
+                                    |ui| {
+                                        show_qr(ui, device);
+                                        ui.label(
+                                            egui::RichText::new("Scan with your phone")
+                                                .size(8.5)
+                                                .color(MUTED),
+                                        );
+                                    },
+                                );
+                            });
                         });
-                        ui.hyperlink_to(
-                            egui::RichText::new(&device.verification_uri).size(9.0),
-                            uri,
-                        );
-                        if let Some(message) = &device.message {
-                            ui.label(egui::RichText::new(message).size(9.0).weak());
-                        }
                     });
-                    show_qr(ui, device);
-                });
+                // A visible countdown only needs one repaint per second.
+                context.request_repaint_after(std::time::Duration::from_secs(1));
             }
-            egui::CollapsingHeader::new("Set up Microsoft sign-in (one time)")
+            egui::CollapsingHeader::new("Use your own Microsoft application (optional)")
                 .default_open(false)
                 .show(ui, |ui| {
                     ui.label(
                         egui::RichText::new(
-                            "1. Entra > App registrations > New registration. Name it Kaelis and pick “Personal Microsoft accounts only”.\n2. Authentication > Add platform > Mobile and desktop applications. Redirect URI: http://localhost\n3. Advanced settings > Allow public client flows > Yes. Save.\n4. Copy the Application (client) ID into Settings > Integrations.",
+                            "Sign-in already works with the built-in Xbox Live client, so this is only for a launcher fork or an admin-managed deployment that must own its app.\n1. Entra > App registrations > New registration; pick “Personal Microsoft accounts only”.\n2. Authentication > Add platform > Mobile and desktop applications. Redirect URI: http://localhost\n3. Advanced settings > Allow public client flows > Yes. Save.\n4. Paste the Application (client) ID into Settings > Integrations.",
                         )
                         .size(9.5)
                         .color(MUTED),
@@ -10643,7 +10754,7 @@ impl KaelisApp {
             section_label(ui, "INTEGRATIONS");
             ui.label(
                 egui::RichText::new(
-                    "Microsoft uses the device-code flow. Register a public client in Azure with XboxLive.signin and offline_access, then paste its application (client) ID. The browser opens automatically when a code is issued.",
+                    "Microsoft sign-in needs nothing here: one click shows a short code, opens the Microsoft page, and keeps you signed in across restarts through the OS credential store. Add a client ID only to use your own Azure application.",
                 )
                 .small()
                 .weak(),
@@ -10656,11 +10767,13 @@ impl KaelisApp {
                 ui.label("Microsoft client ID");
                 ui.add(
                     egui::TextEdit::singleline(&mut self.ms_client_id)
-                        .hint_text("00000000-0000-0000-0000-000000000000")
+                        .hint_text("Optional — built-in client is used when empty")
                         .desired_width(330.0),
                 );
                 if !self.ms_client_id.trim().is_empty() {
-                    dot_label(ui, "configured", StatusKind::Success.color());
+                    dot_label(ui, "your app", StatusKind::Success.color());
+                } else {
+                    dot_label(ui, "built in", StatusKind::Info.color());
                 }
             });
             ui.horizontal(|ui| {
@@ -10874,6 +10987,26 @@ impl eframe::App for KaelisApp {
         // and the active tab only breaks the .zip tie.
         if let Some(paths) = dropped_paths(context) {
             self.handle_drop(paths, context);
+        }
+        // Development-only fixture: show the device-code panel without asking
+        // Microsoft for a real code, so a captured frame proves its layout.
+        if self.screenshot_path.is_some()
+            && self.screenshot_frame == 1
+            && self.auth_device.is_none()
+            && std::env::var_os("KAELIS_SCREENSHOT_DEVICE").is_some()
+        {
+            self.auth_device = Some(DeviceCodeResponse {
+                user_code: "K7Q4M-2XRB".to_owned(),
+                device_code: String::new(),
+                verification_uri: "https://www.microsoft.com/link".to_owned(),
+                verification_uri_complete: None,
+                interval: 5,
+                expires_in: 840,
+                message: None,
+            });
+            self.auth_device_until =
+                Some(std::time::Instant::now() + std::time::Duration::from_secs(840));
+            self.auth_code_copied = true;
         }
         // Development-only fixture: seed the update panel so a single captured
         // frame can prove its layout without automating a click.
@@ -13112,7 +13245,7 @@ fn show_qr(ui: &mut egui::Ui, device: &DeviceCodeResponse) {
     };
     let colors = code.to_colors();
     let modules = code.width();
-    let side = 172.0;
+    let side = 132.0;
     let quiet_zone = 4.0;
     let (rect, _) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
     ui.painter().rect_filled(rect, 5.0, egui::Color32::WHITE);

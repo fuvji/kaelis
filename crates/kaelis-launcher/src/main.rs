@@ -1477,7 +1477,12 @@ fn run_gui(handoff: Option<HandoffServer>) -> ExitCode {
                 )))
             }),
         ) {
-            Ok(()) => return ExitCode::SUCCESS,
+            Ok(()) => {
+                // The window is gone, so nothing this process staged is still
+                // in use: empty the staging root before the process exits.
+                let _ = kaelis_core::sweeper::sweep_stale(0);
+                return ExitCode::SUCCESS;
+            }
             Err(error) => {
                 // A terminal launch and the packaged build both deserve the
                 // reason: the fallback hides it otherwise.

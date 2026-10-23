@@ -5,7 +5,7 @@
 with one calm library for instances, modpacks, mods, resource packs, and
 shaders.
 
-[Website](site/index.html) · [Releases](https://github.com/epufk/kaelis/releases) · [Issues](https://github.com/epufk/kaelis/issues) · [Community](https://discord.gg/fvrdYzrQjq)
+[Website](site/index.html) · [Releases](https://github.com/fuvji/kaelis/releases) · [Issues](https://github.com/fuvji/kaelis/issues) · [Community](https://discord.gg/fvrdYzrQjq)
 
 ## Performance
 
@@ -45,7 +45,7 @@ Requirements: Rust 1.85 or newer and a C/C++ linker for the selected target.
 | Linux | `stable-x86_64-unknown-linux-gnu` | `libgtk-3-dev libayatana-appindicator3-dev libxkbcommon-dev libwayland-dev libx11-dev` |
 
 ```bash
-git clone https://github.com/epufk/kaelis.git
+git clone https://github.com/fuvji/kaelis.git
 cd kaelis
 cargo build --release -p kaelis-launcher
 ```
@@ -93,6 +93,21 @@ resource packs, and shaders. Sites without an API — SpigotMC, Planet
 Minecraft, 9Minecraft, GitHub release pages, private packs — are covered by the
 link and local-file paths instead of scrapers, so traffic stays predictable and
 within each site's terms.
+
+## Accounts
+
+Offline profiles need only a name. Microsoft sign-in needs no setup: **Account →
+Sign in with Microsoft** shows a short code, copies it, opens the Microsoft page,
+and finishes by itself once the page is approved. That is the public Xbox Live
+client the Xbox app signs in with, so there is no Azure registration and no
+client secret; a fork that wants its own application can still paste an Azure
+public client ID in **Settings → Integrations**, which adds a PKCE browser flow.
+
+Every sign-in is exchanged through Xbox Live → XSTS → Minecraft Services, so an
+account without Java Edition is refused instead of failing later at launch. The
+refresh token lives in the OS credential store (Credential Manager, Keychain,
+Secret Service) and restores the session on the next start without a code; the
+Minecraft access token stays in zeroizing memory and is never written to disk.
 
 ## Keyboard
 
@@ -235,7 +250,7 @@ local setup. `tools/release.ps1` is the same Windows path used locally.
 
 ## License
 
-MIT · Kaelis Labs · [@epufk](https://github.com/epufk)
+MIT · Kaelis Labs · [@epufk](https://github.com/fuvji)
 
 Kaelis is not affiliated with Mojang Studios, Microsoft, Modrinth, or
 CurseForge. Minecraft is a trademark of Mojang Studios.

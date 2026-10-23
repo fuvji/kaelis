@@ -72,13 +72,20 @@ const ROOT_JUNK: [&str; 5] = [
     // the next launch, so removing it loses nothing.
     "usercache.json",
 ];
-const ROOT_JUNK_PREFIXES: [&str; 2] = ["hs_err_pid", "replay_pid"];
+/// JVM artefacts that are never read again: crash reports, replay captures,
+/// attach sockets, and heap dumps. A heap dump is the worst of them — one
+/// out-of-memory session can leave hundreds of megabytes behind.
+const ROOT_JUNK_PREFIXES: [&str; 4] = ["hs_err_pid", "replay_pid", "java_pid", ".attach_pid"];
+const ROOT_JUNK_SUFFIXES: [&str; 2] = [".hprof", ".replay"];
 
 fn is_root_junk(name: &str) -> bool {
     ROOT_JUNK.contains(&name)
         || ROOT_JUNK_PREFIXES
             .iter()
             .any(|prefix| name.starts_with(prefix))
+        || ROOT_JUNK_SUFFIXES
+            .iter()
+            .any(|suffix| name.ends_with(suffix))
 }
 
 /// Clean one instance root. Missing folders are fine; a symlinked root is
@@ -319,6 +326,8 @@ mod tests {
         write(&root.join(".quilt/remapClasspath.txt"), b"classes");
         write(&root.join("debug/profiler.txt"), b"debug");
         write(&root.join("hs_err_pid4242.log"), b"jvm crash");
+        write(&root.join("java_pid4242.hprof"), b"heap dump");
+        write(&root.join("session.replay"), b"replay");
         write(&root.join("usercache.json"), b"[]");
         write(&root.join("server-resource-packs/legacy_pack.zip"), b"pack");
         write(&root.join("Thumbs.db"), b"noise");
@@ -330,9 +339,9 @@ mod tests {
         let report = clean_instance(&root).expect("clean");
         // Two logs, one crash report, two staging files, one root stage, one
         // cache file, one mixin audit, two loader scratch files, one debug
-        // file, one JVM dump, one UUID cache, one server pack, one OS
-        // metadata file.
-        assert_eq!(report.files, 15);
+        // file, one JVM dump, one heap dump, one replay capture, one UUID
+        // cache, one server pack, one OS metadata file.
+        assert_eq!(report.files, 17);
         assert!(report.bytes > 0);
         assert!(!root.join("logs/2026-10-20-1.log").exists());
         assert!(!root.join("crash-reports/crash-2026-10-20.txt").exists());
@@ -349,6 +358,8 @@ mod tests {
         assert!(!root.join(".quilt/remapClasspath.txt").exists());
         assert!(!root.join("debug/profiler.txt").exists());
         assert!(!root.join("hs_err_pid4242.log").exists());
+        assert!(!root.join("java_pid4242.hprof").exists());
+        assert!(!root.join("session.replay").exists());
         assert!(!root.join("usercache.json").exists());
         assert!(!root.join("server-resource-packs/legacy_pack.zip").exists());
         assert!(!root.join("Thumbs.db").exists());

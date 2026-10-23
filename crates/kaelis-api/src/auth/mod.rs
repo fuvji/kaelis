@@ -23,6 +23,20 @@ const MS_DEVICE_CODE_URL: &str =
 const MS_AUTHORIZE_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
 const MS_TOKEN_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
 const MS_SCOPE: &str = "XboxLive.signin offline_access openid profile";
+
+/// The public Microsoft account client every Xbox Live relying party may use,
+/// the same one the Xbox app and the console family sign in with. It needs no
+/// Azure registration, so a fresh install can show a code immediately instead
+/// of first asking the player to create an app registration. Tokens from it are
+/// still exchanged through Xbox Live → XSTS → Minecraft Services, so an
+/// account that does not own Java Edition is refused exactly as before.
+const PUBLIC_CLIENT_ID: &str = "00000000402b5328";
+const LIVE_DEVICE_CODE_URL: &str = "https://login.live.com/oauth20_connect.srf";
+const LIVE_TOKEN_URL: &str = "https://login.live.com/oauth20_token.srf";
+const LIVE_SCOPE: &str = "service::user.auth.xboxlive.com::MBI_SSL";
+/// A poll that never answers must not spin forever: three failed polls in a
+/// row end the attempt instead of hammering the endpoint.
+const MAX_POLL_FAILURES: u32 = 3;
 const BROWSER_LOGIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 const CALLBACK_PATH: &str = "/";
 const XBOX_AUTH_URL: &str = "https://user.auth.xboxlive.com/user/authenticate";
@@ -50,6 +64,40 @@ pub enum AuthError {
         "Microsoft client ID is not configured. Add an Azure public client ID in Settings > Integrations."
     )]
     MissingClientId,
+}
+
+/// Which Microsoft identity front door an attempt uses.
+///
+/// [`Flow::Live`] is the public Xbox Live client: no registration, a code and a
+/// short page, which is why it is the default. [`Flow::Entra`] is the client ID
+/// a self-hosting user registers, with the documented v2.0 device-code flow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Flow {
+    Live,
+    Entra,
+}
+
+impl Flow {
+    fn device_code_url(self) -> &'static str {
+        match self {
+            Self::Live => LIVE_DEVICE_CODE_URL,
+            Self::Entra => MS_DEVICE_CODE_URL,
+        }
+    }
+
+    fn token_url(self) -> &'static str {
+        match self {
+            Self::Live => LIVE_TOKEN_URL,
+            Self::Entra => MS_TOKEN_URL,
+        }
+    }
+
+    fn scope(self) -> &'static str {
+        match self {
+            Self::Live => LIVE_SCOPE,
+            Self::Entra => "XboxLive.signin offline_access",
+        }
+    }
 }
 
 #[derive(Clone, Deserialize)]
@@ -326,17 +374,28 @@ struct MinecraftLoginResponse {
 pub struct MicrosoftAuth {
     client: reqwest::Client,
     client_id: String,
+    flow: Flow,
 }
 
 impl MicrosoftAuth {
-    /// Build from `KAELIS_MS_CLIENT_ID`, the environment fallback used by the
-    /// CLI and by first-run setups before a client id is saved.
+    /// Build from `KAELIS_MS_CLIENT_ID` when it is set, otherwise from the
+    /// bundled public client so sign-in works on a fresh install with no setup
+    /// at all.
     pub fn new() -> Result<Self, AuthError> {
-        let client_id = std::env::var("KAELIS_MS_CLIENT_ID")
+        match std::env::var("KAELIS_MS_CLIENT_ID")
             .ok()
-            .filter(|id| !id.trim().is_empty())
-            .ok_or(AuthError::MissingClientId)?;
-        Self::with_client_id(client_id)
+            .map(|id| id.trim().to_owned())
+            .filter(|id| !id.is_empty())
+        {
+            Some(client_id) => Self::with_client_id(client_id),
+            None => Self::public_client(),
+        }
+    }
+
+    /// The bundled public client: no Azure registration, code entry on a
+    /// Microsoft page, and the same Xbox → Minecraft token chain afterwards.
+    pub fn public_client() -> Result<Self, AuthError> {
+        Self::build(PUBLIC_CLIENT_ID.to_owned(), Flow::Live)
     }
 
     /// Build with a client id supplied by the UI settings instead of relying
@@ -347,6 +406,15 @@ impl MicrosoftAuth {
         if client_id.is_empty() {
             return Err(AuthError::MissingClientId);
         }
+        let flow = if client_id == PUBLIC_CLIENT_ID {
+            Flow::Live
+        } else {
+            Flow::Entra
+        };
+        Self::build(client_id.to_owned(), flow)
+    }
+
+    fn build(client_id: String, flow: Flow) -> Result<Self, AuthError> {
         let client = reqwest::Client::builder()
             .user_agent(kaelis_core::brand::user_agent())
             .connect_timeout(std::time::Duration::from_secs(10))
@@ -355,26 +423,56 @@ impl MicrosoftAuth {
             .build()?;
         Ok(Self {
             client,
-            client_id: client_id.to_owned(),
+            client_id,
+            flow,
         })
+    }
+
+    /// Whether this attempt uses the bundled client, which the settings UI
+    /// shows as "works out of the box" instead of a required field.
+    pub fn uses_public_client(&self) -> bool {
+        self.flow == Flow::Live
+    }
+
+    /// The authorization-code + PKCE flow is only meaningful for a registered
+    /// v2.0 application; the public Xbox client has no such redirect.
+    pub fn supports_browser_login(&self) -> bool {
+        self.flow == Flow::Entra
     }
 
     /// Request a new device code. The GUI displays the user code and opens the
     /// verification URI; the device code itself is never presented to users.
     pub async fn request_device_code(&self) -> Result<DeviceCodeResponse, AuthError> {
+        let mut form: Vec<(&str, &str)> = vec![
+            ("client_id", self.client_id.as_str()),
+            ("scope", self.flow.scope()),
+        ];
+        if self.flow == Flow::Live {
+            // The Live endpoint selects the device flow with this field; the
+            // v2.0 endpoint infers it from the URL instead.
+            form.push(("response_type", "device_code"));
+        }
         let response = self
             .client
-            .post(MS_DEVICE_CODE_URL)
-            .form(&[
-                ("client_id", self.client_id.as_str()),
-                ("scope", "XboxLive.signin offline_access"),
-            ])
+            .post(self.flow.device_code_url())
+            .form(&form)
             .send()
             .await?;
         if !response.status().is_success() {
             return Err(rejected_token_error(response).await);
         }
-        Ok(response.json::<DeviceCodeResponse>().await?)
+        let mut device = response.json::<DeviceCodeResponse>().await?;
+        if device.user_code.trim().is_empty() || device.device_code.is_empty() {
+            return Err(AuthError::Rejected(
+                "Microsoft returned an incomplete device code".to_owned(),
+            ));
+        }
+        // A missing page would leave the player with a code and nowhere to
+        // type it; both endpoints normally send one, so this is a guard.
+        if device.verification_uri.trim().is_empty() {
+            device.verification_uri = "https://www.microsoft.com/link".to_owned();
+        }
+        Ok(device)
     }
 
     /// Poll the device authorization and exchange the resulting Microsoft
@@ -415,12 +513,12 @@ impl MicrosoftAuth {
         let refresh = Zeroizing::new(load_refresh_token(user)?);
         let response = self
             .client
-            .post(MS_TOKEN_URL)
+            .post(self.flow.token_url())
             .form(&[
                 ("client_id", self.client_id.as_str()),
                 ("grant_type", "refresh_token"),
                 ("refresh_token", refresh.as_str()),
-                ("scope", "XboxLive.signin offline_access"),
+                ("scope", self.flow.scope()),
             ])
             .send()
             .await?;
@@ -475,8 +573,9 @@ impl MicrosoftAuth {
         mut cancel: Option<tokio::sync::watch::Receiver<bool>>,
     ) -> Result<(Zeroizing<String>, Option<Zeroizing<String>>), AuthError> {
         let deadline =
-            std::time::Instant::now() + std::time::Duration::from_secs(device.expires_in);
-        let mut interval = device.interval.max(1);
+            std::time::Instant::now() + std::time::Duration::from_secs(device.expires_in.max(1));
+        let mut interval = device.interval.clamp(1, 60);
+        let mut failures = 0_u32;
         loop {
             if cancel.as_ref().is_some_and(|receiver| *receiver.borrow()) {
                 return Err(AuthError::Cancelled);
@@ -486,7 +585,7 @@ impl MicrosoftAuth {
             }
             let request = self
                 .client
-                .post(MS_TOKEN_URL)
+                .post(self.flow.token_url())
                 .form(&[
                     ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
                     ("client_id", self.client_id.as_str()),
@@ -495,7 +594,7 @@ impl MicrosoftAuth {
                 .send();
             let response = if let Some(receiver) = cancel.as_mut() {
                 tokio::select! {
-                    result = request => result?,
+                    result = request => result,
                     changed = receiver.changed() => {
                         if changed.is_err() || *receiver.borrow() {
                             return Err(AuthError::Cancelled);
@@ -504,7 +603,37 @@ impl MicrosoftAuth {
                     }
                 }
             } else {
-                request.await?
+                request.await
+            };
+            let response = match response {
+                Ok(response) => {
+                    failures = 0;
+                    response
+                }
+                // A dropped connection while the player is typing the code is
+                // usually the network, not the attempt: retry on the same
+                // interval instead of throwing the code away.
+                Err(error) if failures + 1 < MAX_POLL_FAILURES => {
+                    failures += 1;
+                    if error.is_timeout() || error.is_connect() {
+                        interval = interval.saturating_add(1).min(60);
+                    }
+                    let delay = tokio::time::sleep(std::time::Duration::from_secs(interval));
+                    if let Some(receiver) = cancel.as_mut() {
+                        tokio::select! {
+                            _ = delay => {}
+                            changed = receiver.changed() => {
+                                if changed.is_err() || *receiver.borrow() {
+                                    return Err(AuthError::Cancelled);
+                                }
+                            }
+                        }
+                    } else {
+                        delay.await;
+                    }
+                    continue;
+                }
+                Err(error) => return Err(AuthError::Http(error)),
             };
 
             if response.status().is_success() {
@@ -517,7 +646,7 @@ impl MicrosoftAuth {
             if let Ok(error) = serde_json::from_str::<TokenErrorResponse>(&body) {
                 match error.error.as_str() {
                     "authorization_pending" => {}
-                    "slow_down" => interval = interval.saturating_add(5),
+                    "slow_down" => interval = interval.saturating_add(5).min(60),
                     "expired_token" => return Err(AuthError::Expired),
                     "authorization_declined" => {
                         return Err(AuthError::Rejected("authorization declined".to_owned()));
@@ -822,7 +951,53 @@ pub fn delete_refresh_token(_user: &str) -> Result<(), AuthError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MicrosoftAuth, pkce_challenge};
+    use super::{Flow, MicrosoftAuth, PUBLIC_CLIENT_ID, pkce_challenge};
+
+    #[test]
+    fn the_bundled_client_needs_no_registration() {
+        let auth = MicrosoftAuth::public_client().expect("public client builds");
+        assert!(auth.uses_public_client());
+        // The Live front door has no PKCE redirect, so the GUI must not offer
+        // a browser button that would land on unauthorized_client.
+        assert!(!auth.supports_browser_login());
+        assert_eq!(auth.flow, Flow::Live);
+        assert_eq!(auth.client_id, PUBLIC_CLIENT_ID);
+        assert_eq!(auth.flow.device_code_url(), super::LIVE_DEVICE_CODE_URL);
+    }
+
+    #[test]
+    fn a_registered_application_uses_the_documented_flow() {
+        let auth = MicrosoftAuth::with_client_id("11111111-2222-3333-4444-555555555555")
+            .expect("client id builds");
+        assert!(!auth.uses_public_client());
+        assert!(auth.supports_browser_login());
+        assert_eq!(auth.flow, Flow::Entra);
+        assert_eq!(auth.flow.scope(), "XboxLive.signin offline_access");
+        assert_eq!(auth.flow.device_code_url(), super::MS_DEVICE_CODE_URL);
+    }
+
+    #[tokio::test]
+    #[ignore = "network: asks Microsoft for a real device code"]
+    async fn the_bundled_client_gets_a_real_code() {
+        let auth = MicrosoftAuth::public_client().expect("public client builds");
+        let device = auth.request_device_code().await.expect("device code");
+        // A real code is short, uppercase, and comes with a page to type it on.
+        assert!(
+            device.user_code.len() >= 6 && device.user_code.len() <= 12,
+            "{}",
+            device.user_code
+        );
+        assert!(device.verification_uri.starts_with("https://"));
+        assert!(device.expires_in >= 60);
+        assert!(!device.device_code.is_empty());
+    }
+
+    #[test]
+    fn the_public_client_id_selects_the_live_flow() {
+        let auth = MicrosoftAuth::with_client_id(PUBLIC_CLIENT_ID).expect("client id builds");
+        assert!(auth.uses_public_client());
+        assert_eq!(auth.flow.token_url(), super::LIVE_TOKEN_URL);
+    }
 
     #[test]
     fn pkce_challenge_matches_rfc_7636_vector() {
