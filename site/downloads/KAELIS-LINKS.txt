@@ -1,0 +1,375 @@
+KAELIS - URL, INSTALLATION, AND LINK INDEX
+==========================================
+Launcher      Kaelis 0.1.0
+Platform      windows-x86_64
+Packaged      2026-10-23T12:31:54Z
+Generator     tools/links.ps1 (run again after any endpoint or release change)
+Repository    https://github.com/fuvji/kaelis
+Website       https://fuvji.github.io/kaelis/
+
+This file is generated, not hand-edited. Every URL the launcher uses, every
+download and installation method, and every project/community link is
+listed below. The release script regenerates both copies, prunes legacy
+link files, and refreshes the hashes after the build.
+
+==============================================================================
+1. OFFICIAL DOWNLOADS
+==============================================================================
+  Project website
+    https://fuvji.github.io/kaelis/
+  Download section
+    https://fuvji.github.io/kaelis/#downloads
+  Windows portable EXE
+    https://fuvji.github.io/kaelis/downloads/Kaelis.exe
+    Single executable, no installer, no runtime prerequisite.
+  Windows portable ZIP
+    https://fuvji.github.io/kaelis/downloads/Kaelis-Portable.zip
+    EXE + LICENSE + portable README.
+  Windows installer
+    https://fuvji.github.io/kaelis/downloads/Kaelis-Setup.exe
+    Per-user install under %LOCALAPPDATA%\Programs\Kaelis; no admin rights.
+  Checksums (SHA-256)
+    https://fuvji.github.io/kaelis/downloads/SHA256SUMS.txt
+    Verify every download with certutil or sha256sum.
+  Download README
+    https://fuvji.github.io/kaelis/downloads/README.md
+    Portable usage, scripting, and verification.
+  This index, published
+    https://fuvji.github.io/kaelis/downloads/KAELIS-LINKS.txt
+    Same generated content as dist/KAELIS-LINKS.txt.
+  macOS universal build
+    https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.zip
+    Built and signed ad hoc by packaging/macos/bundle.sh.
+  Linux x64 build
+    https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.tar.gz
+    Binary, desktop entry, icon, LICENSE, README.
+  Every release
+    https://github.com/fuvji/kaelis/releases
+    All tagged builds and assets.
+  Latest release
+    https://github.com/fuvji/kaelis/releases/latest
+    Newest tagged release.
+  Latest Windows EXE
+    https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe
+  Latest Windows ZIP
+    https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Portable.zip
+  Latest Windows installer
+    https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Setup.exe
+
+==============================================================================
+2. INSTALLATION METHODS
+==============================================================================
+
+  2.1 Windows portable (recommended for a current build)
+    Download Kaelis-Portable.zip, extract it anywhere you can write, and
+    run Kaelis.exe. There is no installer and no bundled runtime download
+    for the launcher itself. To keep instances and settings beside the
+    executable, set KAELIS_DATA_DIR to that folder before launching.
+    Data: %APPDATA%\kaelis\Kaelis\data (default)
+          %APPDATA%\kaelis\Kaelis\data\instances
+
+  2.2 Windows installer
+    Download Kaelis-Setup.exe and run it. It installs per user under
+    %LOCALAPPDATA%\Programs\Kaelis, adds Start menu and desktop shortcuts,
+    registers an uninstaller, and needs no administrator rights.
+    Uninstall: Settings > Apps > Kaelis, or Uninstall.exe in that folder.
+    The installer carries the same Kaelis.exe build as the download page.
+
+  2.3 macOS
+    Prebuilt: Kaelis-macos-universal.zip from the latest release; drag
+    Kaelis.app to /Applications.
+    From source: ./packaging/macos/bundle.sh [--universal]
+    Output: dist/Kaelis.app
+    Data: ~/Library/Application Support/gg.kaelis.Kaelis/instances
+
+  2.4 Linux
+    Prebuilt: Kaelis-linux-x64.tar.gz from the latest release; extract and
+    run ./kaelis, or install the binary and desktop entry.
+    From source: ./packaging/linux/install.sh
+    Installs: ~/.local/bin/kaelis
+              ~/.local/share/applications/kaelis.desktop
+              ~/.local/share/icons/hicolor/scalable/apps/kaelis.svg
+    Data: ~/.local/share/kaelis/instances
+    Build packages: libgtk-3-dev libayatana-appindicator3-dev
+                    libxkbcommon-dev libwayland-dev libx11-dev
+
+  2.5 Build from source
+    Requirements: Rust 1.85+ and a C/C++ linker for the target.
+    Windows: stable-x86_64-pc-windows-msvc + Visual Studio C++ workload
+    macOS:   stable-aarch64-apple-darwin or stable-x86_64-apple-darwin
+    Linux:   stable-x86_64-unknown-linux-gnu
+    Commands:
+      git clone https://github.com/fuvji/kaelis.git
+      cd kaelis
+      cargo build --release -p kaelis-launcher
+      target/release/kaelis --version
+
+  2.6 Where data lives
+    Windows  %APPDATA%\kaelis\Kaelis\data
+    macOS    ~/Library/Application Support/gg.kaelis.Kaelis
+    Linux    ~/.local/share/kaelis
+    Override any platform with KAELIS_DATA_DIR=<folder>.
+    Instances live under <data>/instances/<instance-id>/ with mods,
+    resourcepacks, shaderpacks, saves, config, logs, runtime, and versions.
+    Settings: <data>/settings.json. Microsoft refresh tokens: OS keychain
+    under service 'kaelis'. Access tokens never touch disk.
+
+  2.7 Command line
+    kaelis                         Open the desktop launcher
+    kaelis --version [--json]      Build identity and public URLs
+    kaelis --status [--json]       Data root, instances, accounts, Java
+    kaelis --list-instances [--json]
+    kaelis --list-versions [--show-alpha] [--show-beta] [--hide-snapshots]
+    kaelis --accounts [--json]
+    kaelis --use-account <name> [--json]
+    kaelis --offline <name> [--json]
+    kaelis --play <instance> [--offline <name>]
+    kaelis --install-mod <instance> <modrinth:project|curseforge:id|slug>
+    kaelis --repair <instance>
+    kaelis --check-updates <instance> [--json]
+    kaelis --update-mods <instance> [--json]
+    kaelis --import-modpack <instance> <pack.mrpack|pack.zip>
+    kaelis --export-instance <instance> <out.kaelis.zip>
+    kaelis --import-instance <archive.kaelis.zip>
+    kaelis --duplicate <instance> [--with-worlds] [--json]
+
+==============================================================================
+3. RUNTIME SERVICE URLS
+==============================================================================
+  These are the endpoints the launcher contacts. Dynamic URLs are shown as
+  patterns; values in <angle-brackets> come from Mojang or provider metadata.
+
+  3.1 Mojang / Minecraft Services
+  Version manifest (GET)
+    https://piston-meta.mojang.com/mc/game/version_manifest_v2.json
+    Every install begins here.
+  Version metadata (GET, per version)
+    https://piston-meta.mojang.com/v1/packages/<sha1>/<version>.json
+    URL supplied by each version_manifest entry.
+  Mojang libraries (GET)
+    https://libraries.minecraft.net/<group>/<artifact>/<version>/<file>
+    Fallback base when version metadata omits a library URL.
+  Asset objects (GET)
+    https://resources.download.minecraft.net/<first-2-hex>/<hash>
+    SHA-1-addressed game assets.
+  Java runtime catalogue (GET)
+    https://piston-meta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json
+    Selects the version-matched Mojang JDK.
+  Java runtime files (GET)
+    https://piston-meta.mojang.com/<runtime-manifest-path>
+    Manifest URL is supplied by the runtime catalogue.
+  Premium name lookup (GET)
+    https://api.mojang.com/users/profiles/minecraft
+    Append /<username>; resolves an offline name's premium UUID and skin.
+  Minecraft EULA
+    https://www.minecraft.net/en-us/eula
+
+  3.2 Microsoft / Xbox Live authentication
+  Device code (POST)
+    https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode
+    Scope: XboxLive.signin offline_access openid profile.
+  Browser authorize (GET)
+    https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize
+    Authorization-code + PKCE flow.
+  Token exchange (POST)
+    https://login.microsoftonline.com/consumers/oauth2/v2.0/token
+    Device-code polling and refresh.
+  Xbox Live user auth (POST)
+    https://user.auth.xboxlive.com/user/authenticate
+  XSTS authorize (POST)
+    https://xsts.auth.xboxlive.com/xsts/authorize
+  Minecraft login (POST)
+    https://api.minecraftservices.com/authentication/login_with_xbox
+  Minecraft profile (GET)
+    https://api.minecraftservices.com/minecraft/profile
+    Confirms the profile after sign-in.
+  Local OAuth callback
+    http://localhost:<ephemeral-port>/
+    Loopback only; the port is bound before the browser opens.
+  Xbox relying-party identifier
+    http://auth.xboxlive.com
+    Protocol value, not a network request.
+  Entra device-code documentation
+    https://learn.microsoft.com/entra/identity-platform/v2-oauth2-device-code
+  Entra app registrations
+    https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade
+    Where the optional public client ID is created.
+
+  3.3 Modrinth
+  API v2 base
+    https://api.modrinth.com/v2
+  Search (GET)
+    https://api.modrinth.com/v2/search
+    Merged with CurseForge results.
+  Project (GET)
+    https://api.modrinth.com/v2/project/<id-or-slug>
+  Project versions (GET)
+    https://api.modrinth.com/v2/project/<project-id>/version
+    Filtered by game version and loader.
+  One version (GET)
+    https://api.modrinth.com/v2/version/<version-id>
+  Hash lookup (GET)
+    https://api.modrinth.com/v2/version_file/<sha1>?algorithm=sha1
+  Bulk update check (POST)
+    https://api.modrinth.com/v2/version_files/update
+    Only SHA-1 hashes, loader, and game version leave the machine.
+  Projects by id (GET)
+    https://api.modrinth.com/v2/projects?ids=[<ids>]
+  Project site
+    https://modrinth.com/
+  Mod link pattern
+    https://modrinth.com/mod/<slug>
+  Resource-pack link pattern
+    https://modrinth.com/resourcepack/<slug>
+  Shader link pattern
+    https://modrinth.com/shader/<slug>
+  Modpack link pattern
+    https://modrinth.com/modpack/<slug>
+  Download CDN pattern
+    https://cdn.modrinth.com/data/<project>/versions/<version>/<file>
+  Modrinth documentation
+    https://docs.modrinth.com/
+
+  3.4 CurseForge
+  API v1 base
+    https://api.curseforge.com/v1
+    Requires an API key in Settings > Integrations.
+  Search (GET)
+    https://api.curseforge.com/v1/mods/search?gameId=432
+    gameId 432 is Minecraft.
+  Files (GET)
+    https://api.curseforge.com/v1/mods/<mod-id>/files
+  Project site
+    https://www.curseforge.com/minecraft
+  Mod link pattern
+    https://www.curseforge.com/minecraft/mc-mods/<slug>
+  Resource-pack link pattern
+    https://www.curseforge.com/minecraft/texture-packs/<slug>
+  Shader link pattern
+    https://www.curseforge.com/minecraft/shaders/<slug>
+  Modpack link pattern
+    https://www.curseforge.com/minecraft/modpacks/<slug>
+  Download CDN pattern
+    https://media.forgecdn.net/<path>
+    The API supplies the full download URL.
+  CurseForge console
+    https://console.curseforge.com/
+    Create the API key used by the launcher.
+  CurseForge API documentation
+    https://docs.curseforge.com/
+
+  3.5 Loaders
+  Fabric meta base
+    https://meta.fabricmc.net/v2
+  Fabric loader versions (GET)
+    https://meta.fabricmc.net/v2/versions/loader/<game-version>
+  Fabric profile JSON (GET)
+    https://meta.fabricmc.net/v2/versions/loader/<game-version>/<loader-version>/profile/json
+  Quilt meta base
+    https://meta.quiltmc.org/v3
+  Quilt loader versions (GET)
+    https://meta.quiltmc.org/v3/versions/loader/<game-version>
+  Quilt profile JSON (GET)
+    https://meta.quiltmc.org/v3/versions/loader/<game-version>/<loader-version>/profile/json
+  Fabric wiki
+    https://wiki.fabricmc.net/
+  Quilt project
+    https://quiltmc.org/
+
+  3.6 Avatar mirrors
+  Crafatar (primary)
+    https://crafatar.com/avatars/<uuid>?size=<size>&overlay
+  mc-heads (fallback)
+    https://mc-heads.net/avatar/<uuid>/<size>
+  Minotar (fallback)
+    https://minotar.net/helm/<uuid>/<size>.png
+
+==============================================================================
+4. CONTENT LINK PATTERNS THE UI ACCEPTS
+==============================================================================
+  Paste one of these into the content link field, or drop a local file:
+    https://modrinth.com/mod/<slug>
+    https://modrinth.com/resourcepack/<slug>
+    https://modrinth.com/shader/<slug>
+    https://modrinth.com/modpack/<slug>
+    https://www.curseforge.com/minecraft/mc-mods/<slug>
+    https://www.curseforge.com/minecraft/texture-packs/<slug>
+    https://www.curseforge.com/minecraft/shaders/<slug>
+    https://www.curseforge.com/minecraft/modpacks/<slug>
+    https://<any-https-host>/<path>.jar    direct mod jar
+    https://<any-https-host>/<path>.zip    resource pack, shader pack, or pack
+    .mrpack links are installed as a new instance, not into the current one.
+    Other hosts are fetched directly (no scraping); only HTTPS is accepted.
+
+==============================================================================
+5. PROJECT, COMMUNITY, AND SECURITY
+==============================================================================
+  Source repository
+    https://github.com/fuvji/kaelis
+  Clone URL
+    https://github.com/fuvji/kaelis.git
+  Issues
+    https://github.com/fuvji/kaelis/issues
+  Security advisory
+    https://github.com/fuvji/kaelis/security/advisories/new
+  Release workflow
+    https://github.com/fuvji/kaelis/actions/workflows/release.yml
+  CI workflow
+    https://github.com/fuvji/kaelis/actions/workflows/ci.yml
+  Build and CLI guide
+    https://github.com/fuvji/kaelis#quick-start
+  Command reference
+    https://github.com/fuvji/kaelis#command-line
+  Discord community
+    https://discord.gg/fvrdYzrQjq
+  Founder
+    https://github.com/fuvji
+  MIT license
+    https://opensource.org/licenses/MIT
+
+==============================================================================
+6. RELEASE ARTIFACTS IN THIS CHECKOUT
+==============================================================================
+  Paths are relative to the repository root. Hashes are SHA-256.
+
+  site/downloads/Kaelis.exe
+    14405120 bytes (13.7 MB)
+    f78df36e89b1578a0b24c179187a5a00e7b6d357aed6873297887b051c25aaca
+
+  site/downloads/Kaelis-Portable.zip
+    6978736 bytes (6.7 MB)
+    830d4d8f22fb6bc84b47126ff61e11585d22d3f5184f394d006be7649d9312c5
+
+  site/downloads/Kaelis-Setup.exe
+    5285013 bytes (5.0 MB)
+    5d916bab9f4dc0f5a1b4d017edce85b205dece71f6e1890dd15d45b00937913e
+
+  dist/Kaelis.exe and dist/Kaelis-Setup.exe are local scratch copies;
+  site/downloads is the published set. The portable ZIP contains the same
+  Kaelis.exe plus LICENSE and the portable README.
+
+==============================================================================
+7. VERIFY A DOWNLOAD
+==============================================================================
+  Windows:
+    certutil -hashfile Kaelis.exe SHA256
+  macOS / Linux:
+    shasum -a 256 -c SHA256SUMS.txt
+  Compare against https://fuvji.github.io/kaelis/downloads/SHA256SUMS.txt.
+  A mismatched file is not a Kaelis release.
+
+==============================================================================
+8. AUTOMATIC SOURCE AUDIT
+==============================================================================
+  Every https:// constant found in the Rust crates and the installer is
+  listed here when it is not already covered above. This catches a new
+  endpoint that was added without updating this generator.
+
+  No extra source URLs found; the curated inventory is complete.
+
+==============================================================================
+9. DISCLAIMER
+==============================================================================
+  Kaelis is not affiliated with Mojang Studios, Microsoft, Modrinth, or
+  CurseForge. Minecraft is a trademark of Mojang Studios. Provider URLs
+  and catalogue availability are controlled by their operators.

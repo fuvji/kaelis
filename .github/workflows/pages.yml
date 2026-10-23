@@ -5,7 +5,10 @@ on:
     branches: [main]
     paths:
       - "site/**"
+      - "tools/hydrate-site.ps1"
       - ".github/workflows/pages.yml"
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -26,6 +29,32 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          # A release deploy must serve the tagged site, not a newer main.
+          ref: ${{ github.event.release.tag_name || github.ref }}
+
+      - name: Fetch release downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p site/downloads
+          tag="${{ github.event.release.tag_name }}"
+          pattern_args=(
+            --pattern Kaelis.exe
+            --pattern Kaelis-Portable.zip
+            --pattern Kaelis-Setup.exe
+            --pattern SHA256SUMS.txt
+            --pattern KAELIS-LINKS.txt
+          )
+          if [ -n "$tag" ]; then
+            gh release download "$tag" --dir site/downloads --clobber "${pattern_args[@]}"
+          else
+            gh release download --dir site/downloads --clobber "${pattern_args[@]}"
+          fi
+
+      - name: Refresh download sizes and hashes
+        run: pwsh -NoProfile -File tools/hydrate-site.ps1
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

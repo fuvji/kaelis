@@ -1,6 +1,7 @@
 //! Persistent instance metadata. Runtime logs, tokens, and download staging
 //! remain outside these JSON records.
 
+use crate::format::human_bytes;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -17,6 +18,8 @@ pub enum InstanceError {
     InvalidId(String),
     #[error("refusing to erase {0}: not a self-contained instance directory")]
     UnsafeRoot(String),
+    #[error("instance folder is missing: {0}")]
+    MissingRoot(String),
 }
 
 /// What [`Instance::erase`] actually removed, so the caller can report real
@@ -28,6 +31,51 @@ pub struct EraseReport {
     /// Whether an instance JSON record was removed (a dead instance may only
     /// have leftover metadata).
     pub metadata: bool,
+}
+
+/// Which parts of an instance a duplicate receives.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DuplicateOptions {
+    /// `mods`, `resourcepacks`, and `shaderpacks`.
+    pub content: bool,
+    /// World saves. Off by default: they are the largest folder and are often
+    /// deliberately kept separate when branching a pack.
+    pub saves: bool,
+    /// `config`, `options.txt`, key binds, servers, and every other file that
+    /// is not content, a save, or disposable runtime output.
+    pub settings: bool,
+}
+
+impl Default for DuplicateOptions {
+    fn default() -> Self {
+        Self {
+            content: true,
+            saves: false,
+            settings: true,
+        }
+    }
+}
+
+/// What a duplicate wrote, so the caller can state real numbers.
+#[derive(Debug, Clone)]
+pub struct DuplicateReport {
+    pub instance: Instance,
+    pub files: u64,
+    pub bytes: u64,
+    /// Entries deliberately left out, such as runtime folders or links.
+    pub skipped: Vec<String>,
+}
+
+impl DuplicateReport {
+    pub fn summary(&self) -> String {
+        format!(
+            "Duplicated as {} ({}, {} file{})",
+            self.instance.name,
+            human_bytes(self.bytes),
+            self.files,
+            if self.files == 1 { "" } else { "s" }
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,10 +125,6 @@ pub struct Instance {
     /// resolved by the GUI; the core crate never opens it.
     #[serde(default)]
     pub icon: Option<PathBuf>,
-    /// Accent palette index (`0..=5`). `None` derives a stable colour from the
-    /// instance id, so older metadata keeps its existing look.
-    #[serde(default)]
-    pub icon_variant: Option<u8>,
     #[serde(default)]
     pub last_played_unix: i64,
 }
@@ -112,7 +156,6 @@ impl Instance {
             pre_launch_command: None,
             post_exit_command: None,
             icon: None,
-            icon_variant: None,
             last_played_unix: 0,
         }
     }
@@ -143,9 +186,15 @@ impl Instance {
     }
 
     pub fn save(&self) -> Result<PathBuf, InstanceError> {
+        self.save_in(&Self::instances_dir())
+    }
+
+    /// Write the record into an explicit instances directory. Importing an
+    /// archive needs this to write into a staging directory before the record
+    /// joins the live list, and tests use it to stay off the real data root.
+    pub fn save_in(&self, dir: &Path) -> Result<PathBuf, InstanceError> {
         Self::validate_id(&self.id)?;
-        let dir = Self::instances_dir();
-        std::fs::create_dir_all(&dir)?;
+        std::fs::create_dir_all(dir)?;
         let path = dir.join(format!("{}.json", self.id));
         let sequence = INSTANCE_FILE_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let temp_path = dir.join(format!(
@@ -187,7 +236,7 @@ impl Instance {
         Self::load_all_in(&Self::instances_dir())
     }
 
-    fn load_all_in(dir: &Path) -> Result<Vec<Self>, InstanceError> {
+    pub fn load_all_in(dir: &Path) -> Result<Vec<Self>, InstanceError> {
         if !dir.exists() {
             return Ok(Vec::new());
         }
@@ -268,6 +317,205 @@ impl Instance {
         remove_stale_records(instances_dir, &self.id);
         Ok(report)
     }
+
+    /// Copy this instance into a new one in the standard instances directory.
+    pub fn duplicate(&self, options: DuplicateOptions) -> Result<DuplicateReport, InstanceError> {
+        self.duplicate_in(&Self::instances_dir(), options)
+    }
+
+    /// Copy the instance tree and write a fresh record beside it.
+    ///
+    /// Runtime output (logs, crash reports, extracted natives, launcher state)
+    /// is never copied: it is disposable and a copy would start with a
+    /// misleading history. Links and junctions are skipped rather than followed,
+    /// so a copy can never reach outside the source tree. A failed copy removes
+    /// its partial destination instead of leaving a half instance behind.
+    pub fn duplicate_in(
+        &self,
+        instances_dir: &Path,
+        options: DuplicateOptions,
+    ) -> Result<DuplicateReport, InstanceError> {
+        Self::validate_id(&self.id)?;
+        if !self.root.is_dir() {
+            return Err(InstanceError::MissingRoot(self.root.display().to_string()));
+        }
+        // A junctioned instance root would make every read escape the tree, so
+        // refuse the copy instead of materialising someone else's folder.
+        if is_reparse_point(&self.root) {
+            return Err(InstanceError::UnsafeRoot(self.root.display().to_string()));
+        }
+        let (id, name) = self.copy_identity(instances_dir);
+        // A first run may not have created the records directory yet, and the
+        // copy is still useful before any instance has been saved there.
+        std::fs::create_dir_all(instances_dir)?;
+        let destination = instances_dir.join(&id);
+        if let Err(error) = std::fs::create_dir(&destination) {
+            return Err(InstanceError::Io(error));
+        }
+
+        let mut files = 0u64;
+        let mut bytes = 0u64;
+        let mut skipped = Vec::new();
+        let copied = copy_tree(
+            &self.root,
+            &destination,
+            options,
+            &mut files,
+            &mut bytes,
+            &mut skipped,
+        );
+        if let Err(error) = copied {
+            let _ = std::fs::remove_dir_all(&destination);
+            return Err(error);
+        }
+
+        let mut duplicate = self.clone();
+        duplicate.id = id;
+        duplicate.name = name;
+        duplicate.root = destination.clone();
+        duplicate.last_played_unix = 0;
+        if let Err(error) = duplicate.save_in(instances_dir) {
+            let _ = std::fs::remove_dir_all(duplicate.root.clone());
+            return Err(error);
+        }
+        skipped.sort();
+        Ok(DuplicateReport {
+            instance: duplicate,
+            files,
+            bytes,
+            skipped,
+        })
+    }
+
+    /// Pick an id and display name no existing record claims.
+    fn copy_identity(&self, instances_dir: &Path) -> (String, String) {
+        let existing = Self::load_all_in(instances_dir).unwrap_or_default();
+        let ids: std::collections::HashSet<&str> = existing
+            .iter()
+            .map(|instance| instance.id.as_str())
+            .collect();
+        let names: std::collections::HashSet<String> = existing
+            .iter()
+            .map(|instance| instance.name.to_lowercase())
+            .collect();
+        let mut id_number = 1u32;
+        let id = loop {
+            let suffix = match id_number {
+                1 => "-copy".to_owned(),
+                count => format!("-copy-{count}"),
+            };
+            let keep = 64usize.saturating_sub(suffix.len());
+            let base = self.id.get(..self.id.len().min(keep)).unwrap_or(&self.id);
+            let candidate = format!("{base}{suffix}");
+            if !ids.contains(candidate.as_str()) && !instances_dir.join(&candidate).exists() {
+                break candidate;
+            }
+            id_number += 1;
+        };
+        let base_name = self.name.trim();
+        let base_name = if base_name.is_empty() {
+            "Instance"
+        } else {
+            base_name
+        };
+        let name = (1u32..)
+            .map(|count| match count {
+                1 => format!("{base_name} (copy)"),
+                count => format!("{base_name} (copy {count})"),
+            })
+            .find(|candidate| !names.contains(&candidate.to_lowercase()))
+            .unwrap_or_else(|| format!("{base_name} (copy)"));
+        (id, name)
+    }
+}
+
+/// Top-level folders whose contents are regenerated on every launch.
+const RUNTIME_DIRS: [&str; 5] = ["logs", "crash-reports", "natives", "temp", ".kaelis"];
+/// Folders that hold downloaded game content rather than user settings.
+const CONTENT_DIRS: [&str; 4] = ["mods", "resourcepacks", "shaderpacks", "datapacks"];
+
+/// Copy `source` into the already-created `destination`, honouring the
+/// duplicate options and reporting what it skipped.
+fn copy_tree(
+    source: &Path,
+    destination: &Path,
+    options: DuplicateOptions,
+    files: &mut u64,
+    bytes: &mut u64,
+    skipped: &mut Vec<String>,
+) -> Result<(), InstanceError> {
+    let mut pending = vec![(source.to_path_buf(), destination.to_path_buf())];
+    while let Some((from, to)) = pending.pop() {
+        for entry in std::fs::read_dir(&from)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let name_lossy = name.to_string_lossy();
+            let target = to.join(&name);
+            let file_type = entry.file_type()?;
+            let relative = entry
+                .path()
+                .strip_prefix(source)
+                .unwrap_or(&entry.path())
+                .to_path_buf();
+            let top_level = relative.components().count() == 1;
+            if file_type.is_symlink() || is_reparse_point(&entry.path()) {
+                skipped.push(relative.display().to_string());
+                continue;
+            }
+            if file_type.is_dir() {
+                // Windows paths are case-insensitive, so `Mods` and `mods` are
+                // the same folder and must get the same bucket.
+                let lower = name_lossy.to_ascii_lowercase();
+                let bucket = if top_level && RUNTIME_DIRS.contains(&lower.as_str()) {
+                    None
+                } else if top_level && CONTENT_DIRS.contains(&lower.as_str()) {
+                    options.content.then_some(())
+                } else if top_level && lower == "saves" {
+                    options.saves.then_some(())
+                } else {
+                    options.settings.then_some(())
+                };
+                if bucket.is_none() {
+                    skipped.push(relative.display().to_string());
+                    continue;
+                }
+                std::fs::create_dir(&target)?;
+                pending.push((entry.path(), target));
+                continue;
+            }
+            if !file_type.is_file() || !top_level_file_allowed(top_level, options) {
+                skipped.push(relative.display().to_string());
+                continue;
+            }
+            *bytes = bytes.saturating_add(std::fs::copy(entry.path(), &target)?);
+            *files += 1;
+        }
+    }
+    Ok(())
+}
+
+/// Root-level files belong to the settings bucket; anything nested was already
+/// admitted by its parent folder.
+fn top_level_file_allowed(top_level: bool, options: DuplicateOptions) -> bool {
+    !top_level || options.settings
+}
+
+/// Windows junctions are directories with a reparse point; `is_symlink` alone
+/// does not catch them, and following one would copy a foreign tree.
+#[cfg(windows)]
+fn is_reparse_point(path: &Path) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+    std::fs::symlink_metadata(path)
+        .map(|metadata| metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(windows))]
+fn is_reparse_point(path: &Path) -> bool {
+    std::fs::symlink_metadata(path)
+        .map(|metadata| metadata.file_type().is_symlink())
+        .unwrap_or(false)
 }
 
 /// Best-effort sweep of `.id.pid.seq.tmp` records written by a save that was
@@ -366,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    fn icon_fields_round_trip_and_legacy_metadata_defaults_to_auto() {
+    fn artwork_round_trips_and_legacy_metadata_defaults() {
         let mut instance = Instance::new(
             "vanilla-1-21",
             "Vanilla 1.21",
@@ -375,7 +623,6 @@ mod tests {
             PathBuf::from("instance"),
         );
         instance.icon = Some(PathBuf::from("C:/art/diamond.png"));
-        instance.icon_variant = Some(4);
         instance.game_args = vec!["--fullscreen".to_owned()];
         instance.env = vec!["KAELIS_TEST=1".to_owned()];
         instance.min_ram_mb = Some(1024);
@@ -389,7 +636,6 @@ mod tests {
         let encoded = serde_json::to_vec(&instance).unwrap();
         let decoded: Instance = serde_json::from_slice(&encoded).unwrap();
         assert_eq!(decoded.icon, instance.icon);
-        assert_eq!(decoded.icon_variant, Some(4));
         assert_eq!(decoded.game_args, instance.game_args);
         assert_eq!(decoded.env, instance.env);
         assert_eq!(decoded.min_ram_mb, Some(1024));
@@ -405,7 +651,6 @@ mod tests {
         let mut legacy = serde_json::to_value(instance).unwrap();
         let object = legacy.as_object_mut().unwrap();
         object.remove("icon");
-        object.remove("icon_variant");
         object.remove("game_args");
         object.remove("env");
         for field in [
@@ -423,7 +668,6 @@ mod tests {
         }
         let decoded: Instance = serde_json::from_value(legacy).unwrap();
         assert_eq!(decoded.icon, None);
-        assert_eq!(decoded.icon_variant, None);
         assert!(decoded.game_args.is_empty());
         assert!(decoded.env.is_empty());
         assert_eq!(decoded.min_ram_mb, None);
@@ -594,5 +838,127 @@ mod tests {
 
         assert!(matches!(error, InstanceError::InvalidId(_)), "{error}");
         assert!(root.exists());
+    }
+
+    fn seeded_instance(temp: &TempTree) -> (PathBuf, Instance) {
+        let instances = temp.path().join("instances");
+        let root = instances.join("fabric-1-21");
+        for dir in ["mods", "config", "saves", "logs", "crash-reports"] {
+            std::fs::create_dir_all(root.join(dir)).unwrap();
+        }
+        std::fs::write(root.join("mods").join("sodium.jar"), vec![1u8; 2048]).unwrap();
+        std::fs::write(root.join("config").join("sodium.json"), b"{}").unwrap();
+        std::fs::write(root.join("saves").join("world.dat"), vec![2u8; 4096]).unwrap();
+        std::fs::write(root.join("logs").join("latest.log"), "old").unwrap();
+        std::fs::write(root.join("crash-reports").join("crash.txt"), "boom").unwrap();
+        std::fs::write(root.join("options.txt"), "fov:90\n").unwrap();
+        let mut instance =
+            Instance::new("fabric-1-21", "Fabric 1.21", "1.21", "fabric", root.clone());
+        instance.ram_mb = 6144;
+        instance.notes = "keep me".to_owned();
+        instance.save_in(&instances).unwrap();
+        (instances, instance)
+    }
+
+    #[test]
+    fn duplicate_copies_content_and_settings_but_not_runtime_output() {
+        let temp = TempTree::new("copy");
+        let (instances, instance) = seeded_instance(&temp);
+
+        let report = instance
+            .duplicate_in(&instances, DuplicateOptions::default())
+            .unwrap();
+
+        let copy = &report.instance;
+        assert_eq!(copy.id, "fabric-1-21-copy");
+        assert_eq!(copy.name, "Fabric 1.21 (copy)");
+        assert_eq!(copy.ram_mb, 6144, "settings must travel with the copy");
+        assert_eq!(copy.notes, "keep me");
+        assert_eq!(copy.last_played_unix, 0);
+        assert!(copy.root.join("mods").join("sodium.jar").exists());
+        assert!(copy.root.join("config").join("sodium.json").exists());
+        assert!(copy.root.join("options.txt").exists());
+        assert!(!copy.root.join("saves").exists(), "saves default off");
+        assert!(!copy.root.join("logs").exists());
+        assert!(!copy.root.join("crash-reports").exists());
+        assert_eq!(report.files, 3);
+        assert_eq!(
+            report.bytes,
+            2048 + "{}".len() as u64 + "fov:90\n".len() as u64
+        );
+        assert!(report.skipped.iter().any(|entry| entry == "saves"));
+        assert!(report.skipped.iter().any(|entry| entry == "logs"));
+        assert!(
+            Instance::load_all_in(&instances)
+                .unwrap()
+                .iter()
+                .any(|saved| saved.id == "fabric-1-21-copy")
+        );
+        assert!(instance.root.join("saves").join("world.dat").exists());
+    }
+
+    #[test]
+    fn duplicate_can_include_saves_and_picks_unique_names() {
+        let temp = TempTree::new("copy-again");
+        let (instances, instance) = seeded_instance(&temp);
+        let all = DuplicateOptions {
+            content: true,
+            saves: true,
+            settings: true,
+        };
+        instance.duplicate_in(&instances, all).unwrap();
+        let second = instance.duplicate_in(&instances, all).unwrap();
+
+        assert_eq!(second.instance.id, "fabric-1-21-copy-2");
+        assert_eq!(second.instance.name, "Fabric 1.21 (copy 2)");
+        assert!(
+            second
+                .instance
+                .root
+                .join("saves")
+                .join("world.dat")
+                .exists()
+        );
+        assert_eq!(Instance::load_all_in(&instances).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn duplicate_creates_the_records_directory_on_a_fresh_data_root() {
+        let temp = TempTree::new("fresh");
+        let instances = temp.path().join("instances");
+        let root = instances.join("vanilla-1-21");
+        std::fs::create_dir_all(root.join("mods")).unwrap();
+        std::fs::write(root.join("mods").join("sodium.jar"), b"jar").unwrap();
+        let instance = Instance::new("vanilla-1-21", "Vanilla", "1.21", "vanilla", root.clone());
+
+        let report = instance
+            .duplicate_in(&instances, DuplicateOptions::default())
+            .unwrap();
+
+        assert_eq!(report.instance.id, "vanilla-1-21-copy");
+        assert!(instances.join("vanilla-1-21-copy.json").exists());
+        assert!(
+            report
+                .instance
+                .root
+                .join("mods")
+                .join("sodium.jar")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn duplicate_refuses_a_missing_source_folder() {
+        let temp = TempTree::new("missing");
+        let instances = temp.path().join("instances");
+        std::fs::create_dir_all(&instances).unwrap();
+        let instance = Instance::new("ghost", "Ghost", "1.21", "vanilla", instances.join("ghost"));
+
+        let error = instance
+            .duplicate_in(&instances, DuplicateOptions::default())
+            .unwrap_err();
+
+        assert!(matches!(error, InstanceError::MissingRoot(_)), "{error}");
+        assert!(!instances.join("ghost-copy").exists());
     }
 }

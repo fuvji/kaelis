@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Kaelis
+GenericName=Minecraft Launcher
+Comment=Minecraft, composed — instances, content, and accounts in one native workspace
+Exec=kaelis %U
+Icon=kaelis
+Terminal=false
+Categories=Game;Application;
+Keywords=minecraft;launcher;fabric;quilt;mods;modpack;
+StartupNotify=true
+StartupWMClass=kaelis

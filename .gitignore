@@ -1,8 +1,12 @@
 # Rust build output
 /target/
 
-# Local toolchains used for Windows builds (not source)
-/tools/
+# Local toolchains used for Windows builds (not source). Keep the tracked
+# scripts in tools/ (release.ps1, links.ps1, hydrate-site.ps1, serve-site.ps1).
+/tools/mingw64/
+/tools/binutils/
+/tools/msvcrt/
+/tools/nsis/
 /installer/tools/
 
 # Built launcher artifacts: rebuild with `cargo build --release`.

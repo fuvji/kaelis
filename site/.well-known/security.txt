@@ -1,0 +1,6 @@
+Contact: https://github.com/fuvji/kaelis/security/advisories/new
+Contact: https://discord.gg/fvrdYzrQjq
+Expires: 2027-10-21T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://fuvji.github.io/kaelis/.well-known/security.txt
+Policy: https://github.com/fuvji/kaelis/blob/main/SECURITY.md

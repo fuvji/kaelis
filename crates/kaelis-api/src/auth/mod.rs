@@ -14,7 +14,8 @@ use zeroize::{Zeroize, Zeroizing};
 
 mod offline;
 pub use offline::{
-    AvatarError, OfflineProfile, crafatar_head_url, fetch_crafatar_head, offline_profile,
+    AvatarError, OfflineProfile, crafatar_head_url, fetch_crafatar_head, fetch_head_for_username,
+    lookup_premium_uuid, offline_profile, valid_username,
 };
 
 const MS_DEVICE_CODE_URL: &str =

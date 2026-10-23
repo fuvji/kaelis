@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Seek};
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 
@@ -69,6 +70,10 @@ pub struct PackSummary {
     /// `vanilla`, `fabric`, `forge`, `neoforge`, or `quilt`.
     pub loader: String,
     pub mod_files: usize,
+    /// A square pack icon shipped inside the archive (`icon.png`, `pack.png`,
+    /// or `logo.png` at the root or under `overrides/`). Remote packs usually
+    /// carry the Modrinth project icon instead, which the caller fetches.
+    pub icon: Option<Vec<u8>>,
 }
 
 /// Read a `.mrpack`'s index without installing anything. Used to name the new
@@ -92,6 +97,7 @@ pub fn read_pack_summary(pack_path: &Path) -> Result<PackSummary, MrpackError> {
     } else {
         index.name.clone()
     };
+    let icon = read_pack_icon(&mut archive);
     Ok(PackSummary {
         name,
         version: index.version_id,
@@ -102,7 +108,39 @@ pub fn read_pack_summary(pack_path: &Path) -> Result<PackSummary, MrpackError> {
             .iter()
             .filter(|file| file.path.starts_with("mods/"))
             .count(),
+        icon,
     })
+}
+
+/// Read the first recognised picture from the archive without trusting its
+/// declared size. The caller stores it as 256 px instance artwork, so an 8 MiB
+/// source ceiling is generous while still bounding a hostile pack.
+fn read_pack_icon<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Option<Vec<u8>> {
+    const ICON_BYTES: u64 = 8 * 1024 * 1024;
+    const NAMES: [&str; 6] = [
+        "icon.png", "pack.png", "logo.png", "icon.jpg", "pack.jpg", "logo.jpg",
+    ];
+    for entry_index in 0..archive.len() {
+        let entry = archive.by_index(entry_index).ok()?;
+        if entry.is_dir() || entry.size() > ICON_BYTES {
+            continue;
+        }
+        let name = entry.name().to_ascii_lowercase();
+        let relative = name
+            .strip_prefix("overrides/")
+            .or_else(|| name.strip_prefix("client-overrides/"))
+            .unwrap_or(&name);
+        if !NAMES.contains(&relative) {
+            continue;
+        }
+        let mut bytes = Vec::with_capacity(entry.size().min(ICON_BYTES) as usize);
+        entry.take(ICON_BYTES + 1).read_to_end(&mut bytes).ok()?;
+        if bytes.len() as u64 > ICON_BYTES {
+            continue;
+        }
+        return Some(bytes);
+    }
+    None
 }
 
 fn loader_from_dependencies(dependencies: &std::collections::HashMap<String, String>) -> String {
@@ -756,6 +794,22 @@ pub async fn install_mrpack(
     pack_path: &Path,
     instance_root: &Path,
 ) -> Result<usize, MrpackError> {
+    install_mrpack_with_progress(client, pack_path, instance_root, |_| {}).await
+}
+
+/// Install a pack with stage lines for the caller's activity strip. The
+/// callback is best-effort and never changes the import result.
+pub async fn install_mrpack_with_progress<F>(
+    client: &reqwest::Client,
+    pack_path: &Path,
+    instance_root: &Path,
+    progress: F,
+) -> Result<usize, MrpackError>
+where
+    F: Fn(&str) + Send + Sync + 'static,
+{
+    let progress = Arc::new(progress);
+    progress("Reading the pack…");
     let file = std::fs::File::open(pack_path)?;
     let mut archive = zip::ZipArchive::new(file)?;
     let index = read_index(&mut archive)?;
@@ -785,9 +839,14 @@ pub async fn install_mrpack(
             commit_keys.insert(portable_path_key(&pack_file.path));
             commit_paths.push(pack_file.path.clone());
         }
-        installed += super::downloader::download_all(client, tasks, 8)
+        let download_progress = Arc::clone(&progress);
+        installed +=
+            super::downloader::download_all_with_progress(client, tasks, 8, move |done, total| {
+                download_progress(&format!("Downloading {done} of {total} files…"));
+            })
             .await?
             .len();
+        progress("Applying pack overrides…");
 
         for entry_index in 0..archive.len() {
             let mut entry = archive.by_index(entry_index)?;
@@ -802,21 +861,23 @@ pub async fn install_mrpack(
                 continue;
             };
             let destination = transaction.staged_destination(relative)?;
-            use std::io::Write;
             let mut output = std::fs::OpenOptions::new()
                 .write(true)
                 .create(true)
                 .truncate(true)
                 .open(destination)?;
-            std::io::copy(&mut entry, &mut output)?;
-            output.flush()?;
-            output.sync_all()?;
+            // One buffered pass, no per-file fsync: the staged tree is renamed
+            // into place as a batch, so a crash before the commit leaves no
+            // half-applied pack, and syncing every override only added disk
+            // latency to an operation that moves hundreds of small files.
+            kaelis_core::stream::copy_stream(&mut entry, &mut output)?;
             installed += 1;
             if commit_keys.insert(portable_path_key(relative)) {
                 commit_paths.push(relative.to_owned());
             }
         }
     } else {
+        progress("Extracting the archive…");
         for entry_index in 0..archive.len() {
             let mut entry = archive.by_index(entry_index)?;
             if entry.is_dir() {
@@ -824,15 +885,12 @@ pub async fn install_mrpack(
             }
             let relative = entry.name().to_owned();
             let destination = transaction.staged_destination(&relative)?;
-            use std::io::Write;
             let mut output = std::fs::OpenOptions::new()
                 .write(true)
                 .create(true)
                 .truncate(true)
                 .open(destination)?;
-            std::io::copy(&mut entry, &mut output)?;
-            output.flush()?;
-            output.sync_all()?;
+            kaelis_core::stream::copy_stream(&mut entry, &mut output)?;
             installed += 1;
             commit_paths.push(relative);
         }
@@ -841,7 +899,9 @@ pub async fn install_mrpack(
     if commit_paths.is_empty() {
         return Err(MrpackError::Empty);
     }
+    progress("Finalising…");
     transaction.commit(&commit_paths)?;
+    progress("Finishing…");
     Ok(installed)
 }
 
@@ -916,6 +976,13 @@ mod tests {
         writer
             .write_all(&serde_json::to_vec(&index).unwrap())
             .unwrap();
+        writer
+            .start_file(
+                "overrides/icon.png",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+        writer.write_all(b"pack-icon-bytes").unwrap();
         writer.finish().unwrap();
 
         let summary = read_pack_summary(&pack_path).unwrap();
@@ -924,6 +991,7 @@ mod tests {
         assert_eq!(summary.game_version, "1.21.1");
         assert_eq!(summary.loader, "fabric");
         assert_eq!(summary.mod_files, 1);
+        assert_eq!(summary.icon.as_deref(), Some(b"pack-icon-bytes".as_slice()));
     }
 
     #[test]

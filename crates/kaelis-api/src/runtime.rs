@@ -85,17 +85,29 @@ struct RuntimeDownload {
     size: u64,
 }
 
-fn runtime_platform() -> Result<&'static str, RuntimeInstallError> {
-    match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("windows", "x86_64") => Ok("windows-x64"),
-        ("windows", "x86") => Ok("windows-x86"),
-        ("windows", "aarch64") => Ok("windows-arm64"),
-        ("linux", "x86_64") => Ok("linux"),
-        ("linux", "x86") => Ok("linux-i386"),
-        ("macos", "x86_64") => Ok("mac-os"),
-        ("macos", "aarch64") => Ok("mac-os-arm64"),
-        _ => Err(RuntimeInstallError::Invalid("supported runtime platform")),
+/// Map a host OS/arch pair to a Mojang runtime catalogue key.
+///
+/// Split from [`runtime_platform`] so the whole table can be tested on every
+/// build, instead of a single hard-coded host assertion.
+fn platform_key(os: &str, arch: &str) -> Option<&'static str> {
+    match (os, arch) {
+        ("windows", "x86_64") => Some("windows-x64"),
+        ("windows", "x86") => Some("windows-x86"),
+        ("windows", "aarch64") => Some("windows-arm64"),
+        ("linux", "x86_64") => Some("linux"),
+        ("linux", "x86") => Some("linux-i386"),
+        ("macos", "x86_64") => Some("mac-os"),
+        ("macos", "aarch64") => Some("mac-os-arm64"),
+        _ => None,
     }
+}
+
+fn runtime_platform() -> Result<&'static str, RuntimeInstallError> {
+    // Mojang publishes no managed runtime for Linux on ARM; those users run a
+    // system JDK, which `resolve_java` finds on PATH or in a JDK folder.
+    platform_key(std::env::consts::OS, std::env::consts::ARCH).ok_or(RuntimeInstallError::Invalid(
+        "a Mojang-managed Java runtime",
+    ))
 }
 
 fn safe_runtime_path(root: &Path, relative: &str) -> Result<PathBuf, RuntimeInstallError> {
@@ -171,7 +183,7 @@ pub fn managed_java(root: &Path) -> Option<PathBuf> {
         };
         for version in versions.flatten() {
             let java = runtime_executable(&version.path());
-            if !java.is_file() {
+            if !is_executable(&java) {
                 continue;
             }
             let rank = version_rank(&version.file_name().to_string_lossy());
@@ -185,11 +197,11 @@ pub fn managed_java(root: &Path) -> Option<PathBuf> {
 
 /// Accept either a `java` executable or a JDK home directory in the editor.
 pub fn java_from_setting(path: &Path) -> Option<PathBuf> {
-    if path.is_file() {
+    if is_executable(path) {
         return Some(path.to_path_buf());
     }
     let nested = runtime_executable(path);
-    nested.is_file().then_some(nested)
+    is_executable(&nested).then_some(nested)
 }
 
 /// First `java` on `PATH`, used only when an instance has no managed runtime.
@@ -197,11 +209,130 @@ pub fn java_on_path() -> Option<PathBuf> {
     let value = std::env::var_os("PATH")?;
     std::env::split_paths(&value)
         .map(|directory| directory.join(java_binary_name()))
-        .find(|candidate| candidate.is_file())
+        .find(|candidate| is_executable(candidate))
+}
+
+/// A runnable file, including the Unix execute bit.
+fn is_executable(path: &Path) -> bool {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        return metadata.permissions().mode() & 0o111 != 0;
+    }
+    #[cfg(not(unix))]
+    true
+}
+
+/// JDK install roots per platform. A desktop shortcut, Dock launch, or menu
+/// entry does not inherit the shell `PATH`, so `java` on `PATH` alone is not
+/// enough on macOS and Linux.
+fn java_search_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    #[cfg(windows)]
+    {
+        for base in [
+            "C:\\Program Files\\Java",
+            "C:\\Program Files\\Eclipse Adoptium",
+            "C:\\Program Files\\Microsoft",
+            "C:\\Program Files\\Zulu",
+            "C:\\Program Files\\BellSoft",
+        ] {
+            roots.push(PathBuf::from(base));
+        }
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            roots.push(
+                PathBuf::from(local)
+                    .join("Programs")
+                    .join("Eclipse Adoptium"),
+            );
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        roots.push(PathBuf::from("/Library/Java/JavaVirtualMachines"));
+        roots.push(PathBuf::from("/System/Library/Java/JavaVirtualMachines"));
+        if let Some(home) = std::env::var_os("HOME") {
+            roots.push(PathBuf::from(home).join("Library/Java/JavaVirtualMachines"));
+        }
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        roots.push(PathBuf::from("/usr/lib/jvm"));
+        roots.push(PathBuf::from("/usr/java"));
+        roots.push(PathBuf::from("/opt/java"));
+        if let Some(home) = std::env::var_os("HOME") {
+            roots.push(PathBuf::from(home).join(".jdks"));
+        }
+    }
+    roots
+}
+
+/// Best system JDK when the launcher has not provisioned one.
+///
+/// Newest major version wins, so a machine with a leftover Java 8 next to a
+/// current JDK still launches modern Minecraft.
+pub fn system_java() -> Option<PathBuf> {
+    let mut best: Option<((u32, String), PathBuf)> = None;
+    for root in java_search_roots() {
+        let Ok(entries) = std::fs::read_dir(&root) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let directory = entry.path();
+            if !directory.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let major = java_major_hint(&name);
+            for candidate in [
+                // Plain JDK layout.
+                directory.join("bin").join(java_binary_name()),
+                // macOS bundles keep the JDK under Contents/Home.
+                directory
+                    .join("Contents")
+                    .join("Home")
+                    .join("bin")
+                    .join(java_binary_name()),
+            ] {
+                if !is_executable(&candidate) {
+                    continue;
+                }
+                let rank = (major, name.clone());
+                if best.as_ref().is_none_or(|(current, _)| rank > *current) {
+                    best = Some((rank, candidate));
+                }
+            }
+        }
+    }
+    best.map(|(_, java)| java)
+}
+
+/// Major version implied by an install directory name such as `jdk-21.0.5`,
+/// `temurin-17.jdk`, or `java-1.8.0-openjdk`. Returns 0 when no number exists.
+fn java_major_hint(name: &str) -> u32 {
+    let mut digits = String::new();
+    let mut best = 0;
+    for character in name.chars() {
+        if character.is_ascii_digit() {
+            digits.push(character);
+            continue;
+        }
+        if !digits.is_empty() {
+            best = best.max(digits.parse().unwrap_or(0));
+            digits.clear();
+        }
+    }
+    best.max(digits.parse().unwrap_or(0))
 }
 
 /// The Java this instance would actually start: the configured path, else its
-/// managed runtime, else `PATH`.
+/// managed runtime, else `PATH`, else an installed system JDK.
 pub fn resolve_java(instance: &Instance) -> Option<PathBuf> {
     instance
         .java_path
@@ -209,6 +340,7 @@ pub fn resolve_java(instance: &Instance) -> Option<PathBuf> {
         .and_then(java_from_setting)
         .or_else(|| managed_java(&instance.root))
         .or_else(java_on_path)
+        .or_else(system_java)
 }
 
 fn validate_runtime_name(name: &str) -> bool {
@@ -403,7 +535,23 @@ mod tests {
 
     #[test]
     fn maps_supported_host_targets_to_mojang_catalog_platforms() {
-        assert_eq!(runtime_platform().unwrap(), "windows-x64");
+        for (os, arch, expected) in [
+            ("windows", "x86_64", "windows-x64"),
+            ("windows", "x86", "windows-x86"),
+            ("windows", "aarch64", "windows-arm64"),
+            ("linux", "x86_64", "linux"),
+            ("linux", "x86", "linux-i386"),
+            ("macos", "x86_64", "mac-os"),
+            ("macos", "aarch64", "mac-os-arm64"),
+        ] {
+            assert_eq!(platform_key(os, arch), Some(expected), "{os}/{arch}");
+        }
+        assert_eq!(platform_key("freebsd", "x86_64"), None);
+        assert_eq!(platform_key("windows", "mips"), None);
+        // Mojang publishes no managed runtime for Linux on ARM.
+        assert_eq!(platform_key("linux", "aarch64"), None);
+        // The host itself must resolve on every supported target.
+        assert!(runtime_platform().is_ok());
     }
 
     #[test]
@@ -459,6 +607,15 @@ mod tests {
         assert_eq!(java_from_setting(&java), Some(java.clone()));
         assert_eq!(java_from_setting(&home.join("nope")), None);
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn reads_the_java_major_from_install_folder_names() {
+        assert_eq!(java_major_hint("jdk-21.0.5"), 21);
+        assert_eq!(java_major_hint("temurin-17.jdk"), 17);
+        assert_eq!(java_major_hint("java-1.8.0-openjdk"), 8);
+        assert_eq!(java_major_hint("zulu25"), 25);
+        assert_eq!(java_major_hint("latest"), 0);
     }
 
     #[test]

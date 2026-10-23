@@ -82,19 +82,27 @@ pub async fn repair_environment(
     }
     let fabric_family =
         loader.eq_ignore_ascii_case("fabric") || loader.eq_ignore_ascii_case("quilt");
-    // A modded instance is unusable without its loader, so provision Fabric
-    // before resolving any jars. The marker makes repeat calls network-free.
-    if loader.eq_ignore_ascii_case("fabric")
+    // A modded instance is unusable without its loader, so provision the
+    // Fabric-family loader before resolving any jars. The marker makes repeat
+    // calls network-free.
+    let loader_name = loader.to_ascii_lowercase();
+    if matches!(loader_name.as_str(), "fabric" | "quilt")
         && let Some(root) = mods_dir.parent()
     {
-        match crate::loader::ensure_installed(platforms.http(), root, game_version).await {
-            Ok(install) => report.notes.push(format!(
-                "Fabric loader {} is ready ({} libraries).",
+        let label = if loader_name == "quilt" {
+            "Quilt"
+        } else {
+            "Fabric"
+        };
+        match crate::loader::provision(platforms.http(), root, game_version, &loader_name).await {
+            Ok(Some(install)) => report.notes.push(format!(
+                "{label} loader {} is ready ({} libraries).",
                 install.loader_version, install.libraries
             )),
+            Ok(None) => {}
             Err(error) => report
                 .warnings
-                .push(format!("Fabric loader could not be provisioned: {error}")),
+                .push(format!("{label} loader could not be provisioned: {error}")),
         }
     }
     if let Some(detected) = modmeta::detect_loader(mods_dir)
@@ -312,7 +320,10 @@ fn freshness(path: &Path) -> (u128, u64) {
         .as_ref()
         .and_then(|metadata| metadata.modified().ok())
         .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|duration| duration.as_millis())
+        // Nanoseconds, not milliseconds: two jars extracted moments apart can
+        // share a millisecond, and losing that order makes the "newest wins"
+        // rule depend on compressed size instead of the actual write time.
+        .map(|duration| duration.as_nanos())
         .unwrap_or(0);
     let size = metadata.map(|metadata| metadata.len()).unwrap_or(0);
     (modified, size)
@@ -390,6 +401,10 @@ mod tests {
             .unwrap();
         writer.write_all(&vec![0_u8; padding]).unwrap();
         writer.finish().unwrap();
+        // Fixtures are created in a tight loop and Windows can give two files
+        // the same 100 ns timestamp. Duplicate resolution is defined by write
+        // order, so make that order observable on every filesystem.
+        std::thread::sleep(std::time::Duration::from_millis(20));
     }
 
     #[test]

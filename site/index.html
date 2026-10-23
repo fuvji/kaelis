@@ -3,912 +3,396 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Kaelis — Minecraft, composed. A native Rust launcher.</title>
-  <meta name="description" content="Download Kaelis for Windows 10 and 11. A native Rust Minecraft launcher with one content channel for mods, resource packs, shaders, and worlds across Modrinth and CurseForge.">
-  <meta name="theme-color" content="#070c16">
+  <title>Kaelis — native Minecraft launcher for Windows, macOS, and Linux</title>
+  <meta name="description" content="Kaelis is a native Rust Minecraft launcher. Instances, mods, resource packs, shaders, and modpacks in one fast workspace. No telemetry, no browser engine, no admin rights.">
+  <meta name="keywords" content="Minecraft launcher, Rust launcher, Fabric launcher, Quilt launcher, mod manager, modpack installer, macOS Minecraft launcher, Linux Minecraft launcher, Kaelis">
+  <meta name="author" content="Kaelis Labs">
+  <meta name="theme-color" content="#08090c">
+  <link rel="canonical" href="https://fuvji.github.io/kaelis/">
+  <meta property="og:site_name" content="Kaelis">
+  <meta property="og:locale" content="en_US">
   <meta property="og:title" content="Kaelis — Minecraft, composed.">
-  <meta property="og:description" content="Native Rust. One content channel. No telemetry. Download the Windows installer.">
+  <meta property="og:description" content="A native Rust launcher for Windows, macOS, and Linux. One workspace for instances, content, and accounts. Free and open source.">
   <meta property="og:type" content="website">
-  <meta property="og:image" content="assets/og-kaelis.jpg">
+  <meta property="og:url" content="https://fuvji.github.io/kaelis/">
+  <meta property="og:image" content="https://fuvji.github.io/kaelis/assets/og-kaelis.jpg">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:image" content="assets/og-kaelis.jpg">
+  <meta name="twitter:title" content="Kaelis — Minecraft, composed.">
+  <meta name="twitter:description" content="Native Rust Minecraft launcher for Windows, macOS, and Linux. Fast, local-first, no telemetry.">
+  <meta name="twitter:image" content="https://fuvji.github.io/kaelis/assets/og-kaelis.jpg">
   <link rel="icon" href="assets/kaelis-mark.svg" type="image/svg+xml">
-  <link rel="preload" href="media/kaelis-intro-poster.jpg" as="image">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/kaelis-touch.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preload" href="assets/app-overview.png" as="image" type="image/png" fetchpriority="high">
   <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      "name": "Kaelis",
-      "description": "A native Rust Minecraft launcher with one content channel for mods, resource packs, shaders, and worlds.",
-      "applicationCategory": "GameApplication",
-      "operatingSystem": "Windows 10, Windows 11",
-      "softwareVersion": "0.1.0",
-      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-      "downloadUrl": "downloads/Kaelis-Setup.exe",
-      "license": "https://opensource.org/licenses/MIT",
-      "author": { "@type": "Organization", "name": "Kaelis Labs" }
-    }
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://fuvji.github.io/kaelis/#app",
+        "name": "Kaelis",
+        "alternateName": "Kaelis Minecraft Launcher",
+        "description": "A native Rust Minecraft launcher with one workspace for instances, mods, resource packs, shaders, and modpacks.",
+        "applicationCategory": "GameApplication",
+        "applicationSubCategory": "Minecraft launcher",
+        "operatingSystem": "Windows 10, Windows 11, macOS 11, Linux",
+        "processorRequirements": "x86_64 or arm64",
+        "softwareVersion": "0.1.0",
+        "softwareRequirements": "Rust 1.85+ to build from source; Java is provisioned automatically",
+        "downloadUrl": "https://fuvji.github.io/kaelis/downloads/Kaelis-Portable.zip",
+        "installUrl": "https://fuvji.github.io/kaelis/#downloads",
+        "screenshot": "https://fuvji.github.io/kaelis/assets/app-overview.png",
+        "license": "https://opensource.org/licenses/MIT",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@id": "https://fuvji.github.io/kaelis/#org" },
+        "sameAs": ["https://github.com/fuvji/kaelis"]
+      },
+      {
+        "@type": "Organization",
+        "@id": "https://fuvji.github.io/kaelis/#org",
+        "name": "Kaelis Labs",
+        "url": "https://fuvji.github.io/kaelis/",
+        "logo": "https://fuvji.github.io/kaelis/assets/kaelis-mark.png",
+        "sameAs": ["https://github.com/fuvji/kaelis", "https://discord.gg/fvrdYzrQjq"]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://fuvji.github.io/kaelis/#site",
+        "url": "https://fuvji.github.io/kaelis/",
+        "name": "Kaelis",
+        "publisher": { "@id": "https://fuvji.github.io/kaelis/#org" }
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Is Kaelis free?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Yes. Kaelis is MIT licensed and free to use, modify, and redistribute." }
+          },
+          {
+            "@type": "Question",
+            "name": "Does Kaelis need a Microsoft account?",
+            "acceptedAnswer": { "@type": "Answer", "text": "No. Offline profiles work immediately, and Microsoft sign-in is optional." }
+          },
+          {
+            "@type": "Question",
+            "name": "Does Kaelis collect telemetry?",
+            "acceptedAnswer": { "@type": "Answer", "text": "No telemetry, no analytics, and no background services. The launcher only contacts the providers you use." }
+          },
+          {
+            "@type": "Question",
+            "name": "Which platforms are supported?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Windows 10 and 11 ship as an installer and a portable ZIP. macOS 11+ and Linux build from the same Rust workspace with one command." }
+          }
+        ]
+      }
+    ]
+  }
   </script>
   <style>
     :root {
       color-scheme: dark;
-      --bg: #060a12;
-      --bg-soft: #0a111d;
-      --surface: rgba(14, 22, 35, 0.82);
-      --surface-strong: #0f1929;
-      --border: rgba(122, 158, 198, 0.16);
-      --border-strong: rgba(122, 158, 198, 0.3);
-      --text: #edf4fc;
-      --muted: #8fa3bb;
-      --accent: #63c5ff;
-      --accent-soft: #a8e0ff;
-      --violet: #a79bff;
-      --mint: #7ee7a5;
-      --amber: #f3c879;
-      --radius-sm: 12px;
-      --radius-md: 18px;
-      --radius-lg: 24px;
-      --radius-xl: 32px;
-      --shadow: 0 28px 80px rgba(0, 0, 0, 0.45);
-      --max: 1160px;
+      --bg: #08090c;
+      --bg-soft: #0c0e12;
+      --glass: rgba(20, 23, 29, 0.62);
+      --glass-strong: rgba(24, 28, 35, 0.82);
+      --line: rgba(160, 172, 192, 0.14);
+      --line-strong: rgba(160, 172, 192, 0.28);
+      --text: #f1f4f8;
+      --muted: #98a0ae;
+      --accent: #3d82f6;
+      --accent-soft: #9dbeff;
+      --mint: #62d39a;
+      --amber: #f0c273;
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 18px;
+      --shadow: 0 20px 60px rgba(0, 0, 0, 0.48);
+      --max: 1120px;
     }
 
     * { box-sizing: border-box; }
-
     html { scroll-behavior: smooth; }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
     body {
       margin: 0;
       background:
-        radial-gradient(1000px 700px at 4% -12%, rgba(54, 145, 214, 0.4), transparent 66%),
-        radial-gradient(900px 620px at 100% 2%, rgba(126, 108, 255, 0.3), transparent 64%),
-        radial-gradient(1100px 760px at 55% 112%, rgba(35, 130, 118, 0.2), transparent 66%),
+        radial-gradient(900px 620px at 8% -8%, rgba(61, 130, 246, 0.18), transparent 62%),
+        radial-gradient(760px 520px at 100% 4%, rgba(61, 130, 246, 0.08), transparent 60%),
         var(--bg);
       color: var(--text);
-      font: 16px/1.6 "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font: 15px/1.65 "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
       -webkit-font-smoothing: antialiased;
-      overflow-x: hidden;
     }
 
     a { color: inherit; text-decoration: none; }
+    a:focus-visible, button:focus-visible, summary:focus-visible {
+      outline: 2px solid var(--accent-soft);
+      outline-offset: 3px;
+      border-radius: 6px;
+    }
+    img, video { display: block; max-width: 100%; height: auto; }
 
-    ::selection { background: rgba(99, 197, 255, 0.28); }
-
-    .shell {
-      width: min(var(--max), calc(100% - 40px));
-      margin-inline: auto;
+    /* Glass is decoration: without blur support, or when the visitor asks for
+       less transparency, the same panels render as flat surfaces. */
+    @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+      .nav, .shot, .card, .download, .checksums, .faq details { background: var(--glass-strong); }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      .nav { background: var(--bg-soft); backdrop-filter: none; -webkit-backdrop-filter: none; }
+      .shot, .card, .download, .checksums, .faq details {
+        background: var(--bg-soft);
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+      }
     }
 
+    .shell { width: min(100% - 40px, var(--max)); margin-inline: auto; }
+    .skip {
+      position: absolute; left: 12px; top: -48px; z-index: 30;
+      padding: 8px 12px; border-radius: var(--radius-sm);
+      background: var(--accent); color: #06080c; font-weight: 600;
+    }
+    .skip:focus { top: 12px; }
+
+    /* Navigation ------------------------------------------------------- */
     .nav {
-      position: sticky;
-      top: 0;
-      z-index: 20;
-      backdrop-filter: blur(22px) saturate(140%);
-      background: rgba(6, 10, 18, 0.72);
-      border-bottom: 1px solid rgba(122, 158, 198, 0.1);
+      position: sticky; top: 0; z-index: 20;
+      background: rgba(8, 9, 12, 0.74);
+      backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+      border-bottom: 1px solid var(--line);
     }
-
-    .nav-inner {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 24px;
-      padding: 14px 0;
-    }
-
-    .brand {
-      display: inline-flex;
-      align-items: center;
-      gap: 11px;
-      font-weight: 650;
-      letter-spacing: -0.02em;
-    }
-
-    .brand svg { width: 34px; height: 34px; flex: 0 0 auto; }
-    .mark { display: block; }
-
-    .nav-links {
-      display: flex;
-      align-items: center;
-      gap: 26px;
-      color: var(--muted);
-      font-size: 14px;
-    }
-
-    .nav-links a { transition: color 160ms ease; }
+    .nav-inner { display: flex; align-items: center; gap: 26px; height: 60px; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 650; letter-spacing: -0.01em; }
+    .mark { width: 28px; height: 28px; flex: none; transition: filter 0.18s ease; }
+    .brand:hover .mark { filter: brightness(1.12); }
+    .nav-links { display: flex; gap: 22px; margin-left: 12px; color: var(--muted); font-size: 14px; }
     .nav-links a:hover { color: var(--text); }
+    .nav-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+    .nav-actions .button { height: 32px; padding: 0 12px; font-size: 13.5px; }
+    .nav-actions .source { display: inline-flex; }
 
-    .nav-actions { display: flex; align-items: center; gap: 10px; }
-
+    /* Buttons ---------------------------------------------------------- */
     .button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      min-height: 42px;
-      padding: 0 18px;
-      border-radius: 999px;
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      height: 40px; padding: 0 18px;
+      border-radius: var(--radius-sm);
       border: 1px solid transparent;
-      font-size: 14px;
-      font-weight: 600;
-      letter-spacing: -0.01em;
-      transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+      font: inherit; font-size: 14px; font-weight: 600;
+      cursor: pointer; white-space: nowrap;
+      transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
     }
+    .button svg { width: 16px; height: 16px; }
+    .button-primary { background: var(--accent); color: #06080c; }
+    .button-primary:hover { background: #5a94ff; }
+    .button-secondary { background: rgba(255, 255, 255, 0.04); border-color: var(--line-strong); color: var(--text); }
+    .button-secondary:hover { background: rgba(255, 255, 255, 0.08); }
+    .button-ghost { background: transparent; color: var(--muted); }
+    .button-ghost:hover { color: var(--text); }
+    .button:active { transform: translateY(1px); }
 
-    .button:hover { transform: translateY(-1px); }
-
-    .button-primary {
-      background: linear-gradient(135deg, #9bdcff, #5cbcff 55%, #7c9dff);
-      color: #04101d;
-      box-shadow: 0 10px 32px rgba(80, 180, 255, 0.24);
-    }
-
-    .button-secondary {
-      border-color: var(--border-strong);
-      background: rgba(14, 22, 35, 0.7);
-      color: var(--text);
-    }
-
-    .button-secondary:hover { background: rgba(24, 37, 55, 0.9); }
-
-    main { position: relative; }
-
-    .hero {
-      display: grid;
-      grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
-      gap: 56px;
-      align-items: center;
-      padding: 84px 0 52px;
-    }
-
+    /* Hero ------------------------------------------------------------- */
+    .hero { display: grid; grid-template-columns: minmax(0, 1.02fr) minmax(0, 1fr); gap: 48px; align-items: center; padding: 72px 0 56px; }
     .eyebrow {
-      display: inline-flex;
-      align-items: center;
-      gap: 9px;
-      padding: 7px 13px;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      background: rgba(12, 20, 32, 0.72);
-      color: var(--muted);
-      font-size: 12px;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px;
+      background: var(--glass); font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
     }
+    .eyebrow i { width: 6px; height: 6px; border-radius: 50%; background: var(--mint); }
+    h1 { margin: 20px 0 14px; font-size: clamp(42px, 6vw, 68px); line-height: 0.98; letter-spacing: -0.035em; font-weight: 680; }
+    h1 em { font-style: normal; color: var(--accent-soft); }
+    .lede { margin: 0 0 26px; max-width: 46ch; color: var(--muted); font-size: 16.5px; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 26px; color: var(--muted); font-size: 12.5px; }
+    .meta b { color: var(--text); font-weight: 600; }
 
-    .eyebrow span {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--mint);
-      box-shadow: 0 0 12px var(--mint);
-    }
-
-    h1 {
-      margin: 22px 0 18px;
-      font-size: clamp(42px, 6.2vw, 74px);
-      line-height: 0.98;
-      letter-spacing: -0.055em;
-      font-weight: 680;
-    }
-
-    h1 em {
-      font-style: normal;
-      background: linear-gradient(120deg, #b5e7ff 10%, #66c8ff 48%, #a79bff 92%);
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-    }
-
-    .lede {
-      max-width: 54ch;
-      color: var(--muted);
-      font-size: 17px;
-      line-height: 1.72;
-    }
-
-    .hero-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 30px;
-    }
-
-    .hero-notes {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 18px;
-      margin-top: 26px;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .hero-notes span { display: inline-flex; align-items: center; gap: 7px; }
-    .hero-notes b { color: var(--text); font-weight: 600; }
-
-    .mock {
-      position: relative;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-xl);
-      background: linear-gradient(160deg, rgba(18, 29, 46, 0.94), rgba(8, 13, 22, 0.96));
+    .shot {
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-lg);
+      background: var(--glass);
+      backdrop-filter: blur(20px) saturate(140%);
+      -webkit-backdrop-filter: blur(20px) saturate(140%);
       box-shadow: var(--shadow);
-      overflow: hidden;
-      transform: perspective(1600px) rotateY(-4deg) rotateX(2deg);
-    }
-
-    .mock::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(520px 240px at 18% -10%, rgba(99, 197, 255, 0.16), transparent 70%);
-      pointer-events: none;
-    }
-
-    .mock-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 15px 20px;
-      border-bottom: 1px solid var(--border);
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    .mock-dots { display: flex; gap: 6px; }
-    .mock-dots i { width: 8px; height: 8px; border-radius: 50%; background: #253448; display: block; }
-
-    .mock-body { display: grid; grid-template-columns: 158px 1fr; min-height: 360px; }
-
-    .mock-side {
-      border-right: 1px solid var(--border);
-      padding: 16px 12px;
-      background: rgba(8, 13, 22, 0.5);
-    }
-
-    .mock-side small { display: block; margin: 0 8px 9px; font-size: 9px; letter-spacing: 0.16em; color: #5e728a; }
-
-    .mock-item {
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      padding: 8px 10px;
-      border-radius: 11px;
-      color: #8195ac;
-      font-size: 12px;
-    }
-
-    .mock-item.active {
-      color: var(--text);
-      background: rgba(33, 52, 76, 0.72);
-      border: 1px solid rgba(107, 152, 199, 0.24);
-    }
-
-    .mock-main { padding: 18px; }
-
-    .mock-hero {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      padding: 16px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      background: rgba(15, 24, 38, 0.72);
-    }
-
-    .mock-art {
-      width: 62px;
-      height: 62px;
-      border-radius: 17px;
-      background: linear-gradient(140deg, #16344d, #0d1d2d);
-      border: 1px solid rgba(112, 176, 228, 0.28);
-      display: grid;
-      place-items: center;
-      font-size: 22px;
-      color: var(--accent);
-    }
-
-    .mock-hero strong { display: block; font-size: 15px; letter-spacing: -0.02em; }
-    .mock-hero small { color: var(--muted); font-size: 10px; }
-    .mock-hero .pill { margin-left: auto; }
-
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      padding: 4px 9px;
-      border-radius: 999px;
-      background: rgba(99, 197, 255, 0.1);
-      border: 1px solid rgba(99, 197, 255, 0.24);
-      color: var(--accent-soft);
-      font-size: 9px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-
-    .mock-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 8px;
-      margin-top: 12px;
-    }
-
-    .mock-tile {
-      padding: 11px 10px;
-      border: 1px solid var(--border);
-      border-radius: 13px;
-      background: rgba(12, 20, 32, 0.74);
-    }
-
-    .mock-tile b { display: block; font-size: 17px; letter-spacing: -0.03em; }
-    .mock-tile span { color: var(--muted); font-size: 9px; }
-
-    .mock-rows { display: grid; gap: 8px; margin-top: 13px; }
-
-    .mock-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
-      border-radius: 13px;
-      background: rgba(11, 18, 29, 0.76);
-      border: 1px solid rgba(122, 158, 198, 0.1);
-    }
-
-    .mock-icon {
-      width: 28px;
-      height: 28px;
-      border-radius: 9px;
-      display: grid;
-      place-items: center;
-      font-size: 11px;
-      background: rgba(99, 197, 255, 0.12);
-      color: var(--accent);
-    }
-
-    .mock-row div { flex: 1; min-width: 0; }
-    .mock-row b { display: block; font-size: 11px; font-weight: 600; }
-    .mock-row span { display: block; font-size: 9px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .mock-install { color: var(--mint); font-size: 10px; flex: 0 0 auto; margin-left: auto; padding-left: 4px; }
-
-    section { padding: 60px 0; }
-
-    .section-head { max-width: 680px; margin-bottom: 38px; }
-
-    .kicker {
-      color: var(--accent);
-      font-size: 11px;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      font-weight: 650;
-    }
-
-    h2 {
-      margin: 12px 0 12px;
-      font-size: clamp(28px, 3.6vw, 42px);
-      line-height: 1.1;
-      letter-spacing: -0.04em;
-      font-weight: 660;
-    }
-
-    .section-head p { margin: 0; color: var(--muted); }
-
-    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-    .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-
-    .card {
-      position: relative;
-      padding: 24px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      background: linear-gradient(165deg, rgba(17, 27, 42, 0.84), rgba(9, 15, 24, 0.86));
-      overflow: hidden;
-    }
-
-    .card::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(280px 150px at 90% -10%, rgba(99, 197, 255, 0.09), transparent 70%);
-      pointer-events: none;
-    }
-
-    .icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 12px;
-      display: grid;
-      place-items: center;
-      margin-bottom: 18px;
-      background: rgba(99, 197, 255, 0.1);
-      border: 1px solid rgba(99, 197, 255, 0.18);
-      color: var(--accent);
-    }
-
-    .icon svg { width: 19px; height: 19px; }
-    .icon.violet { background: rgba(167, 155, 255, 0.1); border-color: rgba(167, 155, 255, 0.2); color: var(--violet); }
-    .icon.mint { background: rgba(126, 231, 165, 0.09); border-color: rgba(126, 231, 165, 0.2); color: var(--mint); }
-    .icon.amber { background: rgba(243, 200, 121, 0.09); border-color: rgba(243, 200, 121, 0.2); color: var(--amber); }
-
-    .card h3 { margin: 0 0 8px; font-size: 16px; letter-spacing: -0.02em; font-weight: 630; }
-    .card p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.65; }
-
-    .channel {
-      display: grid;
-      grid-template-columns: 0.92fr 1.08fr;
-      gap: 44px;
-      align-items: center;
-      padding: 36px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-xl);
-      background:
-        radial-gradient(620px 360px at 100% 0%, rgba(167, 155, 255, 0.12), transparent 70%),
-        linear-gradient(160deg, rgba(17, 27, 42, 0.9), rgba(8, 13, 22, 0.94));
-    }
-
-    .channel h2 { margin-top: 10px; }
-
-    .checks { display: grid; gap: 13px; margin-top: 22px; padding: 0; list-style: none; }
-    .checks li { display: flex; gap: 11px; color: var(--muted); font-size: 14px; }
-    .checks b { color: var(--text); font-weight: 600; }
-
-    .check {
-      flex: 0 0 auto;
-      width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      display: grid;
-      place-items: center;
-      background: rgba(126, 231, 165, 0.12);
-      border: 1px solid rgba(126, 231, 165, 0.26);
-      color: var(--mint);
-      font-size: 10px;
-      margin-top: 2px;
-    }
-
-    .channel-panel {
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      background: rgba(7, 12, 20, 0.72);
-      overflow: hidden;
-    }
-
-    .tabs {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 4px;
       padding: 8px;
-      border-bottom: 1px solid var(--border);
     }
+    .shot img { border-radius: calc(var(--radius-lg) - 6px); }
+    .shot figcaption { padding: 8px 6px 2px; color: var(--muted); font-size: 12px; }
 
-    .tab {
-      padding: 9px 8px;
-      border-radius: 10px;
-      text-align: center;
-      font-size: 10.5px;
-      color: var(--muted);
+    /* Sections --------------------------------------------------------- */
+    section { padding: 54px 0; }
+    .section-head { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 24px; }
+    .kicker { display: block; margin-bottom: 6px; color: var(--muted); font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; }
+    h2 { margin: 0; font-size: clamp(24px, 3vw, 32px); line-height: 1.15; letter-spacing: -0.02em; font-weight: 650; }
+    .section-head p { margin: 0; max-width: 44ch; color: var(--muted); font-size: 14px; }
+
+    .grid { display: grid; gap: 12px; }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--glass);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      padding: 18px;
+      /* A command block inside a grid card must scroll, not widen the page. */
+      min-width: 0;
     }
+    .card h3 { margin: 0 0 6px; font-size: 14.5px; font-weight: 620; letter-spacing: -0.01em; }
+    .card p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+    .card .tag { display: inline-block; margin-bottom: 10px; padding: 2px 8px; border: 1px solid var(--line-strong); border-radius: 999px; font-size: 11px; color: var(--muted); }
 
-    .tab.active { background: rgba(34, 53, 77, 0.8); color: var(--text); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); }
-
-    .tiles { display: grid; gap: 9px; padding: 14px; }
-    .tile {
-      display: grid;
-      grid-template-columns: 40px 1fr auto;
-      align-items: center;
-      gap: 11px;
-      padding: 11px;
-      border: 1px solid rgba(122, 158, 198, 0.1);
-      border-radius: 13px;
-      background: rgba(14, 22, 35, 0.66);
+    /* Previews --------------------------------------------------------- */
+    .previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .previews figure { margin: 0; }
+    .previews img {
+      width: 100%; aspect-ratio: 1440 / 900; object-fit: cover;
+      border: 1px solid var(--line); border-radius: var(--radius-md);
+      background: var(--bg-soft);
     }
+    .previews figcaption { margin-top: 8px; color: var(--muted); font-size: 12.5px; }
 
-    .tile .thumb {
-      width: 40px;
-      height: 40px;
-      border-radius: 11px;
-      display: grid;
-      place-items: center;
-      font-size: 15px;
-      background: linear-gradient(150deg, rgba(99, 197, 255, 0.16), rgba(167, 155, 255, 0.12));
-      border: 1px solid rgba(122, 158, 198, 0.16);
+    /* Downloads -------------------------------------------------------- */
+    .download-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .download {
+      display: flex; flex-direction: column; gap: 12px;
+      /* Long copy-paste commands scroll inside .cmd instead of widening the
+         grid, which used to push the whole page sideways on a phone. */
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--glass);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      padding: 20px;
     }
-
-    .tile b { display: block; font-size: 12px; font-weight: 600; }
-    .tile small { display: block; color: var(--muted); font-size: 10px; }
-
-    .tile .action {
-      font-size: 10px;
-      color: var(--accent-soft);
-      padding: 5px 10px;
-      border-radius: 999px;
-      border: 1px solid rgba(99, 197, 255, 0.22);
-      background: rgba(99, 197, 255, 0.08);
+    .download.primary { border-color: rgba(61, 130, 246, 0.42); background: rgba(24, 34, 52, 0.6); }
+    .download h3 { margin: 0; font-size: 16px; font-weight: 620; }
+    .download p { margin: 0; color: var(--muted); font-size: 13.5px; }
+    .download .facts { display: flex; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 12px; }
+    .download .button { align-self: start; }
+    .download .steps { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 12.5px; }
+    .download .steps li { display: flex; gap: 8px; }
+    .download .steps b { color: var(--text); font-weight: 600; }
+    .downloads-foot {
+      display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+      margin-top: 12px; padding: 12px 16px;
+      border: 1px solid var(--line); border-radius: var(--radius-md);
+      background: var(--glass); color: var(--muted); font-size: 12.5px;
     }
-
-    .tile .action.done { color: var(--mint); border-color: rgba(126, 231, 165, 0.22); background: rgba(126, 231, 165, 0.08); }
-
-    .split {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
+    .downloads-foot a { color: var(--accent-soft); }
+    .deps { display: flex; flex-wrap: wrap; gap: 6px; }
+    .deps span { padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 11.5px; color: var(--muted); }
+    code, pre { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    code { font-size: 12.5px; color: var(--accent-soft); }
+    .cmd {
+      display: flex; align-items: center; gap: 10px;
+      border: 1px solid var(--line); border-radius: var(--radius-sm);
+      background: rgba(8, 10, 14, 0.72);
+      padding: 9px 10px;
+      min-width: 0; max-width: 100%; overflow-x: auto;
     }
-
-    .list-card { padding: 26px; }
-    .list-card h3 { margin-bottom: 16px; }
-
-    .rows { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
-    .rows li { display: flex; justify-content: space-between; gap: 14px; padding-bottom: 12px; border-bottom: 1px solid rgba(122, 158, 198, 0.09); font-size: 13px; }
-    .rows li:last-child { border-bottom: 0; padding-bottom: 0; }
-    .rows span { color: var(--muted); text-align: right; }
-    .rows b { font-weight: 600; }
-
-    .quiet {
-      padding: 34px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-xl);
-      background:
-        radial-gradient(520px 280px at 0% 0%, rgba(126, 231, 165, 0.09), transparent 70%),
-        linear-gradient(160deg, rgba(15, 24, 38, 0.86), rgba(8, 13, 22, 0.9));
-      display: grid;
-      grid-template-columns: 1.15fr 0.85fr;
-      gap: 36px;
-      align-items: center;
+    .cmd code { min-width: 0; white-space: pre; color: var(--text); }
+    .cmd button {
+      margin-left: auto; flex: none;
+      border: 1px solid var(--line-strong); border-radius: 6px;
+      background: transparent; color: var(--muted);
+      font: inherit; font-size: 11.5px; padding: 4px 8px; cursor: pointer;
     }
-
-    .privacy-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
-    .privacy-badges span {
-      padding: 6px 11px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      background: rgba(11, 18, 29, 0.7);
-      color: var(--muted);
-      font-size: 11px;
+    .cmd button:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+    .checksums { margin-top: 12px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--glass); }
+    .checksums summary { cursor: pointer; padding: 14px 18px; font-size: 13.5px; color: var(--muted); }
+    .checksums summary:hover { color: var(--text); }
+    .checksums .body { padding: 0 18px 16px; display: grid; gap: 8px; }
+    .hash {
+      display: grid; grid-template-columns: minmax(0, 190px) minmax(0, 1fr);
+      gap: 10px; font-size: 12px; color: var(--muted); min-width: 0;
     }
+    .hash span { overflow-wrap: anywhere; }
+    .hash code { color: var(--text); overflow-wrap: anywhere; }
 
-    .cta {
-      text-align: center;
-      padding: 74px 24px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-xl);
-      background:
-        radial-gradient(700px 320px at 50% 0%, rgba(99, 197, 255, 0.16), transparent 70%),
-        linear-gradient(180deg, rgba(17, 27, 42, 0.9), rgba(8, 13, 22, 0.95));
-      box-shadow: var(--shadow);
-    }
-
-    .cta svg { width: 62px; height: 62px; margin: 0 auto 18px; }
-    .cta h2 { margin: 0 auto 12px; max-width: 18ch; }
-    .cta p { margin: 0 auto 26px; max-width: 56ch; color: var(--muted); }
-    .cta .hero-actions { justify-content: center; margin-top: 0; }
-
-    footer { padding: 46px 0 60px; border-top: 1px solid rgba(122, 158, 198, 0.1); margin-top: 60px; }
-
-    .footer-inner {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 28px;
-      align-items: flex-start;
-      justify-content: space-between;
-    }
-
-    .footer-brand { max-width: 360px; }
-    .footer-brand p { margin: 12px 0 0; color: var(--muted); font-size: 12.5px; }
-
-    .footer-links { display: flex; flex-wrap: wrap; gap: 34px; }
-    .footer-col { display: grid; gap: 8px; align-content: start; }
-    .footer-col small { color: #60748c; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 2px; }
-    .footer-col a { color: var(--muted); font-size: 12.5px; }
-    .footer-col a:hover { color: var(--text); }
-
-    .fineprint {
-      margin-top: 34px;
-      padding-top: 20px;
-      border-top: 1px solid rgba(122, 158, 198, 0.08);
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      justify-content: space-between;
-      color: #60748c;
-      font-size: 11px;
-    }
-
-    @media (max-width: 940px) {
-      .hero { grid-template-columns: 1fr; gap: 42px; padding-top: 64px; }
-      .hero > *, .mock { min-width: 0; }
-      .mock { transform: none; width: 100%; }
-      .grid-3 { grid-template-columns: repeat(2, 1fr); }
-      .channel, .quiet, .split { grid-template-columns: 1fr; }
-      .nav-links { display: none; }
-    }
-
-    @media (max-width: 620px) {
-      .shell { width: min(var(--max), calc(100% - 28px)); }
-      .hero { padding: 46px 0 50px; }
-      .hero > *, .mock, .mock-body, .mock-main, .mock-row > div { min-width: 0; }
-      .grid-3, .grid-2 { grid-template-columns: 1fr; }
-      .mock-body { grid-template-columns: 1fr; }
-      .mock-side { display: none; }
-      .mock-install { display: none; }
-      .channel { padding: 22px; }
-      .quiet { padding: 24px; }
-      .mock-grid { grid-template-columns: repeat(2, 1fr); }
-      .footer-inner { flex-direction: column; }
-      .nav-actions .button-discord { display: none; }
-      .nav-actions .button-primary { padding: 0 14px; }
-      .lede { font-size: 15.5px; }
-      .install-card, .community { padding: 22px; }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      * { scroll-behavior: auto !important; transition: none !important; }
-    }
-
-    /* Download and installation center */
-    section[id] { scroll-margin-top: 92px; }
-
-    .button-discord {
-      background: linear-gradient(135deg, #7d87ff, #5865f2 55%, #4752c4);
-      color: #fff;
-      box-shadow: 0 10px 30px rgba(88, 101, 242, 0.26);
-    }
-
-    .button-discord:hover { box-shadow: 0 14px 38px rgba(88, 101, 242, 0.34); }
-
-    .button svg { width: 17px; height: 17px; flex: 0 0 auto; }
-
-    .download-sub {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px 16px;
-      margin-top: 13px;
-      color: #6f849d;
-      font-size: 11.5px;
-    }
-
-    .download-sub b { color: #b7c8db; font-weight: 600; }
-
-    .version-tag {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 3px 8px;
-      border-radius: 999px;
-      border: 1px solid rgba(126, 231, 165, 0.24);
-      background: rgba(126, 231, 165, 0.08);
-      color: var(--mint);
-      font-size: 10px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-
-    .film-section { padding-top: 32px; }
-
+    /* Film ------------------------------------------------------------- */
     .film-frame {
       position: relative;
-      border: 1px solid var(--border-strong);
-      border-radius: var(--radius-xl);
-      background: #05090f;
-      box-shadow: 0 40px 110px rgba(0, 0, 0, 0.62), 0 0 0 1px rgba(99, 197, 255, 0.04);
-      overflow: hidden;
+      border: 1px solid var(--line-strong); border-radius: var(--radius-lg);
+      overflow: hidden; background: #05060a; box-shadow: var(--shadow); cursor: pointer;
     }
-
-    .film-frame::before {
-      content: "";
-      position: absolute;
-      inset: -1px;
-      border-radius: inherit;
-      padding: 1px;
-      background: linear-gradient(120deg, rgba(99, 197, 255, 0.45), rgba(167, 155, 255, 0.2) 42%, rgba(126, 231, 165, 0.22));
-      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-      -webkit-mask-composite: xor;
-      mask-composite: exclude;
-      pointer-events: none;
+    .film-frame:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
+    .film-frame video { width: 100%; display: block; }
+    .film-toggle {
+      position: absolute; right: 14px; bottom: 14px;
+      display: grid; place-items: center; width: 38px; height: 38px;
+      border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 50%;
+      background: rgba(8, 9, 12, 0.55); color: var(--text); cursor: pointer;
+      backdrop-filter: blur(8px); opacity: 0; transition: opacity 0.2s ease;
     }
-
-    .film-frame video {
-      display: block;
-      width: 100%;
-      height: auto;
-      aspect-ratio: 16 / 9;
-      background: #05090f;
+    .film-frame:hover .film-toggle, .film-toggle:focus-visible { opacity: 1; }
+    @media (hover: none) { .film-toggle { opacity: 1; } }
+    .film-toggle svg { width: 14px; height: 14px; }
+    .film-bar {
+      position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+      background: rgba(255, 255, 255, 0.08);
     }
-
-    .film-meta {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 10px 22px;
-      margin-top: 14px;
-      color: #6f849d;
-      font-size: 11.5px;
+    .film-bar i {
+      display: block; height: 100%; width: 0; background: var(--accent);
+      transition: width 0.3s linear;
     }
-
-    .film-meta span { display: inline-flex; align-items: center; gap: 7px; }
-    .film-meta i { width: 5px; height: 5px; border-radius: 50%; background: var(--mint); display: block; }
-    .film-meta a { color: var(--accent-soft); }
-
-    .transcript {
-      margin-top: 14px;
-      padding: 0;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      background: rgba(10, 17, 28, 0.54);
+    @media (prefers-reduced-motion: reduce) { .film-bar i { transition: none; } }
+    .film-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 12px; color: var(--muted); font-size: 12.5px; }
+    .film-sound {
+      display: inline-flex; align-items: center; gap: 7px;
+      border: 1px solid var(--line-strong); border-radius: 999px;
+      background: rgba(255, 255, 255, 0.03); color: var(--muted);
+      font: inherit; font-size: 12px; padding: 5px 11px; cursor: pointer;
     }
+    .film-sound:hover { color: var(--text); border-color: var(--accent); }
+    .film-sound[aria-pressed="true"] { color: var(--text); border-color: var(--accent); background: rgba(61, 130, 246, 0.12); }
+    .film-sound svg { width: 13px; height: 13px; }
 
-    .transcript summary {
-      padding: 13px 16px;
-      color: var(--muted);
-      font-size: 11.5px;
-      cursor: pointer;
+    /* FAQ -------------------------------------------------------------- */
+    .faq { display: grid; gap: 8px; }
+    .faq details { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--glass); padding: 0 16px; }
+    .faq summary { cursor: pointer; padding: 14px 0; font-size: 14px; font-weight: 560; list-style: none; display: flex; justify-content: space-between; gap: 12px; }
+    .faq summary::-webkit-details-marker { display: none; }
+    .faq summary::after { content: "+"; color: var(--muted); }
+    .faq details[open] summary::after { content: "–"; }
+    .faq p { margin: 0 0 14px; color: var(--muted); font-size: 13.5px; max-width: 72ch; }
+
+    /* Footer ----------------------------------------------------------- */
+    footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 36px 0 44px; color: var(--muted); font-size: 13px; }
+    .footer-inner { display: grid; grid-template-columns: 1.4fr repeat(3, minmax(0, 1fr)); gap: 28px; }
+    .footer-brand p { margin: 12px 0 0; max-width: 34ch; }
+    .footer-brand .mark { width: 22px; height: 22px; }
+    .footer-col { display: grid; gap: 7px; align-content: start; }
+    .footer-col small { color: var(--text); font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; }
+    .footer-col a:hover { color: var(--text); }
+    .legal { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px 22px; font-size: 12px; }
+
+    @media (max-width: 960px) {
+      .hero { grid-template-columns: 1fr; gap: 32px; padding: 44px 0 36px; }
+      .grid-3, .previews, .download-grid, .footer-inner { grid-template-columns: 1fr 1fr; }
+      .footer-brand { grid-column: 1 / -1; }
     }
-
-    .transcript p { padding: 0 16px 15px; margin: 0; color: var(--muted); font-size: 12px; }
-
-    .install-grid {
-      display: grid;
-      grid-template-columns: 1.15fr 0.85fr;
-      gap: 16px;
-    }
-
-    .install-card {
-      position: relative;
-      padding: 28px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      background: linear-gradient(165deg, rgba(17, 27, 42, 0.86), rgba(9, 15, 24, 0.9));
-      overflow: hidden;
-    }
-
-    .install-card.primary {
-      border-color: rgba(99, 197, 255, 0.3);
-      background:
-        radial-gradient(520px 240px at 92% -20%, rgba(99, 197, 255, 0.18), transparent 70%),
-        linear-gradient(165deg, rgba(18, 30, 47, 0.94), rgba(8, 14, 23, 0.94));
-    }
-
-    .install-card h3 { margin: 12px 0 7px; font-size: 21px; letter-spacing: -0.03em; }
-    .install-card p { margin: 0 0 20px; color: var(--muted); font-size: 13px; line-height: 1.65; max-width: 52ch; }
-
-    .install-card .button { width: 100%; }
-
-    .checksum {
-      margin-top: 14px;
-      border-top: 1px solid rgba(122, 158, 198, 0.1);
-      padding-top: 12px;
-    }
-
-    .checksum summary { color: #6f849d; font-size: 10.5px; cursor: pointer; }
-    .checksum code {
-      display: block;
-      margin-top: 9px;
-      padding: 9px 10px;
-      border: 1px solid rgba(122, 158, 198, 0.12);
-      border-radius: 8px;
-      background: rgba(4, 8, 14, 0.6);
-      color: #93a9c1;
-      font: 10px/1.5 Consolas, "SFMono-Regular", monospace;
-      overflow-wrap: anywhere;
-    }
-
-    .steps {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 14px;
-      margin: 24px 0 0;
-      padding: 0;
-      list-style: none;
-      counter-reset: step;
-    }
-
-    .steps li {
-      position: relative;
-      padding: 22px 22px 20px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      background: rgba(12, 20, 33, 0.55);
-      counter-increment: step;
-    }
-
-    .steps li::before {
-      content: "0" counter(step);
-      display: block;
-      margin-bottom: 13px;
-      color: var(--accent);
-      font-size: 11px;
-      font-weight: 650;
-      letter-spacing: 0.16em;
-    }
-
-    .steps b { display: block; margin-bottom: 5px; font-size: 14px; }
-    .steps span { color: var(--muted); font-size: 12px; line-height: 1.6; }
-
-    .requirements {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 18px;
-    }
-
-    .requirements span {
-      padding: 6px 11px;
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      background: rgba(11, 18, 29, 0.6);
-      color: var(--muted);
-      font-size: 10.5px;
-    }
-
-    .community {
-      display: grid;
-      grid-template-columns: 1.1fr 0.9fr;
-      gap: 34px;
-      align-items: center;
-      padding: 38px;
-      border: 1px solid rgba(125, 135, 255, 0.24);
-      border-radius: var(--radius-xl);
-      background:
-        radial-gradient(620px 340px at 0% 0%, rgba(88, 101, 242, 0.2), transparent 68%),
-        radial-gradient(520px 340px at 100% 100%, rgba(99, 197, 255, 0.1), transparent 70%),
-        linear-gradient(160deg, rgba(17, 27, 45, 0.92), rgba(8, 13, 22, 0.94));
-      box-shadow: var(--shadow);
-    }
-
-    .community h2 { margin-top: 10px; }
-    .community p { color: var(--muted); margin: 0 0 22px; max-width: 48ch; }
-
-    .community-panel {
-      padding: 22px;
-      border: 1px solid rgba(125, 135, 255, 0.24);
-      border-radius: var(--radius-lg);
-      background: rgba(8, 13, 24, 0.66);
-    }
-
-    .community-panel h3 { margin: 0 0 12px; font-size: 13px; letter-spacing: -0.01em; }
-    .community-panel ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
-    .community-panel li { display: flex; gap: 10px; color: var(--muted); font-size: 12px; }
-    .community-panel li::before { content: "+"; color: #8b95ff; font-weight: 700; }
-
-    .faq { display: grid; gap: 10px; max-width: 860px; }
-    .faq details {
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      background: rgba(11, 18, 29, 0.56);
-      padding: 0 18px;
-    }
-    .faq summary { padding: 16px 0; cursor: pointer; font-size: 13.5px; font-weight: 600; }
-    .faq details p { margin: 0 0 16px; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
-    .faq code { color: var(--accent-soft); font: 11px Consolas, monospace; }
-
-    @media (max-width: 940px) {
-      .install-grid, .community { grid-template-columns: 1fr; }
-      .steps { grid-template-columns: 1fr; }
-    }
-
-    @media (max-width: 620px) {
-      .nav-actions .button { padding: 0 14px; }
-      .nav-actions .button-secondary { display: none; }
-      .install-card, .community { padding: 22px; }
+    @media (max-width: 680px) {
+      .nav-links { display: none; }
+      .grid-3, .grid-2, .previews, .download-grid, .footer-inner { grid-template-columns: 1fr; }
+      .section-head { display: block; }
+      .section-head p { margin-top: 8px; }
+      .hash { grid-template-columns: minmax(0, 1fr); }
+      body { font-size: 14.5px; }
     }
   </style>
 </head>
 <body>
-  <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
-    <symbol id="kaelis-mark" viewBox="0 0 128 128">
-      <defs>
-        <linearGradient id="kaelis-plate" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#111c2d"/>
-          <stop offset="1" stop-color="#070c16"/>
-        </linearGradient>
-        <linearGradient id="kaelis-stroke" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#a8e0ff"/>
-          <stop offset="1" stop-color="#4fb8ff"/>
-        </linearGradient>
-      </defs>
-      <rect x="3" y="3" width="122" height="122" rx="34" fill="url(#kaelis-plate)" stroke="#37506d" stroke-width="2"/>
-      <path d="M40 36v56M40 64l36-28M40 64l36 28" fill="none" stroke="url(#kaelis-stroke)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-      <circle cx="90" cy="36" r="5" fill="#c3ecff"/>
-    </symbol>
-  </svg>
+  <a class="skip" href="#main">Skip to content</a>
+
   <header class="nav">
     <div class="shell nav-inner">
       <a class="brand" href="#top" aria-label="Kaelis home">
@@ -916,394 +400,318 @@
         <span>Kaelis</span>
       </a>
       <nav class="nav-links" aria-label="Primary">
-        <a href="#content">Library</a>
-        <a href="#film">Intro</a>
-        <a href="#install">Install</a>
-        <a href="#community">Community</a>
+        <a href="#features">Features</a>
+        <a href="#previews">Previews</a>
+        <a href="#downloads">Downloads</a>
+        <a href="#automation">Automate</a>
+        <a href="#faq">FAQ</a>
       </nav>
       <div class="nav-actions">
-        <a class="button button-secondary" href="https://github.com/epufk/kaelis" rel="noreferrer">Source</a>
-        <a class="button button-discord" href="https://discord.gg/fvrdYzrQjq" rel="noreferrer">Discord</a>
-        <a class="button button-primary" href="downloads/Kaelis-Setup.exe" download>Download</a>
+        <a class="button button-ghost source" href="https://github.com/fuvji/kaelis" rel="noreferrer">Source</a>
+        <a class="button button-primary" href="#downloads">Download</a>
       </div>
     </div>
   </header>
 
-  <main id="top">
-    <div class="shell">
+  <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+    <symbol id="kaelis-mark" viewBox="0 0 128 128">
+      <polygon points="12.8,17.92 115.2,64 38.4,62.656" fill="#70a5ff"/>
+      <polygon points="38.4,65.344 115.2,64 12.8,110.08" fill="#2e70e8"/>
+    </symbol>
+  </svg>
+
+  <main id="main">
+    <div class="shell" id="top">
       <section class="hero" aria-labelledby="hero-title">
         <div>
-          <span class="eyebrow"><span></span>v0.1.0 · Native Rust · Windows 10 &amp; 11</span>
+          <span class="eyebrow"><i></i>v0.1.0 · Windows · macOS · Linux</span>
           <h1 id="hero-title">Minecraft,<br><em>composed.</em></h1>
-          <p class="lede">
-            Kaelis is a local-first launcher that treats mods, resource packs, shaders, and worlds as one calm library. No browser engine, no telemetry, no noise — just a fast native workspace for the game you already love.
-          </p>
+          <p class="lede">Instances, mods, packs, shaders, and accounts in one native workspace. Files stay local. Nothing runs in the background.</p>
           <div class="hero-actions">
-            <a class="button button-primary" href="downloads/Kaelis-Setup.exe" download>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 19h16" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Download for Windows
+            <a class="button button-primary" href="#downloads">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5M5 19h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Download
             </a>
-            <a class="button button-secondary" href="#film">Watch the 27s film</a>
-            <a class="button button-discord" href="https://discord.gg/fvrdYzrQjq" rel="noreferrer">
-              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.5 5.6A16 16 0 0 0 15.4 4l-.5 1a14.6 14.6 0 0 0-5.8 0L8.6 4a16 16 0 0 0-4.1 1.6C1.9 9.6 1.2 13.5 1.5 17.4A16 16 0 0 0 6.4 20l1-1.6a10 10 0 0 1-1.6-.8l.4-.3a11.4 11.4 0 0 0 9.6 0l.4.3c-.5.3-1 .6-1.6.8l1 1.6a16 16 0 0 0 4.9-2.6c.4-4.5-.7-8.4-3-11.8ZM8.7 15.1c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2Zm6.6 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2Z"/></svg>
-              Discord
-            </a>
+            <a class="button button-secondary" href="#film">Watch the 26s film</a>
           </div>
-          <div class="download-sub">
-            <span><b>v0.1.0</b> installer</span>
-            <span><b>3.7 MB</b> download</span>
-            <span>Per-user · no admin rights</span>
-          </div>
-          <div class="hero-notes">
+          <div class="meta">
             <span><b>Rust</b> native core</span>
-            <span><b>2</b> content providers</span>
             <span><b>0</b> telemetry</span>
+            <span><b>No</b> admin rights</span>
           </div>
         </div>
+        <figure class="shot">
+          <img src="assets/app-overview.png" width="1080" height="700" alt="Kaelis Overview tab: active instance, content counts, account, and latest release" fetchpriority="high" decoding="async">
+          <figcaption>Overview — one screen for the whole library.</figcaption>
+        </figure>
+      </section>
 
-        <div class="mock" aria-label="Kaelis interface preview">
-          <div class="mock-bar">
-            <div class="mock-dots" aria-hidden="true"><i></i><i></i><i></i></div>
-            <span>Kaelis · Overview</span>
+      <section id="features" aria-labelledby="features-title">
+        <div class="section-head">
+          <div>
+            <span class="kicker">Everything in one place</span>
+            <h2 id="features-title">Seven things, done well.</h2>
           </div>
-          <div class="mock-body">
-            <aside class="mock-side">
-              <small>WORKSPACE</small>
-              <div class="mock-item active">◈ &nbsp;Overview</div>
-              <div class="mock-item">▣ &nbsp;Instances</div>
-              <div class="mock-item">✦ &nbsp;Content</div>
-              <div class="mock-item">◉ &nbsp;Account</div>
-              <div class="mock-item">⚙ &nbsp;Settings</div>
-            </aside>
-            <div class="mock-main">
-              <div class="mock-hero">
-                <div class="mock-art">◆</div>
-                <div>
-                  <strong>Fabulous 1.21.1</strong>
-                  <small>Fabric · 6 mods · ready</small>
-                </div>
-                <span class="pill">Ready</span>
-              </div>
-              <div class="mock-grid">
-                <div class="mock-tile"><b>6</b><span>Mods</span></div>
-                <div class="mock-tile"><b>3</b><span>Packs</span></div>
-                <div class="mock-tile"><b>2</b><span>Shaders</span></div>
-                <div class="mock-tile"><b>1</b><span>World</span></div>
-              </div>
-              <div class="mock-rows">
-                <div class="mock-row">
-                  <div class="mock-icon">✦</div>
-                  <div><b>Sodium</b><span>Rendering optimization · Modrinth</span></div>
-                  <span class="mock-install">Installed</span>
-                </div>
-                <div class="mock-row">
-                  <div class="mock-icon">◈</div>
-                  <div><b>Complementary</b><span>Shader pack · CurseForge</span></div>
-                  <span class="mock-install">Installed</span>
-                </div>
-                <div class="mock-row">
-                  <div class="mock-icon">▣</div>
-                  <div><b>Fresh Animations</b><span>Resource pack · Modrinth</span></div>
-                  <span class="mock-install">Installed</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <p>No wizards, no dashboards, no accounts to create.</p>
+        </div>
+        <div class="grid grid-3">
+          <article class="card">
+            <span class="tag">Content</span>
+            <h3>One content channel</h3>
+            <p>Mods, packs, shaders, and modpacks from Modrinth and CurseForge in one search.</p>
+          </article>
+          <article class="card">
+            <span class="tag">Updates</span>
+            <h3>Kept current, quietly</h3>
+            <p>One pass checks every installed mod. Stable stays stable, disabled stays disabled. Only file hashes leave.</p>
+          </article>
+          <article class="card">
+            <span class="tag">Files</span>
+            <h3>Add from anywhere</h3>
+            <p>Pick jars and packs, or drop files and folders on the window. Every file lands in the right place.</p>
+          </article>
+          <article class="card">
+            <span class="tag">Portable</span>
+            <h3>Instances branch and travel</h3>
+            <p>Duplicate an instance with or without worlds, or export it as one archive.</p>
+          </article>
+          <article class="card">
+            <span class="tag">Runtime</span>
+            <h3>Java handled</h3>
+            <p>The matching runtime is provisioned on first play. Existing JDKs are found too.</p>
+          </article>
+          <article class="card">
+            <span class="tag">Accounts</span>
+            <h3>Many, one click apart</h3>
+            <p>Microsoft and offline accounts side by side, each with its skin head. Switch in one click.</p>
+          </article>
+          <article class="card">
+            <span class="tag">Clean</span>
+            <h3>Nothing accumulates</h3>
+            <p>Logs, caches, and crash dumps vanish at launch and after every game. Saves, mods, and configs stay.</p>
+          </article>
         </div>
       </section>
 
-      <section id="film" class="film-section" aria-labelledby="film-title">
+      <section id="previews" aria-labelledby="previews-title">
         <div class="section-head">
-          <span class="kicker">The 27-second intro</span>
-          <h2 id="film-title">See the quiet.</h2>
-          <p>A short look at the library, the install channel, and the local-first design underneath Kaelis. Turn sound on.</p>
+          <div>
+            <span class="kicker">Previews</span>
+            <h2 id="previews-title">The actual interface.</h2>
+          </div>
+          <p>Captured from the shipped build, not a mockup.</p>
         </div>
-        <div class="film-frame">
-          <video controls preload="none" playsinline poster="media/kaelis-intro-poster.jpg" width="1920" height="1080">
-            <source src="media/kaelis-intro.mp4" type="video/mp4">
-            <track kind="captions" src="media/kaelis-intro.vtt" srclang="en" label="English" default>
-            Your browser cannot play this video. <a href="media/kaelis-intro.mp4">Download the MP4</a>.
-          </video>
+        <div class="previews">
+          <figure>
+            <img src="assets/app-content.png" width="1080" height="700" loading="lazy" decoding="async" alt="Content tab: Modrinth and CurseForge search on the left, installed mods on the right">
+            <figcaption>Content — search, install, erase.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/app-instances.png" width="1080" height="700" loading="lazy" decoding="async" alt="Instances tab: create a Minecraft instance, then import or export a portable archive">
+            <figcaption>Instances — create, import, launch.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/app-accounts.png" width="1080" height="700" loading="lazy" decoding="async" alt="Account tab: the active identity, three saved accounts each with a skin head, and one row to add another">
+            <figcaption>Accounts — every identity, one click to switch.</figcaption>
+          </figure>
+          <figure>
+            <img src="assets/app-settings.png" width="1080" height="700" loading="lazy" decoding="async" alt="Settings tab: heap, automation, integrations, and community links">
+            <figcaption>Settings — heap, automation, keys.</figcaption>
+          </figure>
         </div>
-        <div class="film-meta">
-          <span><i></i> 1920 × 1080 · 30 fps</span>
-          <span>Visual identity by Kaelis Labs</span>
-          <a href="#install">Download Kaelis →</a>
+      </section>
+
+      <section id="downloads" aria-labelledby="downloads-title">
+        <div class="section-head">
+          <div>
+            <span class="kicker">Downloads</span>
+            <h2 id="downloads-title">Pick your platform.</h2>
+          </div>
+          <p>All builds are the same Rust workspace. MIT licensed, no account needed.</p>
         </div>
-        <details class="transcript">
-          <summary>Read the transcript</summary>
-          <p>A quieter way to play. One native workspace for Minecraft. Every instance, one calm place. Every channel — mods, resource packs, shaders, and worlds. Modrinth and CurseForge, merged. Dependencies resolved, duplicates handled. Local-first. No telemetry. Your setup stays yours. Minecraft, composed. Download Kaelis for Windows 10 and 11.</p>
+        <div class="download-grid">
+          <article class="download primary">
+            <span class="tag" style="margin:0;color:var(--accent-soft);border-color:rgba(61,130,246,.4)">Recommended · Windows</span>
+            <h3>Windows portable ZIP</h3>
+            <p>One executable. Extract anywhere and run. Instances stay in your profile.</p>
+            <div class="facts">
+              <span><b data-release="exe-size">13.7 MB</b> app</span>
+              <span><b data-release="zip-size">6.7 MB</b> zip</span>
+              <span>Windows 10 / 11 · x64</span>
+              <span>No install</span>
+            </div>
+            <a class="button button-primary" href="downloads/Kaelis-Portable.zip" download>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5M5 19h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Download Kaelis-Portable.zip
+            </a>
+          </article>
+
+          <article class="download">
+            <span class="tag" style="margin:0">Installer · per-user</span>
+            <h3>Windows installer</h3>
+            <p>Per-user install, Start menu shortcut, clean uninstaller.</p>
+            <div class="facts">
+              <span><b data-release="setup-size">5.0 MB</b> setup</span>
+              <span>No admin rights</span>
+              <span>Clean uninstaller</span>
+            </div>
+            <a class="button button-secondary" href="downloads/Kaelis-Setup.exe" download>Download Kaelis-Setup.exe</a>
+          </article>
+
+          <article class="download">
+            <span class="tag" style="margin:0">macOS 11+</span>
+            <h3>macOS app bundle</h3>
+            <p>Universal binary. Ad-hoc signed, so the first launch is right-click → Open.</p>
+            <ul class="steps">
+              <li><b>1</b> Install Xcode command line tools</li>
+              <li><b>2</b> Run the bundler</li>
+              <li><b>3</b> Drag Kaelis.app to Applications</li>
+            </ul>
+            <div class="cmd">
+              <code id="build-macos">git clone https://github.com/fuvji/kaelis && cd kaelis && ./packaging/macos/bundle.sh --universal</code>
+              <button type="button" data-copy="build-macos">Copy</button>
+            </div>
+            <a class="button button-secondary" href="https://github.com/fuvji/kaelis/releases/latest" rel="noreferrer">Prebuilt from Releases ↗</a>
+          </article>
+
+          <article class="download">
+            <span class="tag" style="margin:0">Linux</span>
+            <h3>Linux install</h3>
+            <p>Per-user install with a desktop entry and icon. X11 and Wayland.</p>
+            <div class="deps">
+              <span>Debian / Ubuntu: libgtk-3-dev libayatana-appindicator3-dev</span>
+              <span>Fedora: gtk3-devel libappindicator-gtk3-devel</span>
+              <span>Arch: gtk3 libayatana-appindicator</span>
+            </div>
+            <div class="cmd">
+              <code id="build-linux">git clone https://github.com/fuvji/kaelis && cd kaelis && ./packaging/linux/install.sh</code>
+              <button type="button" data-copy="build-linux">Copy</button>
+            </div>
+            <a class="button button-secondary" href="https://github.com/fuvji/kaelis/releases/latest" rel="noreferrer">Kaelis-linux-x64.tar.gz ↗</a>
+          </article>
+        </div>
+
+        <div class="downloads-foot">
+          <span>Every tag builds all three platforms in CI and publishes checksums.</span>
+          <a href="downloads/KAELIS-LINKS.txt">URL &amp; install index ↗</a>
+          <a href="https://github.com/fuvji/kaelis/releases/latest" rel="noreferrer">All releases ↗</a>
+          <a href="https://github.com/fuvji/kaelis/actions/workflows/release.yml" rel="noreferrer">Build log ↗</a>
+        </div>
+
+        <details class="checksums">
+          <summary>Checksums and build provenance</summary>
+          <div class="body">
+            <p style="margin:0;color:var(--muted);font-size:13px">Every artifact is hashed at release time. Published files: <a href="downloads/SHA256SUMS.txt" style="color:var(--accent-soft)">SHA256SUMS.txt</a> and the generated <a href="downloads/KAELIS-LINKS.txt" style="color:var(--accent-soft)">URL &amp; installation index</a>.</p>
+            <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">f78df36e89b1578a0b24c179187a5a00e7b6d357aed6873297887b051c25aaca</code></div>
+            <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">830d4d8f22fb6bc84b47126ff61e11585d22d3f5184f394d006be7649d9312c5</code></div>
+            <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">5d916bab9f4dc0f5a1b4d017edce85b205dece71f6e1890dd15d45b00937913e</code></div>
+            <div class="hash"><span>Verify on Linux / macOS</span><code>shasum -a 256 -c SHA256SUMS.txt</code></div>
+          </div>
         </details>
       </section>
 
-      <section id="install" aria-labelledby="install-title">
+      <section id="film" aria-labelledby="film-title">
         <div class="section-head">
-          <span class="kicker">Install center</span>
-          <h2 id="install-title">Download. Run. Play.</h2>
-          <p>The Windows installer is per-user, so it needs no administrator rights and leaves your existing Minecraft files alone. Prefer a single file? The portable ZIP runs from anywhere.</p>
-        </div>
-        <div class="install-grid">
-          <article class="install-card primary">
-            <span class="version-tag">Recommended · v0.1.0</span>
-            <h3>Windows installer</h3>
-            <p>Installs to your local AppData folder, creates Start menu and desktop shortcuts, and registers a clean uninstaller. No administrator prompt.</p>
-            <a class="button button-primary" href="downloads/Kaelis-Setup.exe" download>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 19h16" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Download Kaelis-Setup.exe
-            </a>
-            <div class="download-sub">
-              <span><b>3.7 MB</b> setup</span>
-              <span>Windows 10 / 11, x64</span>
-              <span>Installer + clean uninstaller</span>
-            </div>
-            <details class="checksum">
-              <summary>SHA-256 checksum</summary>
-              <code>32f52c94ab4bea4e6bc8a21866acfc4a663110f5856453301ce0bd84f77440de</code>
-            </details>
-          </article>
-          <article class="install-card">
-            <span class="version-tag" style="border-color:rgba(167,155,255,.26);background:rgba(167,155,255,.08);color:var(--violet)">Portable</span>
-            <h3>No-install ZIP</h3>
-            <p>One executable, a README, and the MIT license. Extract anywhere and run <code style="color:var(--accent-soft)">Kaelis.exe</code>. Instances still live in your user profile.</p>
-            <a class="button button-secondary" href="downloads/Kaelis-Portable.zip" download>Download portable ZIP</a>
-            <div class="download-sub">
-              <span><b>4.8 MB</b> zip</span>
-              <span>Kaelis.exe · 9.4 MB</span>
-            </div>
-            <details class="checksum">
-              <summary>SHA-256 checksum</summary>
-              <code>9ad398fe0822a0616afce632635030dd4b9b40493980e2c6fd214ed335869917</code>
-            </details>
-          </article>
-        </div>
-        <ol class="steps">
-          <li><b>Run the installer</b><span>Choose a folder or keep the per-user default. Windows SmartScreen may ask once because the build is not code-signed; choose “More info → Run anyway” only if you downloaded it here.</span></li>
-          <li><b>Create an instance</b><span>Pick a Minecraft version and a loader. Kaelis provisions the matching Java runtime and writes the instance as plain local JSON.</span></li>
-          <li><b>Open the install channel</b><span>Search Modrinth and CurseForge together, choose Mods, Resource packs, Shaders, or Worlds, then install straight into the selected instance.</span></li>
-        </ol>
-        <div class="requirements">
-          <span>Windows 10 1809+ or Windows 11</span>
-          <span>x64 desktop</span>
-          <span>~250 MB free for the app and runtime</span>
-          <span>Internet for game files and content</span>
-          <span>No Microsoft account needed for offline profiles</span>
-        </div>
-      </section>
-
-      <section id="content" aria-labelledby="content-title">
-        <div class="section-head">
-          <span class="kicker">One library</span>
-          <h2 id="content-title">Every kind of content, one install channel.</h2>
-          <p>The content studio is not just a mod browser. Choose a channel, search both providers, preview the project, and install straight into the selected instance.</p>
-        </div>
-        <div class="channel">
           <div>
-            <span class="kicker">Install channel</span>
-            <h2>Pick the channel. Kaelis handles the rest.</h2>
-            <ul class="checks">
-              <li><span class="check">✓</span><span><b>Mods, resource packs, shaders, and worlds</b> each route to the correct instance folder.</span></li>
-              <li><span class="check">✓</span><span><b>Modrinth and CurseForge</b> results merge into one ranked list with provider labels.</span></li>
-              <li><span class="check">✓</span><span><b>Dependency graphs</b> resolve breadth-first with cycle and budget guards.</span></li>
-              <li><span class="check">✓</span><span><b>Duplicate control</b> disables older jars after an install only when every other provided id remains satisfied.</span></li>
-              <li><span class="check">✓</span><span><b>Previews and metadata</b> show icons, authors, categories, downloads, versions, and side support before you commit.</span></li>
-            </ul>
+            <span class="kicker">26 seconds</span>
+            <h2 id="film-title">A quiet tour.</h2>
           </div>
-          <div class="channel-panel" aria-label="Content channel preview">
-            <div class="tabs">
-              <div class="tab active">Mods</div>
-              <div class="tab">Packs</div>
-              <div class="tab">Shaders</div>
-              <div class="tab">Worlds</div>
-            </div>
-            <div class="tiles">
-              <div class="tile">
-                <div class="thumb">✦</div>
-                <div><b>Sodium</b><small>Modrinth · 1.21.1 · Fabric</small></div>
-                <span class="action done">Installed</span>
-              </div>
-              <div class="tile">
-                <div class="thumb">◈</div>
-                <div><b>Iris Shaders</b><small>Modrinth · 1.21.1 · Fabric</small></div>
-                <span class="action">Install</span>
-              </div>
-              <div class="tile">
-                <div class="thumb">▣</div>
-                <div><b>Fresh Animations</b><small>CurseForge · resource pack</small></div>
-                <span class="action">Install</span>
-              </div>
-              <div class="tile">
-                <div class="thumb">◍</div>
-                <div><b>Complementary Reimagined</b><small>CurseForge · shader pack</small></div>
-                <span class="action">Install</span>
-              </div>
-            </div>
-          </div>
+          <p>One workspace, every channel, one click from launch.</p>
         </div>
-      </section>
-
-      <section id="performance" aria-labelledby="performance-title">
-        <div class="section-head">
-          <span class="kicker">Engineered small</span>
-          <h2 id="performance-title">Fast because it is native.</h2>
-          <p>Kaelis is a Rust workspace with a lightweight egui interface. There is no bundled browser, no JavaScript runtime, and no background analytics pipeline.</p>
+        <div class="film-frame" data-film>
+          <video id="kaelis-film" muted loop playsinline preload="metadata" poster="media/kaelis-intro-poster.jpg" width="1920" height="1080" aria-label="Kaelis in 26 seconds">
+            <source src="media/kaelis-intro.mp4" type="video/mp4">
+            <track kind="captions" src="media/kaelis-intro.vtt" srclang="en" label="English">
+            Your browser cannot play this video. <a href="media/kaelis-intro.mp4">Download the MP4</a>.
+          </video>
+          <button class="film-toggle" type="button" data-film-toggle aria-label="Play film">
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2.8 13 8l-9 5.2z"/></svg>
+          </button>
+          <span class="film-bar" aria-hidden="true"><i data-film-progress></i></span>
         </div>
-        <div class="grid-3">
-          <article class="card">
-            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" stroke-linejoin="round"/></svg></div>
-            <h3>Native event loop</h3>
-            <p>The UI paints only when something changes. When the window loses focus it can idle instead of burning frames in the background.</p>
-          </article>
-          <article class="card">
-            <div class="icon violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M4 12h10M4 17h13" stroke-linecap="round"/></svg></div>
-            <h3>Bounded work</h3>
-            <p>Search is debounced, thumbnails decode under strict pixel and byte limits, and dependency resolution has a hard request budget.</p>
-          </article>
-          <article class="card">
-            <div class="icon mint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m12 3 8 4v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7l8-4Z" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-            <h3>Managed runtime</h3>
-            <p>Kaelis provisions a matching Java runtime for the instance, so a fresh machine does not need a hand-built Java setup.</p>
-          </article>
-          <article class="card">
-            <div class="icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2" stroke-linecap="round"/></svg></div>
-            <h3>Parallel transfers</h3>
-            <p>Assets and libraries download through a bounded concurrent queue with retries and checksum verification, not a serial crawl.</p>
-          </article>
-          <article class="card">
-            <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 5h6v6H5zM13 5h6v6h-6zM5 13h6v6H5zM13 13h6v6h-6z"/></svg></div>
-            <h3>Compact by default</h3>
-            <p>Release builds use fat LTO, one codegen unit, symbol stripping, and abort-on-panic. The result is a small single executable.</p>
-          </article>
-          <article class="card">
-            <div class="icon violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7 4h10v4H7zM5 10h14v10H5z"/><path d="M9 14h6" stroke-linecap="round"/></svg></div>
-            <h3>Readable state</h3>
-            <p>Instances are plain JSON with atomic saves. No database daemon, opaque cache, or migration service sits between you and your setup.</p>
-          </article>
+        <div class="film-meta">
+          <span>1080p60 · 5.2 MB</span>
+          <span>Score</span>
+          <button class="film-sound" type="button" data-film-sound aria-pressed="false">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2.5 6h2l3-2.5v9L4.5 10h-2z" stroke-linejoin="round"/><path d="M10.8 6.2a2.6 2.6 0 0 1 0 3.6M12.6 4.6a5.1 5.1 0 0 1 0 6.8" stroke-linecap="round"/></svg>
+            <span data-film-sound-label>Sound off</span>
+          </button>
+          <a href="https://github.com/fuvji/kaelis" rel="noreferrer" style="color:var(--accent-soft)">Source on GitHub ↗</a>
         </div>
       </section>
 
       <section id="automation" aria-labelledby="automation-title">
         <div class="section-head">
-          <span class="kicker">Quiet automation</span>
-          <h2 id="automation-title">The maintenance you should not have to remember.</h2>
-          <p>Automation is explicit, inspectable, and off the critical path. Kaelis never silently changes an instance without a clear rule you can disable.</p>
-        </div>
-        <div class="split">
-          <article class="card list-card">
-            <div class="icon mint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 9M20 12a8 8 0 0 1-13.7 5.6L4 15" stroke-linecap="round"/><path d="M20 4v5h-5M4 20v-5h5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-            <h3>Repair before launch</h3>
-            <ul class="rows">
-              <li><b>Missing mod ids</b><span>Resolved on Modrinth</span></li>
-              <li><b>Dependency graph</b><span>Installed in one pass</span></li>
-              <li><b>Fabric API modules</b><span>Provisioned when absent</span></li>
-              <li><b>Failed resolution</b><span>Reported, never hidden</span></li>
-            </ul>
-          </article>
-          <article class="card list-card">
-            <div class="icon amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18" stroke-linecap="round"/><circle cx="12" cy="12" r="3"/></svg></div>
-            <h3>Duplicate control</h3>
-            <ul class="rows">
-              <li><b>Same top-level mod id</b><span>Newest jar wins</span></li>
-              <li><b>Older duplicate</b><span>Disabled, not deleted</span></li>
-              <li><b>Safety proof</b><span>Every other id still satisfied</span></li>
-              <li><b>Manual override</b><span>Always available</span></li>
-            </ul>
-          </article>
-        </div>
-      </section>
-
-      <section id="privacy" aria-labelledby="privacy-title">
-        <div class="quiet">
           <div>
-            <span class="kicker">Local-first</span>
-            <h2 id="privacy-title">Your setup stays yours.</h2>
-            <p class="lede" style="font-size:15px">
-              Instance state is local. Logs live in a bounded in-memory ring and disappear when Kaelis closes. Refresh tokens go to the operating-system credential store, never to a file in your instance folder.
-            </p>
-            <div class="privacy-badges">
-              <span>No telemetry</span>
-              <span>No analytics</span>
-              <span>No cloud sync</span>
-              <span>No background uploader</span>
+            <span class="kicker">Automation</span>
+            <h2 id="automation-title">Drive it from a script.</h2>
+          </div>
+          <p>One JSON document per call. Stable field names, no window, no scraping.</p>
+        </div>
+        <div class="grid grid-3">
+          <div class="card">
+            <span class="tag">Read</span>
+            <h3>Inventory</h3>
+            <div class="cmd">
+              <code id="auto-list">kaelis --list-instances --json</code>
+              <button type="button" data-copy="auto-list">Copy</button>
             </div>
           </div>
-          <div class="card list-card">
-            <h3>Account, without the clutter</h3>
-            <ul class="rows">
-              <li><b>Microsoft sign-in</b><span>Device-code OAuth</span></li>
-              <li><b>Offline profile</b><span>Local UUID, clearly labelled</span></li>
-              <li><b>Profile head</b><span>In memory only</span></li>
-              <li><b>Token storage</b><span>OS credential vault</span></li>
-              <li><b>One identity</b><span>Switch deliberately</span></li>
-            </ul>
-          </div>
-        </div>
-      </section>
-
-      <section id="community" aria-labelledby="community-title">
-        <div class="community">
-          <div>
-            <span class="kicker">Community</span>
-            <h2 id="community-title">Build the quiet together.</h2>
-            <p>Meet other players, share instance recipes, report rough edges, and follow the next build. The Discord is the fastest place to reach the people making Kaelis.</p>
-            <div class="hero-actions" style="margin-top:0">
-              <a class="button button-discord" href="https://discord.gg/fvrdYzrQjq" rel="noreferrer">
-                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.5 5.6A16 16 0 0 0 15.4 4l-.5 1a14.6 14.6 0 0 0-5.8 0L8.6 4a16 16 0 0 0-4.1 1.6C1.9 9.6 1.2 13.5 1.5 17.4A16 16 0 0 0 6.4 20l1-1.6a10 10 0 0 1-1.6-.8l.4-.3a11.4 11.4 0 0 0 9.6 0l.4.3c-.5.3-1 .6-1.6.8l1 1.6a16 16 0 0 0 4.9-2.6c.4-4.5-.7-8.4-3-11.8ZM8.7 15.1c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2Zm6.6 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2Z"/></svg>
-                Join discord.gg/fvrdYzrQjq
-              </a>
-              <a class="button button-secondary" href="https://github.com/epufk/kaelis" rel="noreferrer">Follow the source</a>
+          <div class="card">
+            <span class="tag">Read</span>
+            <h3>Environment</h3>
+            <div class="cmd">
+              <code id="auto-status">kaelis --status --json</code>
+              <button type="button" data-copy="auto-status">Copy</button>
             </div>
           </div>
-          <div class="community-panel">
-            <h3>What lives in the server</h3>
-            <ul>
-              <li>Build announcements and release notes</li>
-              <li>Instance and modpack recipes from other players</li>
-              <li>Bug reports with a direct line to the maintainer</li>
-              <li>Early screenshots of the next interface pass</li>
-            </ul>
+          <div class="card">
+            <span class="tag">Write</span>
+            <h3>Launch or install</h3>
+            <div class="cmd">
+              <code id="auto-play">kaelis --play &lt;instance&gt; --offline Steve</code>
+              <button type="button" data-copy="auto-play">Copy</button>
+            </div>
           </div>
+        </div>
+        <div class="downloads-foot">
+          <span>Same commands power CI, shortcuts, and agent tooling: an MCP server can wrap the CLI without touching the GUI.</span>
+          <a href="https://github.com/fuvji/kaelis#command-line" rel="noreferrer">Command reference ↗</a>
         </div>
       </section>
 
       <section id="faq" aria-labelledby="faq-title">
         <div class="section-head">
-          <span class="kicker">Straight answers</span>
-          <h2 id="faq-title">Before you install.</h2>
+          <div>
+            <span class="kicker">Straight answers</span>
+            <h2 id="faq-title">Before you install.</h2>
+          </div>
         </div>
         <div class="faq">
           <details>
             <summary>Is Kaelis free?</summary>
-            <p>Yes. The launcher is MIT licensed and the full source is on GitHub. There is no subscription, telemetry, or upsell inside the app. An account is only needed if you want to join online-mode servers.</p>
+            <p>Yes. MIT licensed, free to use, modify, and redistribute. There is no paid tier and no account to create.</p>
           </details>
           <details>
-            <summary>Can I sign in with my Microsoft account?</summary>
-            <p>Yes. Kaelis uses Microsoft's public-client device-code flow and keeps the refresh token in Windows Credential Manager. Because each launcher must own its Microsoft Entra application, add a public-client ID in <code>Settings → Integrations</code> first; the Account panel links to the exact app-registration steps. Offline profiles work immediately without any setup.</p>
+            <summary>Does it need a Microsoft account?</summary>
+            <p>No. Offline profiles work immediately and show the premium skin that owns the name. Microsoft sign-in is optional and stores its refresh token in the OS keychain.</p>
           </details>
           <details>
-            <summary>Why do CurseForge results ask for a key?</summary>
-            <p>CurseForge requires every client to send its own API key. A free key from <code>console.curseforge.com</code> enables those results. Modrinth works without a key, and local file or direct-URL installs work without either provider.</p>
+            <summary>Does it collect anything?</summary>
+            <p>No telemetry, no analytics, no background services. Kaelis contacts Mojang, Modrinth, and CurseForge only for the files you ask for.</p>
           </details>
           <details>
-            <summary>Does Kaelis replace the official Minecraft launcher?</summary>
-            <p>No. Kaelis is an independent launcher and is not affiliated with Mojang Studios or Microsoft. It provisions game files from Mojang's official metadata and uses your own Microsoft account when you choose to sign in.</p>
+            <summary>Why does CurseForge ask for a key?</summary>
+            <p>CurseForge requires every client to send its own API key. A free key enables those results; Modrinth and local files work without one.</p>
           </details>
           <details>
-            <summary>Is the installer signed?</summary>
-            <p>The build carries product metadata but is not code-signed with a commercial certificate, so Windows SmartScreen may show a warning. Verify the SHA-256 checksum above and only run a copy downloaded from this page or the official GitHub release. The repository includes the exact NSIS installer script for auditing.</p>
+            <summary>Is the Windows build signed?</summary>
+            <p>The installer is not code-signed with a commercial certificate, so SmartScreen may ask once. Verify the SHA-256 checksum above and only run a copy from this page or the GitHub release.</p>
           </details>
-        </div>
-      </section>
-
-      <section aria-label="Get Kaelis">
-        <div class="cta">
-          <svg class="mark" aria-hidden="true"><use href="#kaelis-mark"/></svg>
-          <h2>Build a library that feels calm.</h2>
-          <p>Download the Windows installer, or run the portable build from anywhere. The source is open if you want to see exactly how it works.</p>
-          <div class="hero-actions">
-            <a class="button button-primary" href="downloads/Kaelis-Setup.exe" download>Download for Windows</a>
-            <a class="button button-discord" href="https://discord.gg/fvrdYzrQjq" rel="noreferrer">Join the Discord</a>
-            <a class="button button-secondary" href="https://github.com/epufk/kaelis" rel="noreferrer">View repository</a>
-          </div>
+          <details>
+            <summary>Can I run it without installing?</summary>
+            <p>Yes. Use the portable ZIP. Set <code>KAELIS_DATA_DIR</code> to keep instances and settings beside the executable.</p>
+          </details>
         </div>
       </section>
     </div>
@@ -1313,41 +721,151 @@
     <div class="shell">
       <div class="footer-inner">
         <div class="footer-brand">
-          <a class="brand" href="#top">
+          <a class="brand" href="#top" aria-label="Kaelis home">
             <svg class="mark" aria-hidden="true"><use href="#kaelis-mark"/></svg>
             <span>Kaelis</span>
           </a>
-          <p>A native Minecraft workspace by Kaelis Labs. Built in Rust by founder <a href="https://github.com/epufk" rel="noreferrer" style="color:var(--text)">@epufk</a>.</p>
+          <p>A native Minecraft workspace by Kaelis Labs. Built in Rust by <a href="https://github.com/fuvji" rel="noreferrer" style="color:var(--text)">@epufk</a>.</p>
         </div>
-        <div class="footer-links">
-          <div class="footer-col">
-            <small>Product</small>
-            <a href="#content">Content library</a>
-            <a href="#install">Install center</a>
-            <a href="#film">Intro film</a>
-            <a href="#faq">FAQ</a>
-          </div>
-          <div class="footer-col">
-            <small>Download</small>
-            <a href="downloads/Kaelis-Setup.exe" download>Windows installer</a>
-            <a href="downloads/Kaelis-Portable.zip" download>Portable ZIP</a>
-            <a href="downloads/Kaelis.exe" download>Kaelis.exe</a>
-            <a href="https://github.com/epufk/kaelis/releases" rel="noreferrer">All releases</a>
-          </div>
-          <div class="footer-col">
-            <small>Project</small>
-            <a href="https://github.com/epufk/kaelis" rel="noreferrer">GitHub</a>
-            <a href="https://github.com/epufk/kaelis/issues" rel="noreferrer">Issues</a>
-            <a href="https://discord.gg/fvrdYzrQjq" rel="noreferrer">Discord</a>
-            <a href="https://github.com/epufk" rel="noreferrer">Founder</a>
-          </div>
+        <div class="footer-col">
+          <small>Product</small>
+          <a href="#features">Features</a>
+          <a href="#previews">Previews</a>
+          <a href="#film">Film</a>
+          <a href="#faq">FAQ</a>
+        </div>
+        <div class="footer-col">
+          <small>Downloads</small>
+          <a href="downloads/Kaelis-Portable.zip" download>Windows portable</a>
+          <a href="downloads/Kaelis-Setup.exe" download>Windows installer</a>
+          <a href="downloads/SHA256SUMS.txt">Checksums</a>
+          <a href="downloads/KAELIS-LINKS.txt">URL &amp; install index</a>
+          <a href="https://github.com/fuvji/kaelis/releases" rel="noreferrer">All releases</a>
+        </div>
+        <div class="footer-col">
+          <small>Project</small>
+          <a href="https://github.com/fuvji/kaelis" rel="noreferrer">GitHub</a>
+          <a href="https://discord.gg/fvrdYzrQjq" rel="noreferrer">Discord</a>
+          <a href="https://github.com/fuvji/kaelis#readme" rel="noreferrer">Build guide</a>
+          <a href="https://opensource.org/licenses/MIT" rel="noreferrer">MIT license</a>
         </div>
       </div>
-      <div class="fineprint">
-        <span>© 2026 Kaelis Labs · MIT licensed</span>
-        <span>Not affiliated with Mojang Studios or Microsoft.</span>
+      <div class="legal">
+        <span>© <span id="year">2026</span> Kaelis Labs</span>
+        <span>Official site: fuvji.github.io/kaelis</span>
+        <span>Not affiliated with Mojang Studios, Microsoft, Modrinth, or CurseForge. Minecraft is a trademark of Mojang Studios.</span>
       </div>
     </div>
   </footer>
+
+  <script>
+    (function () {
+      var year = document.getElementById("year");
+      if (year) year.textContent = new Date().getFullYear();
+      var film = document.getElementById("kaelis-film");
+      var frame = document.querySelector("[data-film]");
+      var toggle = document.querySelector("[data-film-toggle]");
+      var progress = document.querySelector("[data-film-progress]");
+      if (film && frame && toggle) {
+        var reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+        var icons = {
+          play: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2.8 13 8l-9 5.2z"/></svg>',
+          pause: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="4" y="3" width="3" height="10" rx="1"/><rect x="9" y="3" width="3" height="10" rx="1"/></svg>'
+        };
+        var show = function (playing) {
+          toggle.innerHTML = playing ? icons.pause : icons.play;
+          toggle.setAttribute("aria-label", playing ? "Pause film" : "Play film");
+        };
+        var userPaused = false;
+        var play = function (fromUser) {
+          if (!fromUser && reduce.matches) return;
+          var started = film.play();
+          if (started && started.catch) started.catch(function () {});
+        };
+        var sound = document.querySelector("[data-film-sound]");
+        var soundLabel = document.querySelector("[data-film-sound-label]");
+        var setSound = function (on) {
+          film.muted = !on;
+          if (sound) sound.setAttribute("aria-pressed", on ? "true" : "false");
+          if (soundLabel) soundLabel.textContent = on ? "Sound on" : "Sound off";
+        };
+        if (sound) {
+          sound.addEventListener("click", function (event) {
+            event.stopPropagation();
+            setSound(film.muted);
+          });
+        }
+        var flip = function (event) {
+          if (film.paused) {
+            if (event) {
+              userPaused = false;
+              // A click is a signal to watch the film, so the score joins in.
+              setSound(true);
+            }
+            play(true);
+          } else {
+            userPaused = true;
+            film.pause();
+          }
+        };
+        toggle.addEventListener("click", function (event) {
+          event.stopPropagation();
+          flip(event);
+        });
+        // The whole frame is the play button; the corner control stays the
+        // accessible one so keyboard users keep a labelled target.
+        frame.addEventListener("click", flip);
+        film.addEventListener("play", function () { show(true); });
+        film.addEventListener("pause", function () { show(false); });
+        // The bar is eased in CSS, so four updates a second read as one
+        // continuous glide while staying correct in a throttled tab.
+        var drawProgress = function () {
+          if (progress && film.duration) {
+            progress.style.width = (film.currentTime / film.duration) * 100 + "%";
+          }
+        };
+        film.addEventListener("timeupdate", drawProgress);
+        film.addEventListener("seeked", drawProgress);
+        film.addEventListener("play", drawProgress);
+        drawProgress();
+        if ("IntersectionObserver" in window) {
+          new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+              // Only a film that has left the screen is paused, and a pause the
+              // viewer chose is never overridden by a scroll.
+              if (entry.isIntersecting) {
+                if (!userPaused) play(false);
+              } else if (!film.paused) {
+                film.pause();
+              }
+            });
+          }, { threshold: 0.12 }).observe(frame);
+        }
+        document.addEventListener("visibilitychange", function () {
+          if (document.hidden) film.pause();
+        });
+      }
+      document.querySelectorAll("[data-copy]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var source = document.getElementById(button.dataset.copy);
+          if (!source) return;
+          var text = source.textContent;
+          var done = function () {
+            button.textContent = "Copied";
+            setTimeout(function () { button.textContent = "Copy"; }, 1400);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done, function () {});
+            return;
+          }
+          var area = document.createElement("textarea");
+          area.value = text;
+          document.body.appendChild(area);
+          area.select();
+          try { document.execCommand("copy"); done(); } finally { document.body.removeChild(area); }
+        });
+      });
+    })();
+  </script>
 </body>
 </html>

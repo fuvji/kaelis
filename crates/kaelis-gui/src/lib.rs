@@ -1,62 +1,88 @@
 //! Kaelis desktop interface: translucent glass panels, async mod discovery,
 //! Microsoft/offline accounts, profile-head textures, and idle frame control.
 
+mod mark;
+mod platform;
+mod theme;
 mod tray;
 
 use eframe::egui;
+use kaelis_api::account_import::{self, ImportScan, ImportedAccount};
+use kaelis_api::accounts::{
+    AccountKind, AccountMode, LauncherSettings, SavedAccount, load_settings, migrated_accounts,
+    resolved_mode, save_settings,
+};
 use kaelis_api::auth::{
     AuthSession, DeviceCodeResponse, MicrosoftAuth, OfflineProfile, fetch_crafatar_head,
-    offline_profile,
+    fetch_head_for_username, offline_profile, valid_username,
 };
 use kaelis_api::launch::{LaunchIdentity, run_instance};
 use kaelis_api::mods::{
     ContentKind, InstallEvent, InstallReport, ModPlatformClient, ModProvider, ModSearchItem,
     ModSearchResults,
 };
+use kaelis_api::portable;
 use kaelis_api::repair::{
     DuplicateRepair, RepairReport, disable_duplicate_mods, repair_environment,
 };
 use kaelis_api::runtime::RuntimeInstallProgress;
+use kaelis_api::updates::{ModUpdate, UpdateReport, apply_update, check_updates};
 use kaelis_api::vanilla::InstallProgress;
 use kaelis_api::versions::{VersionEntry, VersionManifest, fetch_manifest};
+use kaelis_core::automation::{self, Automation, Rule, Trigger};
 use kaelis_core::ephemeral_log::EphemeralLog;
 use kaelis_core::handoff::HandoffServer;
-use kaelis_core::instance::Instance;
-use std::collections::{HashMap, VecDeque};
+use kaelis_core::instance::{DuplicateOptions, Instance};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use theme::{accent, accent_on, accent_soft};
 use tokio::runtime::Handle;
 use tokio::sync::{Semaphore, mpsc, watch};
 
-const ACCENT: egui::Color32 = egui::Color32::from_rgb(96, 196, 255);
-const ACCENT_SOFT: egui::Color32 = egui::Color32::from_rgb(160, 220, 255);
-const VIOLET: egui::Color32 = egui::Color32::from_rgb(158, 145, 255);
+/// Accent is user-chosen at runtime; see [`theme`]. This is the only violet
+/// that is not derived from it: the brand mark's second facet keeps its own
+/// identity instead of turning muddy at some hues.
+const VIOLET: egui::Color32 = egui::Color32::from_rgb(158, 146, 240);
 const AZURE_DEVICE_CODE_DOC: &str =
     "https://learn.microsoft.com/entra/identity-platform/v2-oauth2-device-code";
 const AZURE_APP_REGISTRATION: &str =
     "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade";
 const CURSEFORGE_CONSOLE: &str = "https://console.curseforge.com/";
-const ACCENT_DARK: egui::Color32 = egui::Color32::from_rgb(8, 15, 26);
-const GLASS: egui::Color32 = egui::Color32::from_rgba_premultiplied(10, 16, 27, 232);
-const GLASS_LIGHT: egui::Color32 = egui::Color32::from_rgba_premultiplied(21, 31, 47, 238);
-const BORDER: egui::Color32 = egui::Color32::from_rgb(39, 53, 72);
-const BORDER_BRIGHT: egui::Color32 = egui::Color32::from_rgb(55, 77, 103);
-const MUTED: egui::Color32 = egui::Color32::from_rgb(139, 157, 179);
-const TEXT: egui::Color32 = egui::Color32::from_rgb(232, 240, 250);
-const SURFACE: egui::Color32 = egui::Color32::from_rgba_premultiplied(12, 19, 31, 247);
-const SURFACE_ALT: egui::Color32 = egui::Color32::from_rgba_premultiplied(18, 27, 42, 247);
-const SURFACE_HOVER: egui::Color32 = egui::Color32::from_rgba_premultiplied(25, 38, 57, 250);
+/// OLED palette. Panels sit at or near true black so a pixel that draws no
+/// content is off, and the few in-between tones stay within a narrow band:
+/// on an OLED panel a mid-grey card glows like a lamp in a dark room.
+const GLASS: egui::Color32 = egui::Color32::from_rgba_premultiplied(7, 8, 10, 244);
+const GLASS_LIGHT: egui::Color32 = egui::Color32::from_rgba_premultiplied(14, 16, 20, 246);
+const BORDER: egui::Color32 = egui::Color32::from_rgb(22, 25, 31);
+const BORDER_BRIGHT: egui::Color32 = egui::Color32::from_rgb(40, 45, 55);
+const MUTED: egui::Color32 = egui::Color32::from_rgb(128, 136, 151);
+const TEXT: egui::Color32 = egui::Color32::from_rgb(236, 240, 247);
+const SURFACE: egui::Color32 = egui::Color32::from_rgba_premultiplied(1, 2, 3, 252);
+const SURFACE_ALT: egui::Color32 = egui::Color32::from_rgba_premultiplied(7, 8, 10, 252);
+const SURFACE_HOVER: egui::Color32 = egui::Color32::from_rgba_premultiplied(13, 15, 19, 252);
 /// Destructive actions (erase, remove) use this pair so danger reads the same
 /// in every surface: outlined when idle, filled when hovered.
-const DANGER: egui::Color32 = egui::Color32::from_rgb(255, 126, 132);
-const DANGER_TINT: (u8, u8, u8) = (255, 108, 118);
-const CORNER_SM: f32 = 8.0;
-const CORNER_MD: f32 = 11.0;
+const DANGER: egui::Color32 = egui::Color32::from_rgb(255, 107, 112);
+const DANGER_TINT: (u8, u8, u8) = (255, 99, 105);
+/// Soft geometry throughout: controls are capsules, cards are gently rounded
+/// and nothing in the shell presents a hard 90° corner.
+const CORNER_SM: f32 = 9.0;
+const CORNER_MD: f32 = 12.0;
 const CORNER_LG: f32 = 14.0;
-const CORNER_XL: f32 = 18.0;
+const CORNER_XL: f32 = 16.0;
+/// The shell adapts to the window instead of assuming a desktop-sized canvas.
+/// Below this width the navigation rail collapses to glyphs and stacked
+/// layouts replace multi-column grids.
+const RAIL_WIDTH: f32 = 960.0;
+/// Content stops growing past this width; on a wide monitor the extra space
+/// becomes margin instead of kilometre-long label rows.
+const CONTENT_MAX: f32 = 1180.0;
+const SIDEBAR_WIDTH: f32 = 184.0;
+const RAIL_SIDEBAR_WIDTH: f32 = 56.0;
 const MOD_ICON_BYTES: usize = 1024 * 1024;
-const MOD_ICON_SIZE: f32 = 44.0;
+const MOD_ICON_SIZE: f32 = 38.0;
 const MOD_ICON_CONCURRENCY: usize = 6;
 /// Provider thumbnails are at most 512 px; refuse larger decodes outright so
 /// a hostile or malformed image cannot stall a decoder thread or spike RAM.
@@ -65,7 +91,8 @@ const MOD_ICON_MAX_ALLOC: u64 = 32 * 1024 * 1024;
 /// Instance artwork is local, so it may be a little larger than a provider
 /// thumbnail, but decoding stays bounded to a single 8 MiB read.
 const INSTANCE_ICON_BYTES: u64 = 8 * 1024 * 1024;
-const INSTANCE_VARIANTS: u8 = 6;
+/// Stored artwork edge. 256 px covers a 96 px card at 2x and stays small.
+const ARTWORK_EDGE: u32 = 256;
 /// Typing pauses this long before the mod browser queries both platforms.
 const MOD_SEARCH_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(450);
 /// Results requested per provider per page. Paging, not truncation, is what
@@ -75,6 +102,9 @@ const MOD_SEARCH_ID: &str = "kaelis-mod-search";
 const MOD_REFINE_ID: &str = "kaelis-mod-refine";
 const INSTANCE_FILTER_ID: &str = "kaelis-instance-filter";
 const INSTALLED_FILTER_ID: &str = "kaelis-installed-filter";
+/// Focus handle for the artwork field, so Ctrl+V can tell an image paste from
+/// an ordinary text paste.
+const ARTWORK_FIELD_ID: &str = "kaelis-artwork-field";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
@@ -103,6 +133,35 @@ impl Tab {
             Self::Settings => "Settings",
         }
     }
+}
+
+/// Ctrl/Cmd + 1…5 selects a tab. Kept separate from the window so a unit test
+/// can feed the same key events the real input state receives.
+/// The label for the primary shortcut modifier on this platform. The chord
+/// itself uses `Modifiers::COMMAND`, so macOS answers to Cmd and the tooltip
+/// must say so instead of advertising a key that does nothing there.
+fn shortcut_modifier() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Cmd"
+    } else {
+        "Ctrl"
+    }
+}
+
+fn tab_from_shortcuts(input: &mut egui::InputState) -> Option<Tab> {
+    const KEYS: [egui::Key; 5] = [
+        egui::Key::Num1,
+        egui::Key::Num2,
+        egui::Key::Num3,
+        egui::Key::Num4,
+        egui::Key::Num5,
+    ];
+    for (index, key) in KEYS.into_iter().enumerate() {
+        if input.consume_key(egui::Modifiers::COMMAND, key) {
+            return Some(Tab::ALL[index]);
+        }
+    }
+    None
 }
 
 #[derive(Debug, Default)]
@@ -144,7 +203,7 @@ impl StatusKind {
     fn color(self) -> egui::Color32 {
         match self {
             Self::Info => egui::Color32::from_rgb(198, 208, 222),
-            Self::Busy => ACCENT,
+            Self::Busy => accent(),
             Self::Success => egui::Color32::from_rgb(126, 231, 165),
             Self::Warning => egui::Color32::from_rgb(255, 195, 120),
             Self::Error => egui::Color32::from_rgb(255, 133, 133),
@@ -152,20 +211,30 @@ impl StatusKind {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum InstanceAction {
     Play,
     Select,
     Edit,
+    /// Pick card artwork straight from the file picker.
+    PickIcon,
     InstallVanilla,
     InstallJava,
     Settings,
     OpenFolder,
     OpenMods,
+    /// Reveal any folder inside the instance (`mods`, `resourcepacks`, …).
+    OpenPath(PathBuf),
+    /// Write a portable `.kaelis.zip` for this instance.
+    Export,
     ShowJson,
     ManageContent(ContentKind),
     /// Delete the instance's whole tree and record in one step.
     Erase,
+    /// Copy the instance into a new one, optionally with its world saves.
+    Duplicate {
+        saves: bool,
+    },
 }
 
 /// Where a modpack archive comes from: a provider download staged in the temp
@@ -363,8 +432,14 @@ struct ContentRequest {
     clear_search: bool,
     reset_filters: bool,
     clear_queue: bool,
+    cancel_install: bool,
+    cancel_modpack: bool,
     rescan: bool,
     open_folder: bool,
+    /// Open an arbitrary folder (instance root, packs, worlds).
+    open_path: Option<PathBuf>,
+    /// Open the platform file manager to add files to the current channel.
+    add_files: bool,
     repair: bool,
     duplicates: bool,
     kind: Option<ContentKind>,
@@ -377,6 +452,9 @@ struct ContentRequest {
     dismiss_report: bool,
     copy_list: bool,
     load_more: bool,
+    check_updates: bool,
+    apply_update: Option<usize>,
+    apply_all_updates: bool,
 }
 
 /// One-click removal of a project that is already installed. Only the project
@@ -413,6 +491,7 @@ enum ModInstallState {
     Queued,
     Running,
     Done { summary: String, warnings: usize },
+    Cancelled,
     Failed(String),
 }
 
@@ -437,7 +516,7 @@ struct ModRow {
 }
 
 #[derive(Default)]
-struct InstalledScan {
+pub(crate) struct InstalledScan {
     files: Vec<InstalledFile>,
     summary: String,
     /// Required mod ids that no enabled installed jar provides.
@@ -526,7 +605,7 @@ struct ContentEntry {
 /// Cached non-mod content inventory for the selected instance. Scanning happens
 /// on selection, install completion, or an explicit rescan, never per frame.
 #[derive(Default)]
-struct ContentLibrary {
+pub(crate) struct ContentLibrary {
     resource_packs: Vec<ContentEntry>,
     shaders: Vec<ContentEntry>,
 }
@@ -660,12 +739,70 @@ pub(crate) struct ModpackOutcome {
     pack: kaelis_api::mrpack::PackSummary,
 }
 
+/// Erases the half-created instance if the import future is dropped (Cancel)
+/// or returns early. The successful path disarms it before building the event.
+struct ModpackCleanup(Option<Instance>);
+
+impl Drop for ModpackCleanup {
+    fn drop(&mut self) {
+        if let Some(instance) = self.0.take() {
+            let _ = instance.erase();
+        }
+    }
+}
+
+/// Removes a downloaded pack archive when the import is aborted. Local packs
+/// are the user's file and never wrapped in this guard.
+struct PackArchiveCleanup(Option<PathBuf>);
+
+impl Drop for PackArchiveCleanup {
+    fn drop(&mut self) {
+        if let Some(path) = self.0.take() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
 pub(crate) enum GuiEvent {
-    ModpackInstalled(Box<Result<ModpackOutcome, String>>),
+    ModpackInstalled {
+        generation: u64,
+        result: Box<Result<ModpackOutcome, String>>,
+    },
+    ModpackProgress {
+        generation: u64,
+        detail: String,
+    },
+    InstallStopped,
+    /// A jar/content scan finished off the UI thread. `generation` and `id`
+    /// together make a late scan from an abandoned selection harmless.
+    InstalledScan {
+        id: String,
+        generation: u64,
+        scan: InstalledScan,
+        library: ContentLibrary,
+    },
+    /// The aborted modpack worker has actually stopped, so its cleanup guard
+    /// has erased the half-built instance and the list can be re-read safely.
+    ModpackStopped,
     DeviceCode(Result<DeviceCodeResponse, String>),
     SignedIn(Result<AuthSession, String>),
     Restored(Result<AuthSession, String>),
     Avatar(Result<egui::ColorImage, String>),
+    /// Head portrait for one row of the account list. `None` with
+    /// `failed: false` means the name owns no premium skin.
+    AccountHead {
+        key: String,
+        result: Option<egui::ColorImage>,
+        failed: bool,
+    },
+    /// Head resolved from an offline username. `None` means no premium account
+    /// owns the name, so the vanilla Steve face stays in place.
+    OfflineAvatar {
+        name: String,
+        result: Option<egui::ColorImage>,
+        /// A transport failure must not be cached as "this name has no skin".
+        failed: bool,
+    },
     ModIcon {
         generation: u64,
         key: String,
@@ -686,6 +823,17 @@ pub(crate) enum GuiEvent {
     ManualInstalled(Result<InstallReport, String>),
     EnvironmentRepaired(Result<RepairReport, String>),
     DuplicatesResolved(Result<DuplicateRepair, String>),
+    /// A mod-update check finished for one instance.
+    Updates {
+        instance_id: String,
+        result: Result<UpdateReport, String>,
+    },
+    /// One mod update finished downloading and replacing its jar.
+    ModUpdated {
+        project_id: String,
+        title: String,
+        result: Result<String, String>,
+    },
     VanillaProgress {
         instance_id: String,
         progress: InstallProgress,
@@ -703,11 +851,57 @@ pub(crate) enum GuiEvent {
         result: Result<PathBuf, String>,
     },
     Notice(String),
-    GameStarted,
-    GameExited(String),
-    GameFailed(String),
+    /// Account files were read from another launcher or a picked file.
+    AccountsImported(Result<ImportScan, String>),
+    /// One finished batch of files added from the file manager, with the
+    /// batch label so a mixed drop reads correctly.
+    FilesAdded(Result<(InstallReport, String), String>),
+    /// A portable instance archive finished exporting or importing.
+    Portable(Result<(String, bool), String>),
+    /// One automation command finished, in the background.
+    Automation(automation::RuleRun),
+    /// A picture chosen from the native file picker.
+    ArtworkPicked(PathBuf),
+    /// Artwork chosen from the file picker for one instance card, applied
+    /// immediately instead of waiting for the editor's Save.
+    InstanceArtworkPicked {
+        id: String,
+        path: PathBuf,
+    },
+    GameStarted(String),
+    GameExited {
+        instance_id: String,
+        message: String,
+    },
+    GameFailed {
+        instance_id: String,
+        error: String,
+    },
+    /// A finished background copy of one instance into a new one.
+    InstanceDuplicated(Box<Result<(Instance, String), String>>),
     Handoff(Vec<String>),
     Tray(tray::TrayAction),
+}
+
+/// Shared live-game counter that restores the window when the last worker
+/// ends, including a worker whose future is dropped or panics.
+struct LiveGame {
+    count: Arc<AtomicUsize>,
+}
+
+impl LiveGame {
+    fn start(count: Arc<AtomicUsize>) -> Self {
+        count.fetch_add(1, Ordering::SeqCst);
+        Self { count }
+    }
+}
+
+impl Drop for LiveGame {
+    fn drop(&mut self) {
+        if self.count.fetch_sub(1, Ordering::SeqCst) == 1 {
+            platform::restore_now();
+        }
+    }
 }
 
 pub struct KaelisApp {
@@ -719,8 +913,10 @@ pub struct KaelisApp {
     _tray: Option<tray::TrayController>,
     sweeper: Option<tokio::task::JoinHandle<()>>,
     governor: FrameGovernor,
-    /// Interface zoom applied through egui, `1.0` at 100 %.
-    ui_zoom: f32,
+    /// A portable archive is being written or unpacked.
+    portable_busy: bool,
+    /// Folder of the last export, so a second one starts where the first went.
+    last_export_dir: Option<PathBuf>,
     /// True when Play provisioned Java first and must continue into the game.
     launch_after_java: bool,
     current_tab: Tab,
@@ -729,6 +925,9 @@ pub struct KaelisApp {
     instances: Vec<Instance>,
     instance_cards: HashMap<String, InstanceCard>,
     instance_icons: HashMap<String, ModIconState>,
+    /// Source path behind each cached icon, so a reload can keep decoded
+    /// textures instead of re-reading every instance picture.
+    instance_icon_paths: HashMap<String, PathBuf>,
     editing: Option<Instance>,
     edit_icon: String,
     edit_java: String,
@@ -756,6 +955,9 @@ pub struct KaelisApp {
     show_beta: bool,
     show_snapshots: bool,
     content_kind: ContentKind,
+    /// On a narrow window the content studio shows one pane at a time; this
+    /// remembers whether the installed list or the browser is in front.
+    content_show_installed: bool,
     content_library: ContentLibrary,
     manual_url: String,
     manual_path: String,
@@ -784,6 +986,12 @@ pub struct KaelisApp {
     mod_show_modrinth: bool,
     mod_show_curseforge: bool,
     installed: Option<InstalledScan>,
+    /// Bumped for every scan request so a scan that finishes after the user
+    /// selected another instance cannot overwrite the newer result.
+    installed_scan_generation: u64,
+    /// Kept so a background scan can wake the window when it finishes; the
+    /// context is cheap to clone and does not borrow the frame.
+    egui_context: egui::Context,
     installed_filter: String,
     installed_missing_only: bool,
     mod_icons: HashMap<String, ModIconState>,
@@ -791,6 +999,7 @@ pub struct KaelisApp {
     mod_icon_generation: u64,
     mod_icon_epoch: Arc<AtomicU64>,
     installing_job: Option<InstallJob>,
+    install_task: Option<tokio::task::JoinHandle<()>>,
     install_queue: VecDeque<InstallJob>,
     install_states: HashMap<String, ModInstallState>,
     install_detail: Option<String>,
@@ -813,12 +1022,55 @@ pub struct KaelisApp {
     auth_cancel: Option<watch::Sender<bool>>,
     microsoft_session: Option<AuthSession>,
     last_account: String,
+    account_mode: AccountMode,
     offline_account: Option<OfflineProfile>,
     offline_name: String,
     avatar: Option<egui::TextureHandle>,
-    game_running: bool,
+    /// Username → head cache for offline profiles. `None` records a name no
+    /// premium account owns, so retyping it never hits the network again.
+    offline_skins: HashMap<String, Option<egui::ColorImage>>,
+    offline_skin_pending: Option<String>,
+    /// Every offline head request in flight, so the account list and the
+    /// active avatar never look up the same username twice.
+    offline_skin_inflight: HashSet<String>,
+    offline_skin_due: Option<std::time::Instant>,
+    offline_typing_avatar: Option<egui::TextureHandle>,
+    offline_typing_key: String,
+    /// Saved identities, newest last. Microsoft and offline rows share one
+    /// list so switching is a single click either way.
+    accounts: Vec<SavedAccount>,
+    /// Head portraits per account key. `Some(None)` records a name with no
+    /// premium skin, so Steve is drawn without another request; a missing key
+    /// means the head has not arrived yet.
+    account_heads: HashMap<String, Option<egui::TextureHandle>>,
+    account_head_pending: HashSet<String>,
+    /// Names whose head request failed, with the attempt time. A failure is
+    /// retried after a minute instead of on the next frame.
+    account_head_retry: HashMap<String, std::time::Instant>,
+    /// Shared vanilla face for rows whose name owns no premium skin, so those
+    /// rows still read as a player instead of a letter.
+    steve_head_texture: Option<egui::TextureHandle>,
+    /// Instances with a live game process, by id. Several may run at once;
+    /// the window only sleeps in the tray while at least one is alive.
+    running_instances: std::collections::HashSet<String>,
+    /// Live game count shared with launch workers, so only the worker that
+    /// ends the last game restores the hidden window.
+    live_games: Arc<AtomicUsize>,
     settings_ram_mb: u32,
     settings_jvm_args: String,
+    /// Whole-interface scale; `0.0` means automatic. Mirrors egui's zoom
+    /// factor so the choice survives a restart.
+    ui_scale: f32,
+    /// The automatic step has not been resolved for this window yet.
+    auto_scale_pending: bool,
+    /// Display height at 100 % zoom, in native-DPI points. Used to notice a
+    /// monitor or window change without reacting to the zoom it produces.
+    auto_basis: f32,
+    /// Keyboard navigation is in use, so focused controls paint a ring.
+    keyboard_nav: bool,
+    /// Zoom last pushed into egui, so a Ctrl +/- change can be persisted
+    /// without rewriting settings on every idle frame.
+    applied_zoom: f32,
     ms_client_id: String,
     cf_api_key: String,
     integrations_status: String,
@@ -828,8 +1080,134 @@ pub struct KaelisApp {
     /// Title of the modpack being downloaded and imported, if any.
     modpack_installing: Option<String>,
     modpack_detail: String,
+    /// The import worker, so Cancel can stop it instead of waiting for the
+    /// whole pack. Aborting drops its cleanup guard, which erases the partial
+    /// instance root.
+    modpack_task: Option<tokio::task::JoinHandle<()>>,
+    /// Invalidates progress and completion events from a cancelled import.
+    modpack_generation: u64,
     /// Remove logs, crash reports, and staging files at every launch.
     auto_clean_junk: bool,
+    /// Latest mod-update report and the instance it belongs to, so switching
+    /// instances can never show another instance's updates.
+    update_report: Option<(String, UpdateReport)>,
+    updates_busy: bool,
+    /// `current_file` of every jar being replaced right now.
+    updating_mods: HashSet<String>,
+    /// User commands: named shell lines fired by an event or an interval.
+    automation: Automation,
+    /// Last few automation results, newest last. Bounded; never a log file.
+    automation_log: Vec<String>,
+    automation_draft_name: String,
+    automation_draft_command: String,
+    automation_draft_when: String,
+    /// Rule id being edited, so Save replaces instead of adding a duplicate.
+    automation_editing: Option<String>,
+    /// Startup rules run on the first frame only.
+    automation_started: bool,
+}
+
+/// Install the visual language: OLED-black surfaces, one control radius, and
+/// selection colours from the fixed Kaelis blue.
+///
+/// Called once at startup. Keeping every colour in one place means a visual
+/// change cannot leave a stale hyperlink or focus ring behind, which is what
+/// happens when each widget is edited in isolation.
+fn install_style(context: &egui::Context) {
+    let mut visuals = egui::Visuals::dark();
+    visuals.panel_fill = egui::Color32::TRANSPARENT;
+    visuals.window_fill = GLASS;
+    visuals.window_rounding = egui::Rounding::same(CORNER_LG);
+    visuals.menu_rounding = egui::Rounding::same(CORNER_MD);
+    // Flat surfaces and hairline strokes do the separating. A drop shadow
+    // under every card is the fastest way to make a dark UI look muddy, and on
+    // an OLED panel it lights up pixels that would otherwise be off.
+    visuals.window_shadow = egui::epaint::Shadow {
+        offset: egui::vec2(0.0, 8.0),
+        blur: 24.0,
+        spread: 0.0,
+        color: egui::Color32::from_black_alpha(160),
+    };
+    visuals.popup_shadow = egui::epaint::Shadow {
+        offset: egui::vec2(0.0, 6.0),
+        blur: 20.0,
+        spread: 0.0,
+        color: egui::Color32::from_black_alpha(150),
+    };
+    // No global text override: egui derives placeholder/hint text from the
+    // widget foreground, so an override would make every hint look like a
+    // real value. Colour the widget states instead.
+    visuals.override_text_color = None;
+    let text_stroke = egui::Stroke::new(1.0_f32, TEXT);
+    visuals.widgets.noninteractive.fg_stroke = text_stroke;
+    visuals.widgets.inactive.fg_stroke = text_stroke;
+    visuals.widgets.hovered.fg_stroke = text_stroke;
+    visuals.widgets.active.fg_stroke = text_stroke;
+    visuals.widgets.open.fg_stroke = text_stroke;
+    // Slider rails and progress tracks use this fill; a transparent value
+    // left them invisible on the dark surface.
+    visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(17, 20, 25);
+    visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(15, 17, 22);
+    visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(15, 17, 22);
+    visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(25, 29, 36);
+    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(25, 29, 36);
+    visuals.widgets.active.weak_bg_fill = egui::Color32::from_rgb(32, 37, 45);
+    visuals.widgets.active.bg_fill = egui::Color32::from_rgb(32, 37, 45);
+    // A hairline makes a control legible without turning it into a box.
+    // It also gives checkboxes a visible well: their fill alone vanished
+    // against the near-black surface.
+    visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, BORDER);
+    visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0_f32, BORDER_BRIGHT);
+    visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0_f32, BORDER_BRIGHT);
+    visuals.widgets.open.bg_stroke = egui::Stroke::new(1.0_f32, BORDER_BRIGHT);
+    visuals.extreme_bg_color = egui::Color32::BLACK;
+    visuals.faint_bg_color = egui::Color32::from_rgb(8, 9, 12);
+    // One radius for every control, one step tighter than the cards: inputs
+    // and buttons read as the same material without looking pill-shaped.
+    let control_rounding = egui::Rounding::same(CORNER_SM);
+    visuals.widgets.inactive.rounding = control_rounding;
+    visuals.widgets.hovered.rounding = control_rounding;
+    visuals.widgets.active.rounding = control_rounding;
+    visuals.widgets.open.rounding = control_rounding;
+    visuals.selection.bg_fill = theme::accent_alpha(64);
+    visuals.selection.stroke = egui::Stroke::new(1.0_f32, accent_soft());
+    visuals.hyperlink_color = accent();
+    context.set_visuals(visuals);
+    let mut style = (*context.style()).clone();
+    // Two pixels tighter on both axes than the old shell. Sixty rows of
+    // settings, mods, or instances fit without changing a single label.
+    style.spacing.item_spacing = egui::vec2(7.0, 5.0);
+    style.spacing.button_padding = egui::vec2(10.0, 4.0);
+    style.spacing.interact_size.y = 24.0;
+    style.spacing.slider_width = 190.0;
+    style.spacing.scroll.bar_width = 4.0;
+    style.spacing.scroll.floating = true;
+    style.spacing.indent = 12.0;
+    style.spacing.menu_margin = egui::Margin::same(5.0);
+    for widget in [
+        &mut style.visuals.widgets.inactive,
+        &mut style.visuals.widgets.hovered,
+        &mut style.visuals.widgets.active,
+    ] {
+        widget.expansion = 0.0;
+    }
+    style.visuals.window_stroke = egui::Stroke::new(1.0_f32, BORDER);
+    style
+        .text_styles
+        .insert(egui::TextStyle::Heading, egui::FontId::proportional(20.0));
+    style
+        .text_styles
+        .insert(egui::TextStyle::Body, egui::FontId::proportional(12.0));
+    style
+        .text_styles
+        .insert(egui::TextStyle::Button, egui::FontId::proportional(11.0));
+    style
+        .text_styles
+        .insert(egui::TextStyle::Small, egui::FontId::proportional(9.5));
+    // The local `visuals` above carries the widget states; `style.visuals` is
+    // the copy egui will actually paint, so the border and text styles applied
+    // here are the ones that survive.
+    context.set_style(style);
 }
 
 impl KaelisApp {
@@ -859,66 +1237,11 @@ impl KaelisApp {
                 });
         }
         let tray = tray::TrayController::install(creation.egui_ctx.clone(), sender.clone()).ok();
-        let mut visuals = egui::Visuals::dark();
-        visuals.panel_fill = egui::Color32::TRANSPARENT;
-        visuals.window_fill = GLASS;
-        visuals.window_rounding = egui::Rounding::same(CORNER_LG);
-        // No global text override: egui derives placeholder/hint text from the
-        // widget foreground, so an override would make every hint look like a
-        // real value. Colour the widget states instead.
-        visuals.override_text_color = None;
-        let text_stroke = egui::Stroke::new(1.0_f32, TEXT);
-        visuals.widgets.noninteractive.fg_stroke = text_stroke;
-        visuals.widgets.inactive.fg_stroke = text_stroke;
-        visuals.widgets.hovered.fg_stroke = text_stroke;
-        visuals.widgets.active.fg_stroke = text_stroke;
-        visuals.widgets.open.fg_stroke = text_stroke;
-        visuals.widgets.noninteractive.bg_fill = egui::Color32::TRANSPARENT;
-        visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(24, 35, 50);
-        visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(24, 35, 50);
-        visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(34, 48, 67);
-        visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(34, 48, 67);
-        visuals.widgets.active.weak_bg_fill = egui::Color32::from_rgb(44, 61, 84);
-        visuals.widgets.active.bg_fill = egui::Color32::from_rgb(44, 61, 84);
-        visuals.extreme_bg_color = egui::Color32::from_rgb(8, 14, 23);
-        visuals.faint_bg_color = egui::Color32::from_rgb(18, 27, 41);
-        visuals.widgets.inactive.rounding = egui::Rounding::same(CORNER_SM);
-        visuals.widgets.hovered.rounding = egui::Rounding::same(CORNER_SM);
-        visuals.widgets.active.rounding = egui::Rounding::same(CORNER_SM);
-        visuals.selection.bg_fill = egui::Color32::from_rgba_unmultiplied(96, 196, 255, 58);
-        visuals.selection.stroke = egui::Stroke::new(1.0_f32, ACCENT_SOFT);
-        visuals.hyperlink_color = ACCENT;
-        creation.egui_ctx.set_visuals(visuals.clone());
-        let mut style = (*creation.egui_ctx.style()).clone();
-        style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-        style.spacing.button_padding = egui::vec2(10.0, 5.0);
-        style.spacing.interact_size.y = 26.0;
-        style.spacing.scroll.bar_width = 6.0;
-        style.spacing.scroll.floating = true;
-        for widget in [
-            &mut style.visuals.widgets.inactive,
-            &mut style.visuals.widgets.hovered,
-            &mut style.visuals.widgets.active,
-        ] {
-            widget.expansion = 0.0;
-        }
-        style.visuals.window_stroke = egui::Stroke::new(1.0_f32, BORDER);
-        style.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0_f32, BORDER_BRIGHT);
-        style
-            .text_styles
-            .insert(egui::TextStyle::Heading, egui::FontId::proportional(22.0));
-        style
-            .text_styles
-            .insert(egui::TextStyle::Body, egui::FontId::proportional(12.5));
-        style
-            .text_styles
-            .insert(egui::TextStyle::Button, egui::FontId::proportional(11.5));
-        style.visuals = visuals;
-        creation.egui_ctx.set_style(style);
+        let launcher_settings = load_settings();
+        install_style(&creation.egui_ctx);
 
         let instances = Instance::load_all().unwrap_or_default();
         let selected_instance = instances.first().map(|instance| instance.id.clone());
-        let installed = instances.first().map(scan_installed);
         let screenshot_path = std::env::var_os("KAELIS_SCREENSHOT").map(PathBuf::from);
         let current_tab = match std::env::var("KAELIS_SCREENSHOT_TAB")
             .unwrap_or_default()
@@ -930,23 +1253,25 @@ impl KaelisApp {
             "settings" => Tab::Settings,
             _ => Tab::Overview,
         };
-        let launcher_settings = load_launcher_settings();
-        // Restore the local profile too: an offline account has no token to
-        // refresh, but its name and Steve skin should still be there.
-        let restored_offline = {
-            let name = launcher_settings.offline_account.trim();
-            let valid = (3..=16).contains(&name.len())
-                && name
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_');
-            valid.then(|| offline_profile(name))
+        let saved_scale = launcher_settings.ui_scale.clamp(0.0, 2.0);
+        if saved_scale > 0.0 {
+            // A remembered manual scale wins over the automatic step.
+            creation.egui_ctx.set_zoom_factor(saved_scale);
+        }
+        let accounts = migrated_accounts(&launcher_settings);
+        let saved_offline = launcher_settings.offline_account.trim();
+        let saved_offline_valid = valid_username(saved_offline);
+        // Older settings files have no explicit mode. A saved Microsoft token
+        // keeps its previous precedence; otherwise an offline profile does.
+        let account_mode = resolved_mode(&launcher_settings);
+        // Restore the local profile only when it was the last chosen identity;
+        // a saved Microsoft token must not silently replace it.
+        let restored_offline = (account_mode == AccountMode::Offline && saved_offline_valid)
+            .then(|| offline_profile(saved_offline));
+        let initial_auth_status = match &restored_offline {
+            Some(profile) => format!("Offline profile ready: {}", profile.name),
+            None => "Choose Microsoft sign-in or an offline profile.".to_owned(),
         };
-        let ui_zoom = if launcher_settings.ui_zoom.is_finite() {
-            launcher_settings.ui_zoom.clamp(0.8, 2.0)
-        } else {
-            1.0
-        };
-        creation.egui_ctx.set_zoom_factor(ui_zoom);
         let saved_cf_key =
             kaelis_api::secrets::load_secret(kaelis_api::secrets::CURSEFORGE_KEY_ACCOUNT)
                 .ok()
@@ -966,7 +1291,8 @@ impl KaelisApp {
         // Restore the last Microsoft account from the OS keychain without a
         // device-code round trip. A stale or missing token simply leaves the
         // account signed out; the Account tab still offers a fresh sign-in.
-        if !launcher_settings.last_account.is_empty()
+        if account_mode == AccountMode::Microsoft
+            && !launcher_settings.last_account.is_empty()
             && !launcher_settings.ms_client_id.trim().is_empty()
         {
             let restore_name = launcher_settings.last_account.clone();
@@ -984,6 +1310,11 @@ impl KaelisApp {
                 send_event(&sender, &repaint, GuiEvent::Restored(result));
             });
         }
+        // Automation is the one file users are expected to edit by hand, so it
+        // loads on its own and a parse failure becomes a visible line instead
+        // of a crash or a silent empty list.
+        let (automation_store, automation_warning) = Automation::load();
+        let automation_log = automation_warning.into_iter().collect::<Vec<_>>();
         let mut app = Self {
             platforms: ModPlatformClient::with_curseforge_key(
                 http.clone(),
@@ -999,7 +1330,8 @@ impl KaelisApp {
                 focused: true,
                 animating: false,
             },
-            ui_zoom,
+            portable_busy: false,
+            last_export_dir: None,
             launch_after_java: false,
             current_tab,
             status,
@@ -1007,6 +1339,7 @@ impl KaelisApp {
             instances,
             instance_cards: HashMap::new(),
             instance_icons: HashMap::new(),
+            instance_icon_paths: HashMap::new(),
             editing: None,
             edit_icon: String::new(),
             edit_java: String::new(),
@@ -1045,6 +1378,7 @@ impl KaelisApp {
                 "mod" | "mods" => ContentKind::Mod,
                 _ => launcher_settings.content_kind,
             },
+            content_show_installed: std::env::var_os("KAELIS_SCREENSHOT_INSTALLED").is_some(),
             content_library: ContentLibrary::default(),
             manual_url: String::new(),
             manual_path: String::new(),
@@ -1069,7 +1403,9 @@ impl KaelisApp {
             mod_sort: ModSort::Relevance,
             mod_show_modrinth: true,
             mod_show_curseforge: true,
-            installed,
+            installed: None,
+            installed_scan_generation: 0,
+            egui_context: creation.egui_ctx.clone(),
             installed_filter: String::new(),
             installed_missing_only: false,
             mod_icons: HashMap::new(),
@@ -1077,6 +1413,7 @@ impl KaelisApp {
             mod_icon_generation: 0,
             mod_icon_epoch: Arc::new(AtomicU64::new(0)),
             installing_job: None,
+            install_task: None,
             install_queue: VecDeque::new(),
             install_states: HashMap::new(),
             install_detail: None,
@@ -1093,26 +1430,47 @@ impl KaelisApp {
             instance_filter: String::new(),
             search_busy: false,
             auth_busy: false,
-            auth_status: "Choose Microsoft sign-in or an offline profile.".to_owned(),
+            auth_status: initial_auth_status,
             auth_device: None,
             auth_cancel: None,
             microsoft_session: None,
             last_account: launcher_settings.last_account,
+            account_mode,
             offline_account: restored_offline.clone(),
-            offline_name: restored_offline
-                .as_ref()
-                .map(|profile| profile.name.clone())
-                .unwrap_or_else(|| "Player".to_owned()),
+            // Keep the saved name even when a Microsoft session is active, so
+            // switching back to offline needs no retyping.
+            offline_name: if saved_offline_valid {
+                saved_offline.to_owned()
+            } else {
+                "Player".to_owned()
+            },
             avatar: restored_offline.as_ref().map(|_| {
                 creation.egui_ctx.load_texture(
-                    "kaelis-offline-profile-head",
+                    "kaelis-profile-head",
                     steve_head(),
                     egui::TextureOptions::NEAREST,
                 )
             }),
-            game_running: false,
+            offline_skins: HashMap::new(),
+            offline_skin_pending: None,
+            offline_skin_inflight: HashSet::new(),
+            offline_skin_due: None,
+            offline_typing_avatar: None,
+            offline_typing_key: String::new(),
+            accounts,
+            account_heads: HashMap::new(),
+            account_head_pending: HashSet::new(),
+            account_head_retry: HashMap::new(),
+            steve_head_texture: None,
+            running_instances: std::collections::HashSet::new(),
+            live_games: Arc::new(AtomicUsize::new(0)),
             settings_ram_mb: 4096,
             settings_jvm_args: String::new(),
+            ui_scale: saved_scale,
+            auto_scale_pending: saved_scale <= 0.0,
+            auto_basis: 0.0,
+            keyboard_nav: false,
+            applied_zoom: if saved_scale > 0.0 { saved_scale } else { 1.0 },
             ms_client_id: launcher_settings.ms_client_id,
             cf_api_key: saved_cf_key,
             integrations_status,
@@ -1127,8 +1485,26 @@ impl KaelisApp {
                 .unwrap_or(8),
             modpack_installing: None,
             modpack_detail: String::new(),
+            modpack_task: None,
+            modpack_generation: 0,
             auto_clean_junk: launcher_settings.auto_clean,
+            update_report: None,
+            updates_busy: false,
+            updating_mods: HashSet::new(),
+            automation: automation_store,
+            automation_log,
+            automation_draft_name: String::new(),
+            automation_draft_command: String::new(),
+            automation_draft_when: "before launch".to_owned(),
+            automation_editing: None,
+            automation_started: false,
         };
+        // First run on this computer: pick up the identities another launcher
+        // already has, so setup is a click instead of retyping a name. The
+        // scan is silent when there is nothing to find.
+        if app.accounts.is_empty() {
+            app.scan_for_accounts(&creation.egui_ctx, false);
+        }
         if app.auto_clean_junk {
             app.clean_junk_now(creation.egui_ctx.clone());
         }
@@ -1137,7 +1513,15 @@ impl KaelisApp {
             app.select_instance(&id);
         }
         app.reload_instance_icons(&creation.egui_ctx);
+        // Jar metadata is read off the UI thread: a 200-mod instance used to
+        // hold the first frame for every zip it opened.
+        app.refresh_installed();
         app.request_versions(creation.egui_ctx.clone());
+        // A restored offline profile keeps its Steve face until the premium
+        // skin for its name (if any) arrives.
+        if let Some(profile) = app.offline_account.clone() {
+            app.request_offline_skin(&creation.egui_ctx, &profile.name);
+        }
         app
     }
 
@@ -1166,7 +1550,7 @@ impl KaelisApp {
         let configured_client_id = self.ms_client_id.trim().to_owned();
         if !configured_client_id.is_empty() {
             let settings = self.settings_snapshot();
-            if let Err(error) = save_launcher_settings(&settings) {
+            if let Err(error) = save_settings(&settings) {
                 self.auth_status = format!("Could not save the Microsoft client ID: {error}");
                 self.auth_busy = false;
                 self.auth_cancel = None;
@@ -1219,7 +1603,7 @@ impl KaelisApp {
         let configured_client_id = self.ms_client_id.trim().to_owned();
         if !configured_client_id.is_empty() {
             let settings = self.settings_snapshot();
-            if let Err(error) = save_launcher_settings(&settings) {
+            if let Err(error) = save_settings(&settings) {
                 self.auth_status = format!("Could not save the Microsoft client ID: {error}");
                 return;
             }
@@ -1397,6 +1781,921 @@ impl KaelisApp {
             .map_err(|error| error.to_string());
             send_event(&sender, &repaint, GuiEvent::ManualInstalled(result));
         });
+    }
+
+    /// File extensions the "Add files…" dialog offers for one channel.
+    fn accepted_extensions(kind: ContentKind) -> &'static [&'static str] {
+        match kind {
+            ContentKind::Mod => &["jar"],
+            ContentKind::ResourcePack | ContentKind::Shader => &["zip"],
+            ContentKind::Modpack => &["mrpack", "zip"],
+        }
+    }
+
+    /// Which folder a picked or dropped file belongs in. Extensions decide;
+    /// the visible channel only breaks the tie for `.zip`, which can be either
+    /// a resource pack or a shader pack.
+    fn classify_local_file(path: &Path, channel: ContentKind) -> Option<ContentKind> {
+        let name = path.file_name()?.to_string_lossy().to_ascii_lowercase();
+        if name.ends_with(".mrpack") {
+            return Some(ContentKind::Modpack);
+        }
+        if name.ends_with(".jar") {
+            return Some(ContentKind::Mod);
+        }
+        if name.ends_with(".zip") {
+            return Some(match channel {
+                ContentKind::Shader => ContentKind::Shader,
+                _ => ContentKind::ResourcePack,
+            });
+        }
+        None
+    }
+
+    /// Add files chosen in the platform's own file manager.
+    fn pick_content_files(&mut self, context: &egui::Context) {
+        if self.manual_busy || self.portable_busy {
+            self.set_status(StatusKind::Warning, "Another import is already running.");
+            return;
+        }
+        let kind = self.content_kind;
+        let mut dialog = rfd::FileDialog::new()
+            .set_title(format!(
+                "Add {} to the instance",
+                kind.label().to_ascii_lowercase()
+            ))
+            .add_filter(kind.label(), Self::accepted_extensions(kind))
+            .add_filter("All supported content", &["jar", "zip", "mrpack"]);
+        if let Some(instance) = self.selected_instance() {
+            let directory = kind.install_dir(&instance.root);
+            let _ = std::fs::create_dir_all(&directory);
+            dialog = dialog.set_directory(&directory);
+        }
+        if let Some(paths) = dialog.pick_files() {
+            self.add_local_files(paths, context.clone());
+        }
+    }
+
+    /// Copy one batch of picked or dropped files into the instance, routing
+    /// each file to the folder its extension belongs in.
+    fn add_local_files(&mut self, paths: Vec<PathBuf>, context: egui::Context) {
+        if paths.is_empty() {
+            return;
+        }
+        if self.manual_busy || self.portable_busy {
+            self.set_status(StatusKind::Warning, "Another import is already running.");
+            return;
+        }
+        let Some(instance) = self.selected_instance().cloned() else {
+            self.set_status(
+                StatusKind::Warning,
+                "Select an instance before adding files.",
+            );
+            return;
+        };
+        // A modpack archive is a whole instance, so it takes the pack path.
+        if let Some(pack) = paths.iter().find(|path| {
+            path.extension()
+                .is_some_and(|extension| extension.to_string_lossy().eq_ignore_ascii_case("mrpack"))
+        }) {
+            self.start_local_modpack_install(context, pack.clone());
+            return;
+        }
+        let mut jobs = Vec::with_capacity(paths.len());
+        let mut rejected = Vec::new();
+        for path in paths {
+            match Self::classify_local_file(&path, self.content_kind) {
+                Some(kind) => jobs.push((kind, path)),
+                None => rejected.push(short_name(&path)),
+            }
+        }
+        if jobs.is_empty() {
+            self.set_status(
+                StatusKind::Warning,
+                format!("Nothing to add: {}", rejected.join(", ")),
+            );
+            return;
+        }
+        let count = jobs.len();
+        let status = format!("Adding {count} file(s) to {}…", instance.name);
+        self.spawn_local_install(instance, jobs, rejected, &context, status);
+    }
+
+    /// One installer for a batch of local files. The picker and the drop path
+    /// share it, so a batch reports the same summary however it arrived.
+    fn spawn_local_install(
+        &mut self,
+        instance: Instance,
+        jobs: Vec<(ContentKind, PathBuf)>,
+        rejected: Vec<String>,
+        context: &egui::Context,
+        status: String,
+    ) {
+        let root = instance.root.clone();
+        let platforms = self.platforms.clone();
+        let sender = self.sender.clone();
+        let repaint = context.clone();
+        self.manual_busy = true;
+        self.manual_status = status;
+        self.runtime.spawn(async move {
+            let mut report = InstallReport::default();
+            let mut counts: Vec<(ContentKind, usize)> = Vec::new();
+            for (kind, path) in jobs {
+                match platforms.install_local_file(kind, &root, &path).await {
+                    Ok(installed) => {
+                        report.installed.extend(installed.installed);
+                        report.notes.extend(installed.notes);
+                        report.warnings.extend(installed.warnings);
+                        match counts.iter_mut().find(|(seen, _)| *seen == kind) {
+                            Some((_, count)) => *count += 1,
+                            None => counts.push((kind, 1)),
+                        }
+                    }
+                    Err(error) => {
+                        report
+                            .warnings
+                            .push(format!("{}: {error}", short_name(&path)));
+                    }
+                }
+            }
+            for name in rejected {
+                report
+                    .warnings
+                    .push(format!("{name}: unsupported file type"));
+            }
+            report.kind = counts.first().map_or(ContentKind::Mod, |(kind, _)| *kind);
+            let result = if report.installed.is_empty() {
+                Err(report.warnings.join(" · "))
+            } else {
+                let summary = added_summary(&counts);
+                Ok((report, summary))
+            };
+            send_event(&sender, &repaint, GuiEvent::FilesAdded(result));
+        });
+    }
+
+    /// Route a drop from any tab. `.mrpack` always becomes an instance, a
+    /// `.zip` on the Instances tab is an instance archive, and everything else
+    /// is content for the selected instance.
+    fn handle_drop(&mut self, paths: Vec<PathBuf>, context: &egui::Context) {
+        let mut dropped = expand_dropped(paths);
+        if dropped.is_empty() {
+            self.set_status(
+                StatusKind::Warning,
+                "Drop a mod, pack, image, or account file.",
+            );
+            return;
+        }
+        // A dropped account list is an identity import, not content. The
+        // parser refuses anything that does not look like a player record, so
+        // an instance JSON still falls through to the paths below.
+        let mut dropped_accounts: Vec<ImportedAccount> = Vec::new();
+        dropped.retain(|path| {
+            if !has_extension(path, "json") {
+                return true;
+            }
+            let Ok(text) = std::fs::read_to_string(path) else {
+                return true;
+            };
+            match account_import::import_text(&text) {
+                Ok(accounts) => {
+                    dropped_accounts.extend(accounts);
+                    false
+                }
+                Err(_) => true,
+            }
+        });
+        if !dropped_accounts.is_empty() {
+            let (added, refreshed) = self.merge_imported_accounts(dropped_accounts);
+            // Re-dropping a file that is already imported must not claim a
+            // second import: the report counts what the saved list gained.
+            let text = match (added, refreshed) {
+                (0, 0) => "Those accounts are already saved.".to_owned(),
+                (added, refreshed) => format!(
+                    "{} account(s) imported and {refreshed} refreshed from the dropped file.",
+                    added
+                ),
+            };
+            self.set_status(StatusKind::Success, text);
+            self.current_tab = Tab::Account;
+        }
+        if dropped.is_empty() {
+            return;
+        }
+        // A picture is artwork, not content: it is normalised into the instance
+        // folder and never copied into mods.
+        let (images, files): (Vec<PathBuf>, Vec<PathBuf>) =
+            dropped.into_iter().partition(|path| is_image_path(path));
+        if !images.is_empty() {
+            self.adopt_dropped_artwork(images, context);
+        }
+        if files.is_empty() {
+            return;
+        }
+        // A pack archive builds a whole instance, so it outranks the content
+        // files that arrived with it. Extra packs are named instead of being
+        // dropped on the floor, because silently ignoring a drag is the one
+        // thing a drop handler must never do.
+        let packs = files
+            .iter()
+            .filter(|path| has_extension(path, "mrpack"))
+            .count();
+        if let Some(pack) = files.iter().find(|path| has_extension(path, "mrpack")) {
+            self.start_local_modpack_install(context.clone(), pack.clone());
+            if packs > 1 {
+                self.set_status(
+                    StatusKind::Info,
+                    format!(
+                        "Importing {} · {} other pack(s) skipped.",
+                        short_name(pack),
+                        packs - 1
+                    ),
+                );
+            }
+            return;
+        }
+        // A zip means two different things: an instance archive dropped from
+        // another launcher, or a resource pack. Probe the archive instead of
+        // guessing from the tab: a Prism or CurseForge pack is an instance
+        // wherever it lands, while a loose game-folder zip follows the tab.
+        if let Some(position) = files.iter().position(|path| has_extension(path, "zip"))
+            && (self.current_tab == Tab::Instances
+                || kaelis_api::foreign::probe_archive(&files[position])
+                    .map(|probe| probe.kind != kaelis_api::foreign::ForeignKind::Plain)
+                    .unwrap_or(false))
+        {
+            let mut rest = files.clone();
+            let archive = rest.remove(position);
+            self.import_instance_archive(archive, context);
+            if !rest.is_empty() {
+                self.queue_dropped_content(rest, context);
+            }
+            return;
+        }
+        self.add_local_files(files, context.clone());
+    }
+
+    /// Take the first dropped picture as instance artwork. With the editor open
+    /// it stages the file for Save; otherwise it updates the selected instance
+    /// right away.
+    fn adopt_dropped_artwork(&mut self, images: Vec<PathBuf>, context: &egui::Context) {
+        let Some(first) = images.first() else {
+            return;
+        };
+        let bytes = match std::fs::read(first) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                self.set_status(
+                    StatusKind::Error,
+                    format!("Could not read the image: {error}"),
+                );
+                return;
+            }
+        };
+        self.adopt_artwork_bytes(&bytes, context);
+    }
+
+    /// Take one picture from the system clipboard. Works for a screenshot, a
+    /// browser "copy image", or a picture copied from an editor, with no file
+    /// dialog and no temporary file.
+    fn paste_clipboard_artwork(&mut self, context: &egui::Context) {
+        let bytes = match clipboard_picture() {
+            Ok(bytes) => bytes,
+            // A file copied in Explorer is a file list, not a bitmap: read the
+            // picture from disk instead of telling the user it failed.
+            Err(message) => match clipboard_artwork_file() {
+                Some(path) => match std::fs::read(&path) {
+                    Ok(bytes) => bytes,
+                    Err(error) => {
+                        self.set_status(
+                            StatusKind::Error,
+                            format!("Could not read the copied image: {error}"),
+                        );
+                        return;
+                    }
+                },
+                None => {
+                    self.set_status(StatusKind::Warning, message);
+                    return;
+                }
+            },
+        };
+        self.adopt_artwork_bytes(&bytes, context);
+    }
+
+    /// Native picture picker for instance artwork, so nobody has to type a
+    /// path or know where the file lives.
+    fn browse_artwork(&mut self, context: &egui::Context) {
+        let sender = self.sender.clone();
+        let repaint = context.clone();
+        self.runtime.spawn(async move {
+            let picked = rfd::AsyncFileDialog::new()
+                .set_title("Choose instance artwork")
+                .add_filter(
+                    "Images",
+                    &["png", "jpg", "jpeg", "webp", "gif", "bmp", "ico", "svg"],
+                )
+                .pick_file()
+                .await;
+            if let Some(file) = picked {
+                send_event(
+                    &sender,
+                    &repaint,
+                    GuiEvent::ArtworkPicked(file.path().to_path_buf()),
+                );
+            }
+        });
+    }
+
+    /// Native picture picker for one instance card, so setting a card icon
+    /// never means opening the editor, typing a path, or knowing where the
+    /// picture lives.
+    fn browse_artwork_for(&mut self, id: String, context: &egui::Context) {
+        let sender = self.sender.clone();
+        let repaint = context.clone();
+        self.runtime.spawn(async move {
+            let picked = rfd::AsyncFileDialog::new()
+                .set_title("Choose instance artwork")
+                .add_filter(
+                    "Images",
+                    &["png", "jpg", "jpeg", "webp", "gif", "bmp", "ico", "svg"],
+                )
+                .pick_file()
+                .await;
+            if let Some(file) = picked {
+                send_event(
+                    &sender,
+                    &repaint,
+                    GuiEvent::InstanceArtworkPicked {
+                        id,
+                        path: file.path().to_path_buf(),
+                    },
+                );
+            }
+        });
+    }
+
+    /// Ctrl+V fallback for every text field we own. egui delivers a paste event
+    /// for text, but a file copied in Explorer is a Windows file list, not
+    /// text, so nothing would arrive and the field would look broken.
+    fn handle_paste_fallback(&mut self, context: &egui::Context) {
+        let (pressed, delivered) = context.input(|input| {
+            (
+                input.modifiers.command && input.key_pressed(egui::Key::V),
+                input
+                    .events
+                    .iter()
+                    .any(|event| matches!(event, egui::Event::Paste(_))),
+            )
+        });
+        if !pressed {
+            return;
+        }
+        let focused = context.memory(|memory| memory.focused());
+        // A picture anywhere on the clipboard becomes artwork: people copy a
+        // screenshot or an icon file and press Ctrl+V, not "open the editor
+        // and find the file". Text pastes still belong to the focused field.
+        if focused != Some(egui::Id::new(ARTWORK_FIELD_ID)) {
+            let has_picture = clipboard_picture().is_ok();
+            let has_picture_file = clipboard_artwork_file().is_some()
+                && (self.editing.is_some() || self.current_tab == Tab::Instances);
+            if has_picture || has_picture_file {
+                self.paste_clipboard_artwork(context);
+                return;
+            }
+        }
+        if delivered {
+            return;
+        }
+        if focused == Some(egui::Id::new(ARTWORK_FIELD_ID)) {
+            self.paste_clipboard_artwork(context);
+            return;
+        }
+        let Some(text) = clipboard_query_text() else {
+            return;
+        };
+        let buffers: [(&str, &mut String); 4] = [
+            (MOD_SEARCH_ID, &mut self.mod_query),
+            (MOD_REFINE_ID, &mut self.mod_refine),
+            (INSTALLED_FILTER_ID, &mut self.installed_filter),
+            (INSTANCE_FILTER_ID, &mut self.instance_filter),
+        ];
+        for (id, buffer) in buffers {
+            if focused == Some(egui::Id::new(id)) {
+                buffer.push_str(&text);
+                break;
+            }
+        }
+    }
+
+    /// One path for every artwork source: drop, paste, path, data URL, base64.
+    fn adopt_artwork_bytes(&mut self, bytes: &[u8], context: &egui::Context) {
+        if let Some(edit) = self.editing.as_ref() {
+            let root = edit.root.clone();
+            match store_instance_artwork(&root, bytes) {
+                Ok(path) => {
+                    self.edit_icon = path.display().to_string();
+                    self.set_status(StatusKind::Success, "Artwork ready. Save to apply.");
+                }
+                Err(error) => self.set_status(StatusKind::Error, error),
+            }
+            return;
+        }
+        let Some(instance) = self.selected_instance().cloned() else {
+            self.set_status(
+                StatusKind::Warning,
+                "Select an instance first, or open one to set its artwork.",
+            );
+            return;
+        };
+        self.apply_instance_artwork(&instance.id, bytes, context);
+    }
+
+    /// Store artwork for one instance and refresh its card immediately. Used by
+    /// the avatar picker, which works without opening the editor.
+    fn apply_instance_artwork(&mut self, id: &str, bytes: &[u8], context: &egui::Context) {
+        let Some(instance) = self
+            .instances
+            .iter()
+            .find(|candidate| candidate.id == id)
+            .cloned()
+        else {
+            self.set_status(StatusKind::Warning, "That instance is no longer open.");
+            return;
+        };
+        match store_instance_artwork(&instance.root, bytes) {
+            Ok(path) => {
+                let mut updated = instance.clone();
+                updated.icon = Some(path);
+                match updated.save() {
+                    Ok(_) => {
+                        if let Some(slot) = self
+                            .instances
+                            .iter_mut()
+                            .find(|candidate| candidate.id == updated.id)
+                        {
+                            *slot = updated.clone();
+                        }
+                        self.refresh_instance_cards();
+                        self.instance_icons.remove(&updated.id);
+                        if let Some(path) = updated.icon.clone() {
+                            self.request_instance_icon(context, updated.id.clone(), path);
+                        }
+                        self.set_status(
+                            StatusKind::Success,
+                            format!("Artwork set for {}.", updated.name),
+                        );
+                    }
+                    Err(error) => self.set_status(
+                        StatusKind::Error,
+                        format!("Could not save the artwork: {error}"),
+                    ),
+                }
+            }
+            Err(error) => self.set_status(StatusKind::Error, error),
+        }
+    }
+
+    /// Turn whatever the artwork field holds (a path, a data URL, or base64)
+    /// into one stored 256 px PNG before the instance record is written.
+    fn prepare_editor_artwork(&mut self) -> bool {
+        let Some(edit) = self.editing.as_ref() else {
+            return true;
+        };
+        let root = edit.root.clone();
+        let text = self.edit_icon.trim().to_owned();
+        if text.is_empty() {
+            return true;
+        }
+        let managed = root.join(".kaelis").join("artwork.png");
+        if Path::new(&text) == managed {
+            return true;
+        }
+        let bytes = if let Some(payload) = decode_image_payload(&text) {
+            payload
+        } else {
+            let path = PathBuf::from(&text);
+            if !path.is_file() || !is_image_path(&path) {
+                // The normal save validation reports a missing or unsupported
+                // file with its own message.
+                return true;
+            }
+            match std::fs::read(&path) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    self.set_status(
+                        StatusKind::Error,
+                        format!("Could not read the image: {error}"),
+                    );
+                    return false;
+                }
+            }
+        };
+        match store_instance_artwork(&root, &bytes) {
+            Ok(path) => {
+                self.edit_icon = path.display().to_string();
+                true
+            }
+            Err(error) => {
+                self.set_status(StatusKind::Error, error);
+                false
+            }
+        }
+    }
+
+    /// Content dropped beside an instance archive still belongs to the open
+    /// instance; hand it to the normal installer instead of ignoring it.
+    fn queue_dropped_content(&mut self, files: Vec<PathBuf>, context: &egui::Context) {
+        let Some(instance) = self.selected_instance().cloned() else {
+            return;
+        };
+        if self.manual_busy || self.portable_busy {
+            return;
+        }
+        let mut jobs = Vec::with_capacity(files.len());
+        for path in files {
+            if let Some(kind) = Self::classify_local_file(&path, self.content_kind) {
+                jobs.push((kind, path));
+            }
+        }
+        if jobs.is_empty() {
+            return;
+        }
+        let count = jobs.len();
+        let status = format!("Adding {count} file(s) to {}…", instance.name);
+        self.spawn_local_install(instance, jobs, Vec::new(), context, status);
+    }
+
+    /// A drop target that states its destination before the mouse button is
+    /// released, so a drag is never a guess about which tab or instance it
+    /// will land in.
+    fn show_drop_overlay(&self, context: &egui::Context) {
+        let mut hovering = context.input(|input| input.raw.hovered_files.len());
+        // Development-only fixture: a real OS drag cannot be scripted, so a
+        // capture run can ask for the overlay on a fixed frame.
+        if hovering == 0
+            && self.screenshot_path.is_some()
+            && std::env::var_os("KAELIS_SCREENSHOT_DROP").is_some()
+        {
+            hovering = 2;
+        }
+        if hovering == 0 {
+            return;
+        }
+        let (headline, detail) = match self.current_tab {
+            Tab::Instances => (
+                "Release to import".to_owned(),
+                "Instance .zip or modpack .mrpack".to_owned(),
+            ),
+            _ => (
+                "Release to add".to_owned(),
+                match self.selected_instance() {
+                    Some(instance) => {
+                        format!("Mods, packs, and shaders → {}", instance.name)
+                    }
+                    None => "Mods, packs, and shaders · pick an instance first".to_owned(),
+                },
+            ),
+        };
+        let count = match hovering {
+            1 => "1 item".to_owned(),
+            other => format!("{other} items"),
+        };
+        egui::Area::new(egui::Id::new("kaelis-drop-target"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .interactable(false)
+            .show(context, |ui| {
+                egui::Frame::none()
+                    .fill(egui::Color32::from_rgba_premultiplied(10, 12, 17, 240))
+                    .stroke(egui::Stroke::new(1.0_f32, accent().gamma_multiply(0.55)))
+                    .rounding(egui::Rounding::same(18.0))
+                    .inner_margin(egui::Margin::symmetric(30.0, 22.0))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 14.0;
+                            // A painted dot, not a glyph: every bundled font
+                            // renders it, including on a bare Windows install.
+                            let (mark, _) = ui
+                                .allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
+                            ui.painter()
+                                .circle_filled(mark.center(), 5.0, accent_soft());
+                            ui.vertical(|ui| {
+                                ui.spacing_mut().item_spacing.y = 3.0;
+                                ui.label(
+                                    egui::RichText::new(&headline)
+                                        .size(18.0)
+                                        .strong()
+                                        .color(TEXT),
+                                );
+                                ui.label(egui::RichText::new(&detail).size(12.0).color(MUTED));
+                            });
+                        });
+                        ui.add_space(6.0);
+                        ui.label(
+                            egui::RichText::new(count)
+                                .size(10.5)
+                                .color(accent_soft().gamma_multiply(0.9)),
+                        );
+                    });
+            });
+    }
+
+    /// Import an instance archive chosen in the file manager.
+    fn pick_instance_archive(&mut self, context: &egui::Context) {
+        if self.portable_busy {
+            self.set_status(
+                StatusKind::Warning,
+                "An instance archive is already being written.",
+            );
+            return;
+        }
+        let Some(archive) = rfd::FileDialog::new()
+            .set_title("Import an instance")
+            .add_filter("Instance or modpack", &["zip", "mrpack"])
+            .add_filter("Kaelis instance", &["kaelis.zip"])
+            .add_filter("All files", &["*"])
+            .pick_file()
+        else {
+            return;
+        };
+        self.import_instance_archive(archive, context);
+    }
+
+    /// Import anything that looks like an instance: Kaelis archives, Modrinth
+    /// packs, Prism/MultiMC exports, CurseForge packs, and loose game folders.
+    /// The archive's own metadata decides which importer runs.
+    fn import_instance_archive(&mut self, archive: PathBuf, context: &egui::Context) {
+        if self.portable_busy || self.modpack_installing.is_some() {
+            self.set_status(
+                StatusKind::Warning,
+                "An instance archive is already being imported.",
+            );
+            return;
+        }
+        let probe = match kaelis_api::foreign::probe_archive(&archive) {
+            Ok(probe) => probe,
+            Err(error) => {
+                self.set_status(
+                    StatusKind::Error,
+                    format!("Could not read {}: {error}", short_name(&archive)),
+                );
+                return;
+            }
+        };
+        // Modrinth packs need their download URLs resolved, so they travel the
+        // same transactional installer as a pack picked from the browser.
+        if probe.kind == kaelis_api::foreign::ForeignKind::Modrinth {
+            let title = if probe.name.trim().is_empty() {
+                archive
+                    .file_stem()
+                    .map(|stem| stem.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "Modpack".to_owned())
+            } else {
+                probe.name.clone()
+            };
+            let id = self.unique_instance_id(&slugify(&title));
+            let version = self.browse_game_version().unwrap_or_default();
+            self.begin_modpack_install(
+                context.clone(),
+                title,
+                id,
+                version,
+                ModpackSource::Local(archive),
+            );
+            return;
+        }
+        let sender = self.sender.clone();
+        let repaint = context.clone();
+        self.portable_busy = true;
+        self.set_status(
+            StatusKind::Busy,
+            format!(
+                "Importing {} as a {}…",
+                short_name(&archive),
+                probe.kind.label()
+            ),
+        );
+        let fallback_version = if probe.game_version.trim().is_empty() {
+            let typed = self.new_instance_version.trim();
+            if typed.is_empty() {
+                self.browse_game_version().unwrap_or_default()
+            } else {
+                typed.to_owned()
+            }
+        } else {
+            String::new()
+        };
+        let kind = probe.kind;
+        self.runtime.spawn(async move {
+            let target = Instance::instances_dir();
+            let result = tokio::task::spawn_blocking(move || {
+                if kind == kaelis_api::foreign::ForeignKind::Kaelis {
+                    return portable::import_instance(&archive, &target)
+                        .map(|report| report.summary())
+                        .map_err(|error| error.to_string());
+                }
+                kaelis_api::foreign::import_foreign_archive(
+                    &archive,
+                    &probe,
+                    &target,
+                    &fallback_version,
+                )
+                .map(|report| report.summary())
+                .map_err(|error| error.to_string())
+            })
+            .await
+            .map_err(|error| error.to_string())
+            .and_then(|result| result);
+            send_event(
+                &sender,
+                &repaint,
+                GuiEvent::Portable(result.map(|message| (message, true))),
+            );
+        });
+    }
+
+    /// Write one instance and its files into a portable archive.
+    fn export_instance_archive(&mut self, instance: Instance, context: &egui::Context) {
+        if self.portable_busy {
+            self.set_status(
+                StatusKind::Warning,
+                "An instance archive is already being written.",
+            );
+            return;
+        }
+        let mut dialog = rfd::FileDialog::new()
+            .set_title("Export an instance archive")
+            .set_file_name(format!("{}.kaelis.zip", instance.id))
+            .add_filter("Kaelis instance", &["zip"]);
+        if let Some(dir) = &self.last_export_dir {
+            dialog = dialog.set_directory(dir);
+        }
+        let Some(destination) = dialog.save_file() else {
+            return;
+        };
+        if let Some(dir) = destination.parent() {
+            self.last_export_dir = Some(dir.to_path_buf());
+        }
+        let sender = self.sender.clone();
+        let repaint = context.clone();
+        self.portable_busy = true;
+        self.set_status(StatusKind::Busy, format!("Exporting {}…", instance.name));
+        self.runtime.spawn(async move {
+            let result = tokio::task::spawn_blocking(move || {
+                portable::export_instance(&instance, &destination)
+                    .map(|report| format!("{} → {}", report.summary(), destination.display()))
+            })
+            .await
+            .map_err(|error| error.to_string())
+            .and_then(|result| result.map_err(|error| error.to_string()));
+            send_event(
+                &sender,
+                &repaint,
+                GuiEvent::Portable(result.map(|message| (message, false))),
+            );
+        });
+    }
+
+    /// Re-read every instance record from disk, keeping the current selection
+    /// when it still exists. Used after an archive import adds one.
+    fn reload_instance_list(&mut self, context: &egui::Context) {
+        let previous = self.selected_instance.clone();
+        self.instances = Instance::load_all().unwrap_or_default();
+        self.refresh_instance_cards();
+        self.reload_instance_icons(context);
+        self.selected_instance = previous
+            .filter(|id| self.instances.iter().any(|instance| &instance.id == id))
+            .or_else(|| self.instances.first().map(|instance| instance.id.clone()));
+        self.refresh_installed();
+    }
+
+    /// Record the result of a manual or file-manager import in one place.
+    fn finish_manual_install(
+        &mut self,
+        result: Result<InstallReport, String>,
+        summary: Option<String>,
+    ) {
+        self.manual_busy = false;
+        match result {
+            Ok(report) => {
+                let text = summary.unwrap_or_else(|| report.summary());
+                let clean = report.warnings.is_empty();
+                self.manual_status = text.clone();
+                self.last_install = Some(report);
+                self.refresh_installed();
+                self.set_status(
+                    if clean {
+                        StatusKind::Success
+                    } else {
+                        StatusKind::Warning
+                    },
+                    text,
+                );
+            }
+            Err(error) => {
+                self.manual_status = format!("Import failed: {error}");
+                self.set_status(StatusKind::Error, self.manual_status.clone());
+            }
+        }
+    }
+
+    /// Draw a cached premium head immediately (or Steve when the name has no
+    /// premium skin yet), then look the name up in the background.
+    fn apply_offline_head(&mut self, context: &egui::Context, name: &str) {
+        let image = self
+            .offline_skins
+            .get(&name.to_ascii_lowercase())
+            .cloned()
+            .flatten()
+            .unwrap_or_else(steve_head);
+        self.avatar =
+            Some(context.load_texture("kaelis-profile-head", image, egui::TextureOptions::NEAREST));
+    }
+
+    fn request_offline_skin(&mut self, context: &egui::Context, name: &str) {
+        let key = name.trim().to_ascii_lowercase();
+        if !valid_username(&key) {
+            return;
+        }
+        let active = self
+            .offline_account
+            .as_ref()
+            .is_some_and(|profile| profile.name.eq_ignore_ascii_case(&key))
+            && self.microsoft_session.is_none();
+        if self.offline_skins.contains_key(&key) {
+            if active {
+                self.apply_offline_head(context, &key);
+            }
+            self.refresh_offline_typing_avatar(context);
+            return;
+        }
+        if self.offline_skin_pending.as_deref() == Some(key.as_str()) {
+            return;
+        }
+        // Single flight per username: the active avatar, the typing preview,
+        // and every account row share one lookup and one decode.
+        if !self.offline_skin_inflight.insert(key.clone()) {
+            return;
+        }
+        self.offline_skin_pending = Some(key.clone());
+        let sender = self.sender.clone();
+        let repaint = context.clone();
+        let client = self.http.clone();
+        self.runtime.spawn(async move {
+            let (result, failed) = match fetch_head_for_username(&client, &key, 64).await {
+                Ok(Some(bytes)) => {
+                    let decoded = tokio::task::spawn_blocking(move || {
+                        image::load_from_memory(&bytes)
+                            .map(|image| image.to_rgba8())
+                            .map(|image| {
+                                egui::ColorImage::from_rgba_unmultiplied(
+                                    [image.width() as usize, image.height() as usize],
+                                    image.as_raw(),
+                                )
+                            })
+                            .ok()
+                    })
+                    .await
+                    .ok()
+                    .flatten();
+                    let failed = decoded.is_none();
+                    (decoded, failed)
+                }
+                Ok(None) => (None, false),
+                // A network hiccup keeps the current head and is retried the
+                // next time the name settles.
+                Err(_) => (None, true),
+            };
+            send_event(
+                &sender,
+                &repaint,
+                GuiEvent::OfflineAvatar {
+                    name: key,
+                    result,
+                    failed,
+                },
+            );
+        });
+    }
+
+    fn refresh_offline_typing_avatar(&mut self, context: &egui::Context) {
+        let key = self.offline_name.trim().to_ascii_lowercase();
+        if key == self.offline_typing_key && self.offline_typing_avatar.is_some() {
+            return;
+        }
+        let image = self
+            .offline_skins
+            .get(&key)
+            .cloned()
+            .flatten()
+            .unwrap_or_else(steve_head);
+        self.offline_typing_key = key;
+        self.offline_typing_avatar = Some(context.load_texture(
+            "kaelis-offline-typing-head",
+            image,
+            egui::TextureOptions::NEAREST,
+        ));
     }
 
     fn request_avatar(&self, context: egui::Context, uuid: String) {
@@ -1725,15 +3024,21 @@ impl KaelisApp {
             self.set_status(StatusKind::Warning, "A modpack is already installing.");
             return;
         }
+        self.modpack_generation = self.modpack_generation.wrapping_add(1);
+        let generation = self.modpack_generation;
         self.modpack_installing = Some(title.clone());
-        self.modpack_detail = "Resolving the pack archive…".to_owned();
+        self.modpack_detail = "Reading the pack…".to_owned();
         self.set_status(StatusKind::Busy, format!("Installing modpack {title}…"));
         let platforms = self.platforms.clone();
         let http = self.http.clone();
         let sender = self.sender.clone();
         let repaint = context;
         let staging = kaelis_core::sweeper::temp_root().join("modpacks");
-        self.runtime.spawn(async move {
+        let mut icon_url = match &source {
+            ModpackSource::Remote(item) => item.icon_url.clone(),
+            _ => None,
+        };
+        let task = self.runtime.spawn(async move {
             let downloaded = !matches!(source, ModpackSource::Local(_));
             let result = async {
                 let pack_path = match source {
@@ -1746,6 +3051,7 @@ impl KaelisApp {
                             .resolve_modpack(&link)
                             .await
                             .map_err(|error| error.to_string())?;
+                        icon_url = item.icon_url.clone();
                         platforms
                             .download_modpack(&item, &game_version, &staging)
                             .await
@@ -1770,10 +3076,12 @@ impl KaelisApp {
                     }
                     ModpackSource::Local(path) => path,
                 };
-                let pack = kaelis_api::mrpack::read_pack_summary(&pack_path)
+                let mut staged_cleanup =
+                    downloaded.then(|| PackArchiveCleanup(Some(pack_path.clone())));
+                let mut pack = kaelis_api::mrpack::read_pack_summary(&pack_path)
                     .map_err(|error| error.to_string())?;
                 let root = Instance::instances_dir().join(&id);
-                let instance = Instance::new(
+                let mut instance = Instance::new(
                     &id,
                     if pack.name.trim().is_empty() {
                         &title
@@ -1785,24 +3093,62 @@ impl KaelisApp {
                     root,
                 );
                 std::fs::create_dir_all(&instance.root).map_err(|error| error.to_string())?;
-                instance.save().map_err(|error| error.to_string())?;
-                let imported =
-                    match kaelis_api::mrpack::install_mrpack(&http, &pack_path, &instance.root)
-                        .await
-                    {
-                        Ok(imported) => imported,
-                        Err(error) => {
-                            // Never leave a half-imported instance behind: the
-                            // pack install is transactional, the instance is not.
-                            let _ = instance.erase();
-                            return Err(error.to_string());
+                let mut cleanup = ModpackCleanup(Some(instance.clone()));
+                let mut pending_icon: Option<tokio::task::JoinHandle<Option<Vec<u8>>>> = None;
+                // A picture inside the pack costs nothing, so it lands before
+                // the record is saved. A remote project picture is fetched
+                // alongside the mod downloads instead of delaying them; the
+                // artwork is cosmetic, so a failed second save never turns a
+                // finished import into an error.
+                match pack.icon.take() {
+                    Some(bytes) => {
+                        apply_pack_artwork(&mut instance, &bytes);
+                    }
+                    None => {
+                        if let Some(url) = icon_url.clone() {
+                            let http = http.clone();
+                            pending_icon =
+                                Some(tokio::spawn(
+                                    async move { fetch_pack_icon(&http, &url).await },
+                                ));
                         }
-                    };
-                if downloaded {
+                    }
+                }
+                instance.save().map_err(|error| error.to_string())?;
+                let progress_sender = sender.clone();
+                let progress_repaint = repaint.clone();
+                let imported = kaelis_api::mrpack::install_mrpack_with_progress(
+                    &http,
+                    &pack_path,
+                    &instance.root,
+                    move |detail| {
+                        send_event(
+                            &progress_sender,
+                            &progress_repaint,
+                            GuiEvent::ModpackProgress {
+                                generation,
+                                detail: detail.to_owned(),
+                            },
+                        );
+                    },
+                )
+                .await
+                .map_err(|error| error.to_string())?;
+                if let Some(handle) = pending_icon
+                    && let Ok(Some(bytes)) = handle.await
+                    && apply_pack_artwork(&mut instance, &bytes)
+                {
+                    let _ = instance.save();
+                }
+                if let Some(cleanup) = &mut staged_cleanup {
                     // Staged downloads are ours to remove; a local .mrpack the
                     // user dropped belongs to them.
+                    cleanup.0 = None;
                     let _ = std::fs::remove_file(&pack_path);
                 }
+                // The instance is complete; dropping the guard now would
+                // delete it.
+                cleanup.0 = None;
                 Ok(ModpackOutcome {
                     instance,
                     imported,
@@ -1813,13 +3159,36 @@ impl KaelisApp {
             send_event(
                 &sender,
                 &repaint,
-                GuiEvent::ModpackInstalled(Box::new(result)),
+                GuiEvent::ModpackInstalled {
+                    generation,
+                    result: Box::new(result),
+                },
             );
         });
+        self.modpack_task = Some(task);
     }
 
     /// Delete logs, crash reports, and staging leftovers from every instance.
     /// Saves, mods, configs, and options are outside the cleaner by design.
+    /// Sweep one instance once its game has exited, so the session's logs,
+    /// caches, and crash dumps never outlive the process that wrote them.
+    fn clean_finished_instance(&self, instance_id: &str) {
+        if !self.auto_clean_junk {
+            return;
+        }
+        let Some(root) = self
+            .instances
+            .iter()
+            .find(|instance| instance.id == instance_id)
+            .map(|instance| instance.root.clone())
+        else {
+            return;
+        };
+        self.runtime.spawn_blocking(move || {
+            let _ = kaelis_core::junk::clean_instance(&root);
+        });
+    }
+
     fn clean_junk_now(&mut self, context: egui::Context) {
         let sender = self.sender.clone();
         let repaint = context;
@@ -1883,7 +3252,7 @@ impl KaelisApp {
             let progress_context = context.clone();
             let game_version = instance.mc_version.clone();
             let instance_root = instance.root.clone();
-            self.runtime.spawn(async move {
+            let task = self.runtime.spawn(async move {
                 let result = platforms
                     .install_content_reported(
                         &job.item,
@@ -1926,8 +3295,61 @@ impl KaelisApp {
                     .map_err(|error| error.to_string());
                 send_event(&sender, &repaint, GuiEvent::ModInstalled(result));
             });
+            self.install_task = Some(task);
             return;
         }
+    }
+
+    /// Stop the running content install now. The banner disappears on this
+    /// frame; the worker is aborted at its next await, and a short watcher
+    /// starts the next queued job only after it has actually stopped.
+    fn cancel_mod_install(&mut self, context: egui::Context) {
+        let Some(job) = self.installing_job.take() else {
+            return;
+        };
+        self.install_states.insert(
+            install_state_key(&job.instance_id, &job.key),
+            ModInstallState::Cancelled,
+        );
+        self.install_detail = None;
+        self.install_started_at = None;
+        self.set_status(StatusKind::Info, format!("Stopped {}.", job.item.title));
+        let Some(task) = self.install_task.take() else {
+            self.pump_install_queue(context);
+            return;
+        };
+        task.abort();
+        let sender = self.sender.clone();
+        let repaint = context;
+        self.runtime.spawn(async move {
+            let _ = task.await;
+            send_event(&sender, &repaint, GuiEvent::InstallStopped);
+        });
+    }
+
+    /// Stop a modpack import. Aborting drops the worker's cleanup guard, which
+    /// removes the half-created instance; the generation bump ignores any
+    /// progress that was already in the channel.
+    fn cancel_modpack_install(&mut self, context: egui::Context) {
+        let Some(title) = self.modpack_installing.take() else {
+            return;
+        };
+        self.modpack_generation = self.modpack_generation.wrapping_add(1);
+        self.modpack_detail.clear();
+        self.set_status(StatusKind::Info, format!("Stopped importing {title}."));
+        let Some(task) = self.modpack_task.take() else {
+            return;
+        };
+        task.abort();
+        let sender = self.sender.clone();
+        let repaint = context;
+        self.runtime.spawn(async move {
+            // Abort is immediate for the UI, but the future's cleanup guards
+            // only run when the runtime drops it. Wait for that before the
+            // instance list is re-read, or a cancelled pack briefly reappears.
+            let _ = task.await;
+            send_event(&sender, &repaint, GuiEvent::ModpackStopped);
+        });
     }
 
     fn clear_install_queue(&mut self) {
@@ -1993,9 +3415,11 @@ impl KaelisApp {
             return;
         }
         if !path.is_file() {
+            self.instance_icon_paths.insert(id.clone(), path);
             self.instance_icons.insert(id, ModIconState::Failed);
             return;
         }
+        self.instance_icon_paths.insert(id.clone(), path.clone());
         self.instance_icons
             .insert(id.clone(), ModIconState::Loading);
         let sender = self.sender.clone();
@@ -2014,7 +3438,13 @@ impl KaelisApp {
     }
 
     fn reload_instance_icons(&mut self, context: &egui::Context) {
-        self.instance_icons.clear();
+        let live: HashSet<String> = self
+            .instances
+            .iter()
+            .map(|instance| instance.id.clone())
+            .collect();
+        self.instance_icons.retain(|id, _| live.contains(id));
+        self.instance_icon_paths.retain(|id, _| live.contains(id));
         let requests: Vec<(String, PathBuf)> = self
             .instances
             .iter()
@@ -2026,6 +3456,15 @@ impl KaelisApp {
             })
             .collect();
         for (id, path) in requests {
+            let unchanged = self.instance_icon_paths.get(&id) == Some(&path)
+                && matches!(
+                    self.instance_icons.get(&id),
+                    Some(ModIconState::Ready(_) | ModIconState::Loading)
+                );
+            if unchanged {
+                continue;
+            }
+            self.instance_icons.remove(&id);
             self.request_instance_icon(context, id, path);
         }
     }
@@ -2074,6 +3513,9 @@ impl KaelisApp {
     }
 
     fn save_instance_edit(&mut self, context: &egui::Context) {
+        if !self.prepare_editor_artwork() {
+            return;
+        }
         let saved = {
             let Some(edit) = self.editing.as_mut() else {
                 return;
@@ -2090,6 +3532,14 @@ impl KaelisApp {
                 Err("Instance name cannot be empty.".to_owned())
             } else if name.chars().count() > 64 {
                 Err("Instance name must be 64 characters or fewer.".to_owned())
+            } else if self
+                .instances
+                .iter()
+                .any(|item| item.id != edit.id && item.name.eq_ignore_ascii_case(&name))
+            {
+                Err(format!(
+                    "An instance named \"{name}\" already exists. Pick a unique name."
+                ))
             } else if !valid_instance_version(&version) {
                 Err("Minecraft version must use letters, digits, '.', '_' or '-'.".to_owned())
             } else if loader.is_empty() {
@@ -2119,7 +3569,8 @@ impl KaelisApp {
                 };
                 if icon.is_none() {
                     Err(
-                        "Icon image not found. Choose a PNG, JPEG, WebP, GIF or BMP file."
+                        "Artwork not found. Use a PNG, JPEG, WebP, GIF, BMP, ICO, or SVG \
+                         file, a data URL, or base64."
                             .to_owned(),
                     )
                 } else if java.is_none() {
@@ -2153,9 +3604,6 @@ impl KaelisApp {
                         edit.window_width = None;
                         edit.window_height = None;
                     }
-                    edit.icon_variant = edit
-                        .icon_variant
-                        .map(|variant| variant.min(INSTANCE_VARIANTS - 1));
                     edit.save()
                         .map(|_| edit.clone())
                         .map_err(|error| format!("Could not save instance properties: {error}"))
@@ -2191,8 +3639,16 @@ impl KaelisApp {
         if let Some(path) = saved.icon.clone() {
             self.request_instance_icon(context, saved.id.clone(), path);
         }
+        let running = self.running_instances.contains(&saved.id);
         self.editing = Some(saved);
-        self.set_status(StatusKind::Success, "Instance properties saved.");
+        self.set_status(
+            StatusKind::Success,
+            if running {
+                "Instance properties saved. Restart the running game to apply launch changes."
+            } else {
+                "Instance properties saved."
+            },
+        );
     }
 
     /// Everything persisted outside instance JSON. One construction point so a
@@ -2201,44 +3657,119 @@ impl KaelisApp {
         LauncherSettings {
             ms_client_id: self.ms_client_id.trim().to_owned(),
             last_account: self.last_account.clone(),
+            account_mode: Some(self.account_mode),
             auto_repair: self.auto_repair_before_launch,
             auto_resolve_duplicates: self.auto_resolve_duplicates,
             auto_clean: self.auto_clean_junk,
             content_kind: self.content_kind,
-            ui_zoom: self.ui_zoom,
             offline_account: self
                 .offline_account
                 .as_ref()
                 .map(|profile| profile.name.clone())
                 .unwrap_or_default(),
+            accounts: self.accounts.clone(),
+            ui_scale: self.ui_scale,
         }
     }
 
     fn persist_settings(&self) {
-        let _ = save_launcher_settings(&self.settings_snapshot());
+        let _ = save_settings(&self.settings_snapshot());
     }
 
-    /// Apply and persist the interface zoom, snapped to 10 % steps inside a
-    /// range that stays readable on both small and large displays.
-    fn set_ui_zoom(&mut self, zoom: f32, context: &egui::Context) {
-        let zoom = ((zoom.clamp(0.8, 2.0)) * 10.0).round() / 10.0;
-        if (zoom - self.ui_zoom).abs() < f32::EPSILON {
+    /// Follow the display in automatic mode, or follow Ctrl +/- in manual mode.
+    ///
+    /// The basis is the window height in native-DPI points: screen height
+    /// times the current zoom. Changing the zoom shrinks the logical canvas by
+    /// exactly that factor, so the basis stays put and a resolved step cannot
+    /// feed itself back into the next frame. A resize or a move to another
+    /// monitor changes the basis, which is the only thing that re-resolves.
+    fn apply_interface_scale(&mut self, context: &egui::Context) {
+        let zoom = context.zoom_factor();
+        if self.ui_scale > 0.0 {
+            // Manual choice. egui's Ctrl +/- lands here as a real change.
+            if (zoom - self.applied_zoom).abs() > 0.001 {
+                self.applied_zoom = zoom;
+                self.ui_scale = zoom;
+                self.persist_settings();
+            }
             return;
         }
-        self.ui_zoom = zoom;
-        context.set_zoom_factor(zoom);
-        context.request_repaint();
+        // A zoom change while Auto is selected is the user's Ctrl +/-; keep
+        // it and make it the saved manual step rather than snapping back.
+        if (zoom - self.applied_zoom).abs() > 0.001 && !self.auto_scale_pending {
+            self.applied_zoom = zoom;
+            self.ui_scale = zoom;
+            self.persist_settings();
+            return;
+        }
+        let screen = context.screen_rect().size();
+        // The first frame can report a surface that is not sized yet, so wait
+        // rather than latching a scale for a 0×0 window.
+        if screen.y < 200.0 || screen.x < 320.0 {
+            return;
+        }
+        let basis = screen.y * zoom;
+        if !self.auto_scale_pending && (basis - self.auto_basis).abs() < 8.0 {
+            return;
+        }
+        let target = if self.auto_scale_pending {
+            auto_scale_for(basis)
+        } else {
+            // A dead zone around each boundary stops a window resized onto a
+            // threshold from flipping between two steps every frame.
+            auto_scale_for_settled(basis, self.applied_zoom)
+        };
+        self.auto_basis = basis;
+        self.auto_scale_pending = false;
+        if (target - zoom).abs() > 0.001 {
+            context.set_zoom_factor(target);
+            self.applied_zoom = target;
+            context.request_repaint();
+        } else {
+            self.applied_zoom = zoom;
+        }
+    }
+
+    /// Ctrl+1…5 jump straight to a tab, and any Tab press turns on the
+    /// focus ring. A pointer press turns it off again, so the ring never
+    /// lingers after a mouse-driven focus.
+    fn handle_keyboard_navigation(&mut self, context: &egui::Context) {
+        if context.input(|input| input.key_pressed(egui::Key::Tab)) {
+            self.keyboard_nav = true;
+        }
+        if context.input(|input| input.pointer.any_pressed()) {
+            self.keyboard_nav = false;
+        }
+        if let Some(tab) = context.input_mut(tab_from_shortcuts) {
+            self.current_tab = tab;
+            self.keyboard_nav = true;
+        }
+    }
+
+    /// Switch to automatic scale now, and resolve it against the current
+    /// display on the next frame.
+    fn use_auto_scale(&mut self, context: &egui::Context) {
+        context.set_zoom_factor(1.0);
+        self.applied_zoom = 1.0;
+        self.ui_scale = 0.0;
+        self.auto_basis = 0.0;
+        self.auto_scale_pending = true;
         self.persist_settings();
-        self.set_status(
-            StatusKind::Info,
-            format!("Interface scale {}%.", (zoom * 100.0).round() as u32),
-        );
+    }
+
+    fn set_ui_scale(&mut self, context: &egui::Context, scale: f32) {
+        let scale = scale.clamp(0.85, 1.5);
+        context.set_zoom_factor(scale);
+        self.applied_zoom = scale;
+        self.ui_scale = scale;
+        self.auto_scale_pending = false;
+        self.persist_settings();
     }
 
     fn save_integrations(&mut self) {
         let ms_client_id = self.ms_client_id.trim().to_owned();
         let settings = self.settings_snapshot();
-        if let Err(error) = save_launcher_settings(&settings) {
+        if let Err(error) = save_settings(&settings) {
             self.set_status(
                 StatusKind::Error,
                 format!("Could not save launcher settings: {error}"),
@@ -2427,8 +3958,8 @@ impl KaelisApp {
         });
     }
 
-    /// Download Fabric's loader libraries for an instance that just finished
-    /// its vanilla install, so its mods can actually run.
+    /// Download the loader libraries for an instance that just finished its
+    /// vanilla install, so Fabric/Quilt mods can actually run.
     fn provision_loader(&mut self, context: egui::Context, instance_id: String) {
         let Some(instance) = self
             .instances
@@ -2438,8 +3969,9 @@ impl KaelisApp {
         else {
             return;
         };
-        if !instance.loader.eq_ignore_ascii_case("fabric")
-            || kaelis_api::loader::load_installed(&instance.root, &instance.mc_version).is_some()
+        let loader = instance.loader.to_ascii_lowercase();
+        if !matches!(loader.as_str(), "fabric" | "quilt")
+            || kaelis_api::loader::load_for(&instance.root, &instance.mc_version, &loader).is_some()
         {
             return;
         }
@@ -2447,28 +3979,30 @@ impl KaelisApp {
         let sender = self.sender.clone();
         let repaint = context;
         let game_version = instance.mc_version.clone();
+        let label = if loader == "quilt" { "Quilt" } else { "Fabric" };
         self.runtime.spawn(async move {
-            let message =
-                match kaelis_api::loader::ensure_installed(&client, &instance.root, &game_version)
-                    .await
-                {
-                    Ok(install) => format!(
-                        "Fabric loader {} installed for {} ({} libraries).",
-                        install.loader_version, install.game_version, install.libraries
-                    ),
-                    Err(error) => format!("Fabric loader install failed: {error}"),
-                };
+            let message = match kaelis_api::loader::provision(
+                &client,
+                &instance.root,
+                &game_version,
+                &loader,
+            )
+            .await
+            {
+                Ok(Some(install)) => format!(
+                    "{label} loader {} installed for {} ({} libraries).",
+                    install.loader_version, install.game_version, install.libraries
+                ),
+                Ok(None) => return,
+                Err(error) => format!("{label} loader install failed: {error}"),
+            };
             send_event(&sender, &repaint, GuiEvent::Notice(message));
         });
     }
 
     fn sign_in_offline(&mut self, context: egui::Context) {
         let name = self.offline_name.trim();
-        let valid = (3..=16).contains(&name.len())
-            && name
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_');
-        if !valid {
+        if !valid_username(name) {
             self.auth_status = "Offline names use 3–16 letters, digits, or underscores.".to_owned();
             return;
         }
@@ -2481,47 +4015,369 @@ impl KaelisApp {
         let profile = offline_profile(name);
         self.auth_status = format!("Offline profile ready: {}", profile.name);
         self.offline_account = Some(profile.clone());
-        self.avatar = Some(context.load_texture(
-            "kaelis-offline-profile-head",
-            steve_head(),
-            egui::TextureOptions::NEAREST,
-        ));
-        self.persist_settings();
+        self.microsoft_session = None;
+        self.apply_offline_head(&context, &profile.name);
+        self.request_offline_skin(&context, &profile.name);
+        self.upsert_account(AccountKind::Offline, &profile.name, &profile.uuid);
     }
 
-    fn forget_account(&mut self, context: egui::Context) {
-        let Some(session) = self.microsoft_session.take() else {
-            self.offline_account = None;
-            self.avatar = None;
-            self.persist_settings();
-            self.auth_status = "Signed out.".to_owned();
-            return;
-        };
-        let name = session.profile.name.clone();
-        self.offline_account = None;
-        self.avatar = None;
-        self.last_account.clear();
-        let mut settings = self.settings_snapshot();
-        settings.last_account.clear();
-        let _ = save_launcher_settings(&settings);
-        self.auth_status = "Removing the saved keychain token…".to_owned();
-        drop(session);
+    /// Read the account files Prism, MultiMC, PolyMC, and the official
+    /// launcher leave on this machine. Disk work stays off the UI thread: a
+    /// network drive or a large launcher data folder must not freeze a frame.
+    fn scan_for_accounts(&mut self, context: &egui::Context, announce: bool) {
         let sender = self.sender.clone();
-        let repaint = context;
+        let repaint = context.clone();
+        if announce {
+            self.auth_status = "Looking for account files…".to_owned();
+        }
         self.runtime.spawn_blocking(move || {
-            let message = match kaelis_api::auth::delete_refresh_token(&name) {
-                Ok(()) => "Signed out and removed the saved keychain token.".to_owned(),
-                Err(error) => format!("Could not remove the saved keychain token: {error}"),
-            };
-            send_event(&sender, &repaint, GuiEvent::Notice(message));
+            let scan = account_import::scan_known_files();
+            if scan.accounts.is_empty() {
+                // A silent first-run scan must not put a warning in the status
+                // bar just because this computer has no other launcher.
+                if announce {
+                    let result = Err("no account file from another launcher was found".to_owned());
+                    send_event(&sender, &repaint, GuiEvent::AccountsImported(result));
+                }
+                return;
+            }
+            send_event(&sender, &repaint, GuiEvent::AccountsImported(Ok(scan)));
         });
     }
 
-    fn launch_selected(&mut self, context: egui::Context) {
-        if self.game_running {
-            self.set_status(StatusKind::Warning, "Minecraft is already running.");
+    /// Import an account list the user picks. Any JSON with player records is
+    /// accepted, not only a filename the launcher recognises.
+    fn pick_account_file(&mut self, context: &egui::Context) {
+        let sender = self.sender.clone();
+        let repaint = context.clone();
+        self.runtime.spawn(async move {
+            let Some(file) = rfd::AsyncFileDialog::new()
+                .set_title("Import accounts")
+                .add_filter("Account files", &["json", "txt"])
+                .pick_file()
+                .await
+            else {
+                return;
+            };
+            let path = file.path().to_path_buf();
+            let read = tokio::task::spawn_blocking({
+                let path = path.clone();
+                move || {
+                    account_import::import_file(&path)
+                        .map(|accounts| ImportScan {
+                            accounts,
+                            files: vec![path.display().to_string()],
+                        })
+                        .map_err(|error| error.to_string())
+                }
+            })
+            .await;
+            let result = match read {
+                Ok(result) => result,
+                Err(error) => Err(error.to_string()),
+            };
+            send_event(&sender, &repaint, GuiEvent::AccountsImported(result));
+        });
+    }
+
+    /// Fold imported identities into the saved list without changing which
+    /// account is active. Existing rows keep their place; a late UUID fills an
+    /// empty one instead of replacing the row.
+    fn merge_imported_accounts(&mut self, accounts: Vec<ImportedAccount>) -> (usize, usize) {
+        let mut added = 0;
+        let mut refreshed = 0;
+        for imported in accounts {
+            let saved = imported.saved();
+            if let Some(existing) = self.accounts.iter_mut().find(|account| {
+                account.kind == saved.kind && account.name.eq_ignore_ascii_case(&saved.name)
+            }) {
+                if existing.uuid.is_empty() && !saved.uuid.is_empty() {
+                    existing.uuid = saved.uuid;
+                    refreshed += 1;
+                }
+                continue;
+            }
+            self.accounts.push(saved);
+            added += 1;
+        }
+        if added > 0 || refreshed > 0 {
+            self.persist_settings();
+        }
+        (added, refreshed)
+    }
+
+    /// Public Microsoft client id, falling back to the environment variable.
+    fn microsoft_client_id(&self) -> String {
+        let configured = self.ms_client_id.trim();
+        if configured.is_empty() {
+            std::env::var("KAELIS_MS_CLIENT_ID").unwrap_or_default()
+        } else {
+            configured.to_owned()
+        }
+    }
+
+    fn active_identity_matches(&self, account: &SavedAccount) -> bool {
+        match account.kind {
+            AccountKind::Microsoft => self
+                .microsoft_session
+                .as_ref()
+                .is_some_and(|session| session.profile.name.eq_ignore_ascii_case(&account.name)),
+            AccountKind::Offline => self
+                .offline_account
+                .as_ref()
+                .is_some_and(|profile| profile.name.eq_ignore_ascii_case(&account.name)),
+        }
+    }
+
+    /// Insert or refresh one identity. The active row moves to the end so the
+    /// list reads newest-last without a separate timestamp sort.
+    fn upsert_account(&mut self, kind: AccountKind, name: &str, uuid: &str) {
+        let name = name.trim();
+        if name.is_empty() {
             return;
         }
+        if let Some(index) = self
+            .accounts
+            .iter()
+            .position(|account| account.kind == kind && account.name.eq_ignore_ascii_case(name))
+        {
+            let mut account = self.accounts.remove(index);
+            if !uuid.is_empty() {
+                account.uuid = uuid.to_owned();
+            }
+            self.accounts.push(account);
+        } else {
+            self.accounts.push(SavedAccount::new(kind, name, uuid));
+        }
+        self.account_mode = match kind {
+            AccountKind::Microsoft => AccountMode::Microsoft,
+            AccountKind::Offline => AccountMode::Offline,
+        };
+        if kind == AccountKind::Microsoft {
+            self.last_account = name.to_owned();
+        }
+        self.persist_settings();
+    }
+
+    /// Switch identity. Offline rows are instant; a Microsoft row restores its
+    /// saved token in the background, so the window never blocks on a keychain
+    /// read or a network round trip.
+    fn activate_account(&mut self, index: usize, context: &egui::Context) {
+        let Some(account) = self.accounts.get(index).cloned() else {
+            return;
+        };
+        match account.kind {
+            AccountKind::Offline => {
+                let profile = offline_profile(&account.name);
+                self.microsoft_session = None;
+                self.offline_account = Some(profile.clone());
+                self.offline_name = profile.name.clone();
+                self.auth_status = format!("Offline profile ready: {}", profile.name);
+                self.apply_offline_head(context, &profile.name);
+                self.request_offline_skin(context, &profile.name);
+                self.upsert_account(AccountKind::Offline, &profile.name, &profile.uuid);
+            }
+            AccountKind::Microsoft => {
+                let client_id = self.microsoft_client_id();
+                if client_id.is_empty() {
+                    self.auth_status =
+                        "Microsoft sign-in needs a public client ID in Settings > Integrations."
+                            .to_owned();
+                    return;
+                }
+                self.account_mode = AccountMode::Microsoft;
+                self.offline_account = None;
+                self.avatar = None;
+                self.auth_busy = true;
+                self.auth_status = format!("Restoring {}…", account.name);
+                let sender = self.sender.clone();
+                let repaint = context.clone();
+                let name = account.name.clone();
+                self.runtime.spawn(async move {
+                    let token = tokio::task::spawn_blocking({
+                        let name = name.clone();
+                        move || kaelis_api::auth::load_refresh_token(&name)
+                    })
+                    .await;
+                    let result = match token {
+                        Ok(Ok(_)) => match MicrosoftAuth::with_client_id(client_id) {
+                            Ok(auth) => auth
+                                .login_with_refresh_token(&name)
+                                .await
+                                .map_err(|error| error.to_string()),
+                            Err(error) => Err(error.to_string()),
+                        },
+                        Ok(Err(error)) => Err(format!(
+                            "{name} needs a fresh sign-in before it can play online: {error}"
+                        )),
+                        Err(error) => Err(error.to_string()),
+                    };
+                    send_event(&sender, &repaint, GuiEvent::Restored(result));
+                });
+            }
+        }
+    }
+
+    /// Drop one saved identity. Removing a Microsoft row also deletes its
+    /// keychain token; no other account is touched.
+    fn remove_account(&mut self, index: usize, context: &egui::Context) {
+        if index >= self.accounts.len() {
+            return;
+        }
+        let account = self.accounts.remove(index);
+        self.account_heads.remove(&account.key());
+        self.account_head_pending.remove(&account.key());
+        self.account_head_retry.remove(&account.key());
+        if self.active_identity_matches(&account) {
+            self.microsoft_session = None;
+            self.offline_account = None;
+            self.avatar = None;
+            self.auth_status = format!("Removed {}. No identity is active.", account.name);
+        }
+        if self.last_account.eq_ignore_ascii_case(&account.name) {
+            self.last_account.clear();
+        }
+        self.persist_settings();
+        if account.kind == AccountKind::Microsoft {
+            let name = account.name.clone();
+            let sender = self.sender.clone();
+            let repaint = context.clone();
+            self.runtime.spawn_blocking(move || {
+                let message = match kaelis_api::auth::delete_refresh_token(&name) {
+                    Ok(()) => format!("Removed {name} and its saved token."),
+                    Err(error) => format!("Removed {name}; token cleanup failed: {error}"),
+                };
+                send_event(&sender, &repaint, GuiEvent::Notice(message));
+            });
+        }
+    }
+
+    /// Sign out of the active identity and delete its row.
+    fn forget_account(&mut self, context: egui::Context) {
+        if let Some(index) = self.active_account_index() {
+            self.remove_account(index, &context);
+            return;
+        }
+        self.microsoft_session = None;
+        self.offline_account = None;
+        self.avatar = None;
+        self.persist_settings();
+        self.auth_status = "Signed out.".to_owned();
+    }
+
+    fn ensure_steve_texture(&mut self, context: &egui::Context) {
+        if self.steve_head_texture.is_none() {
+            self.steve_head_texture = Some(context.load_texture(
+                "kaelis-steve-head",
+                steve_head(),
+                egui::TextureOptions::NEAREST,
+            ));
+        }
+    }
+
+    fn active_account_index(&self) -> Option<usize> {
+        self.accounts
+            .iter()
+            .position(|account| self.active_identity_matches(account))
+    }
+
+    /// Fetch a head for every visible row once. Results are cached per row,
+    /// including "no premium skin", so the list never re-requests a name.
+    fn ensure_account_heads(&mut self, context: &egui::Context) {
+        const HEAD_CONCURRENCY: usize = 3;
+        if self.account_head_pending.len() >= HEAD_CONCURRENCY {
+            return;
+        }
+        for index in 0..self.accounts.len() {
+            if self.account_head_pending.len() >= HEAD_CONCURRENCY {
+                break;
+            }
+            let account = self.accounts[index].clone();
+            let key = account.key();
+            if self.account_heads.contains_key(&key) || self.account_head_pending.contains(&key) {
+                continue;
+            }
+            if let Some(at) = self.account_head_retry.get(&key) {
+                if at.elapsed() < std::time::Duration::from_secs(60) {
+                    continue;
+                }
+                self.account_head_retry.remove(&key);
+            }
+            let uuid = match account.kind {
+                AccountKind::Offline => {
+                    if !valid_username(account.name.trim()) {
+                        continue;
+                    }
+                    // A resolved name is reused, including "owns no skin".
+                    if let Some(cached) = self
+                        .offline_skins
+                        .get(&account.name.to_ascii_lowercase())
+                        .cloned()
+                    {
+                        let texture = cached.map(|image| {
+                            context.load_texture(
+                                format!("kaelis-account-head-{key}"),
+                                image,
+                                egui::TextureOptions::NEAREST,
+                            )
+                        });
+                        self.account_heads.insert(key, texture);
+                        continue;
+                    }
+                    // Route through the shared offline fetch: it is debounced,
+                    // single-flight, and primes this row when it lands.
+                    self.request_offline_skin(context, &account.name);
+                    continue;
+                }
+                AccountKind::Microsoft => {
+                    if account.uuid.is_empty() {
+                        continue;
+                    }
+                    account.uuid.clone()
+                }
+            };
+            self.account_head_pending.insert(key.clone());
+            let sender = self.sender.clone();
+            let repaint = context.clone();
+            let client = self.http.clone();
+            let name = account.name.clone();
+            self.runtime.spawn(async move {
+                // A transport failure and "this name owns no skin" are different
+                // answers: only the second one is worth caching.
+                let fetched = if uuid.is_empty() {
+                    fetch_head_for_username(&client, &name, 64).await.ok()
+                } else {
+                    fetch_crafatar_head(&client, &uuid, 64).await.ok().map(Some)
+                };
+                match fetched {
+                    Some(bytes) => send_event(
+                        &sender,
+                        &repaint,
+                        GuiEvent::AccountHead {
+                            key,
+                            result: bytes.as_deref().and_then(decode_head),
+                            failed: false,
+                        },
+                    ),
+                    None => send_event(
+                        &sender,
+                        &repaint,
+                        GuiEvent::AccountHead {
+                            key,
+                            result: None,
+                            failed: true,
+                        },
+                    ),
+                }
+            });
+        }
+    }
+
+    fn instance_running(&self, id: &str) -> bool {
+        self.running_instances.contains(id)
+    }
+
+    fn launch_selected(&mut self, context: egui::Context) {
         let Some(instance) = self.selected_instance().cloned() else {
             self.set_status(
                 StatusKind::Warning,
@@ -2529,6 +4385,13 @@ impl KaelisApp {
             );
             return;
         };
+        if self.instance_running(&instance.id) {
+            self.set_status(
+                StatusKind::Warning,
+                format!("{} is already running.", instance.name),
+            );
+            return;
+        }
         let identity = if let Some(session) = &self.microsoft_session {
             LaunchIdentity::microsoft(
                 session.profile.name.clone(),
@@ -2570,8 +4433,15 @@ impl KaelisApp {
             .as_ref()
             .map(|scan| !scan.missing.is_empty())
             .unwrap_or(false);
-        let loader_missing = instance.loader.eq_ignore_ascii_case("fabric")
-            && kaelis_api::loader::load_installed(&instance.root, &instance.mc_version).is_none();
+        let loader_missing = matches!(
+            instance.loader.to_ascii_lowercase().as_str(),
+            "fabric" | "quilt"
+        ) && kaelis_api::loader::load_for(
+            &instance.root,
+            &instance.mc_version,
+            &instance.loader,
+        )
+        .is_none();
         if (missing || loader_missing) && self.auto_repair_before_launch {
             self.pending_launch = Some((instance, identity));
             self.repair_mod_environment(context);
@@ -2586,42 +4456,140 @@ impl KaelisApp {
         identity: LaunchIdentity,
         context: egui::Context,
     ) {
+        let instance = self.with_launch_automation(instance);
+        // Claim the slot before the worker runs so a double click cannot queue
+        // two JVMs for the same instance. The OS guard in `run_instance` is the
+        // final authority; this keeps the UI honest in the meantime.
+        self.running_instances.insert(instance.id.clone());
+        let live_game = LiveGame::start(self.live_games.clone());
         self.set_status(StatusKind::Busy, format!("Starting {}…", instance.name));
         let sender = self.sender.clone();
         let repaint = context.clone();
         let started_sender = sender.clone();
         let started_context = repaint.clone();
+        let started_id = instance.id.clone();
+        let finished_id = instance.id.clone();
         let log = EphemeralLog::new(20_000);
         self.runtime.spawn(async move {
+            // Owns the count until this future ends, however it ends.
+            let _live_game = live_game;
             let result = run_instance(instance, identity, log.clone(), move || {
-                send_event(&started_sender, &started_context, GuiEvent::GameStarted);
+                send_event(
+                    &started_sender,
+                    &started_context,
+                    GuiEvent::GameStarted(started_id.clone()),
+                );
             })
             .await;
             log.clear();
+            // `_live_game` restores the window when this is the last game; a
+            // hidden viewport paints no frames, so the event handler alone
+            // cannot be trusted to bring it back.
             match result {
                 Ok(status) => send_event(
                     &sender,
                     &repaint,
-                    GuiEvent::GameExited(format!("Minecraft exited with {status}.")),
+                    GuiEvent::GameExited {
+                        instance_id: finished_id,
+                        message: format!("Minecraft exited with {status}."),
+                    },
                 ),
                 Err(error) => send_event(
                     &sender,
                     &repaint,
-                    GuiEvent::GameFailed(format!("Could not launch Minecraft: {error}")),
+                    GuiEvent::GameFailed {
+                        instance_id: finished_id,
+                        error: format!("Could not launch Minecraft: {error}"),
+                    },
                 ),
             }
         });
     }
 
+    /// Fold enabled user commands into this launch only. The instance file is
+    /// untouched; the copy handed to the launch worker carries the chain, so a
+    /// "before launch" rule always finishes before Java starts and an "after
+    /// exit" rule always runs after the process ends.
+    fn with_launch_automation(&self, mut instance: Instance) -> Instance {
+        instance.pre_launch_command = merge_launch_command(
+            instance.pre_launch_command.take(),
+            self.automation.launch_chain(Trigger::PreLaunch),
+        );
+        instance.post_exit_command = merge_launch_command(
+            instance.post_exit_command.take(),
+            self.automation.launch_chain(Trigger::PostExit),
+        );
+        instance
+    }
+
+    /// Fire startup rules once, then any interval rule whose window has
+    /// elapsed. The nearest deadline becomes a scheduled repaint, so an idle
+    /// window wakes exactly when a rule is due instead of polling.
+    fn run_automation_tick(&mut self, context: &egui::Context) {
+        let now = unix_now();
+        let mut due: Vec<Rule> = Vec::new();
+        if !self.automation_started {
+            self.automation_started = true;
+            due.extend(
+                self.automation
+                    .commands_for(Trigger::Startup)
+                    .into_iter()
+                    .cloned(),
+            );
+        }
+        let timed = self.automation.take_due(now);
+        if !timed.is_empty() {
+            // Persist the schedule so a restart does not re-run a rule early.
+            let _ = self.automation.save();
+            due.extend(timed);
+        }
+        for rule in due {
+            self.spawn_automation(rule, context);
+        }
+        // Wake for the next interval even when no event arrives.
+        let wait = self
+            .automation
+            .rules()
+            .iter()
+            .filter(|rule| rule.enabled)
+            .filter_map(|rule| match rule.trigger {
+                Trigger::Every { secs } => {
+                    let due_at = rule.last_run_unix.saturating_add(secs as i64);
+                    Some(due_at.saturating_sub(now).max(1) as u64)
+                }
+                _ => None,
+            })
+            .min();
+        if let Some(seconds) = wait {
+            context.request_repaint_after(std::time::Duration::from_secs(seconds));
+        }
+    }
+
+    /// Run one rule beside the UI thread. The working folder is the selected
+    /// instance so a command can use relative paths the same way a hook does.
+    fn spawn_automation(&mut self, rule: Rule, context: &egui::Context) {
+        let selected = self.selected_instance().cloned();
+        let cwd = selected
+            .as_ref()
+            .map(|instance| instance.root.clone())
+            .unwrap_or_else(std::env::temp_dir);
+        let env = automation::rule_environment(selected.as_ref());
+        let log = EphemeralLog::new(400);
+        let sender = self.sender.clone();
+        let repaint = context.clone();
+        self.set_status(StatusKind::Busy, format!("Running {}…", rule.title()));
+        self.runtime.spawn(async move {
+            let run = automation::run_rule(&rule, &cwd, &env, &log).await;
+            send_event(&sender, &repaint, GuiEvent::Automation(run));
+        });
+    }
+
     /// The avatar texture is released while the game runs (the window is
-    /// hidden); rebuild it as soon as the launcher comes back.
+    /// hidden); rebuild it from the skin cache as soon as the launcher returns.
     fn restore_avatar(&mut self, context: &egui::Context) {
-        if self.offline_account.is_some() {
-            self.avatar = Some(context.load_texture(
-                "kaelis-offline-profile-head",
-                steve_head(),
-                egui::TextureOptions::NEAREST,
-            ));
+        if let Some(profile) = self.offline_account.clone() {
+            self.apply_offline_head(context, &profile.name);
+            self.request_offline_skin(context, &profile.name);
         } else if let Some(session) = &self.microsoft_session {
             self.request_avatar(context.clone(), session.profile.id.clone());
         }
@@ -2635,7 +4603,11 @@ impl KaelisApp {
 
     fn handle_event(&mut self, context: &egui::Context, event: GuiEvent) {
         match event {
-            GuiEvent::ModpackInstalled(result) => {
+            GuiEvent::ModpackInstalled { generation, result } => {
+                if generation != self.modpack_generation {
+                    return;
+                }
+                self.modpack_task = None;
                 self.modpack_installing = None;
                 self.modpack_detail.clear();
                 match *result {
@@ -2646,21 +4618,25 @@ impl KaelisApp {
                         let id = outcome.instance.id.clone();
                         let imported = outcome.imported;
                         let mods = outcome.pack.mod_files;
-                        // Only Fabric and vanilla can be provisioned end to end
-                        // today; anything else imports the files and says so.
-                        let launchable = loader.eq_ignore_ascii_case("fabric")
-                            || loader.eq_ignore_ascii_case("vanilla");
+                        // Fabric, Quilt, and vanilla can be provisioned end to
+                        // end today; anything else imports the files and says so.
+                        let launchable = matches!(
+                            loader.to_ascii_lowercase().as_str(),
+                            "fabric" | "quilt" | "vanilla"
+                        );
                         self.instances.insert(0, outcome.instance.clone());
                         self.refresh_instance_cards();
+                        if let Some(path) = outcome.instance.icon.clone() {
+                            self.request_instance_icon(context, id.clone(), path);
+                        }
                         self.select_instance(&id);
-                        self.refresh_installed();
                         let text = if launchable {
                             format!(
                                 "{name} installed · {imported} files · {mods} mods · MC {game_version} · {loader}"
                             )
                         } else {
                             format!(
-                                "{name} imported · {imported} files · MC {game_version} · {loader}. Kaelis provisions Fabric automatically; add this loader before playing."
+                                "{name} imported · {imported} files · MC {game_version} · {loader}. Add this loader before playing."
                             )
                         };
                         self.set_status(
@@ -2704,8 +4680,10 @@ impl KaelisApp {
                 self.auth_device = None;
                 self.auth_status = format!("Signed in as {}.", session.profile.name);
                 let uuid = session.profile.id.clone();
+                self.upsert_account(AccountKind::Microsoft, &session.profile.name, &uuid);
                 self.offline_account = None;
                 self.avatar = None;
+                self.account_mode = AccountMode::Microsoft;
                 self.last_account = session.profile.name.clone();
                 let client_id = if self.ms_client_id.trim().is_empty() {
                     std::env::var("KAELIS_MS_CLIENT_ID").unwrap_or_default()
@@ -2714,7 +4692,7 @@ impl KaelisApp {
                 };
                 let mut settings = self.settings_snapshot();
                 settings.ms_client_id = client_id;
-                let saved = save_launcher_settings(&settings);
+                let saved = save_settings(&settings).map_err(|error| error.to_string());
                 if let Err(error) = saved {
                     self.auth_status =
                         format!("Signed in, but the account preference was not saved: {error}");
@@ -2723,12 +4701,16 @@ impl KaelisApp {
                 self.request_avatar(context.clone(), uuid);
             }
             GuiEvent::Restored(Ok(session)) => {
+                self.auth_busy = false;
                 self.auth_status = format!("Welcome back, {}.", session.profile.name);
+                self.account_mode = AccountMode::Microsoft;
                 let uuid = session.profile.id.clone();
+                self.upsert_account(AccountKind::Microsoft, &session.profile.name, &uuid);
                 self.microsoft_session = Some(session);
                 self.request_avatar(context.clone(), uuid);
             }
             GuiEvent::Restored(Err(error)) => {
+                self.auth_busy = false;
                 self.auth_status =
                     format!("Saved Microsoft session could not be restored: {error}");
             }
@@ -2750,6 +4732,100 @@ impl KaelisApp {
             }
             GuiEvent::Avatar(Err(_error)) => {
                 self.avatar = None;
+            }
+            GuiEvent::AccountHead {
+                key,
+                result,
+                failed,
+            } => {
+                self.account_head_pending.remove(&key);
+                if failed {
+                    self.account_head_retry
+                        .insert(key, std::time::Instant::now());
+                    // Wake up once the cooldown expires instead of polling.
+                    context.request_repaint_after(std::time::Duration::from_secs(60));
+                } else {
+                    self.account_head_retry.remove(&key);
+                    let texture = result.map(|image| {
+                        context.load_texture(
+                            format!("kaelis-account-head-{key}"),
+                            image,
+                            egui::TextureOptions::NEAREST,
+                        )
+                    });
+                    self.account_heads.insert(key, texture);
+                }
+            }
+            GuiEvent::OfflineAvatar {
+                name,
+                result,
+                failed,
+            } => {
+                if self.offline_skin_pending.as_deref() == Some(name.as_str()) {
+                    self.offline_skin_pending = None;
+                }
+                self.offline_skin_inflight.remove(&name);
+                let active = self
+                    .offline_account
+                    .as_ref()
+                    .is_some_and(|profile| profile.name.eq_ignore_ascii_case(&name))
+                    && self.microsoft_session.is_none();
+                // The account list draws the same face; reuse the decoded
+                // pixels instead of requesting the name twice.
+                let keys = self
+                    .accounts
+                    .iter()
+                    .filter(|account| {
+                        account.kind == AccountKind::Offline
+                            && account.name.eq_ignore_ascii_case(&name)
+                    })
+                    .map(SavedAccount::key)
+                    .collect::<Vec<_>>();
+                if failed {
+                    // Back off instead of re-asking every frame.
+                    for key in keys {
+                        self.account_head_retry
+                            .insert(key, std::time::Instant::now());
+                    }
+                    context.request_repaint_after(std::time::Duration::from_secs(60));
+                } else {
+                    self.offline_skins.insert(name.clone(), result.clone());
+                    for key in keys {
+                        self.account_head_pending.remove(&key);
+                        self.account_head_retry.remove(&key);
+                        let texture = result.clone().map(|image| {
+                            context.load_texture(
+                                format!("kaelis-account-head-{key}"),
+                                image,
+                                egui::TextureOptions::NEAREST,
+                            )
+                        });
+                        self.account_heads.insert(key, texture);
+                    }
+                }
+                if active && !failed {
+                    match result {
+                        Some(image) => {
+                            self.avatar = Some(context.load_texture(
+                                "kaelis-profile-head",
+                                image,
+                                egui::TextureOptions::NEAREST,
+                            ));
+                        }
+                        None => {
+                            self.avatar = Some(context.load_texture(
+                                "kaelis-profile-head",
+                                steve_head(),
+                                egui::TextureOptions::NEAREST,
+                            ));
+                        }
+                    }
+                }
+                if self.offline_name.trim().eq_ignore_ascii_case(&name) {
+                    // Force the small typing preview to pick up the result.
+                    self.offline_typing_key.clear();
+                    self.refresh_offline_typing_avatar(context);
+                }
             }
             GuiEvent::Versions(Ok(manifest)) => {
                 if self.new_instance_version.is_empty() {
@@ -2914,7 +4990,41 @@ impl KaelisApp {
                     );
                 }
             },
+            GuiEvent::ModpackProgress { generation, detail } => {
+                if generation == self.modpack_generation
+                    && let Some(title) = self.modpack_installing.clone()
+                {
+                    self.modpack_detail = detail.clone();
+                    self.set_status(StatusKind::Busy, format!("Importing {title} · {detail}"));
+                }
+            }
+            GuiEvent::InstalledScan {
+                id,
+                generation,
+                scan,
+                library,
+            } => {
+                if generation != self.installed_scan_generation
+                    || self.selected_instance.as_deref() != Some(id.as_str())
+                {
+                    return;
+                }
+                self.detected_loader = scan.detected_loader.map(str::to_owned);
+                self.installed = Some(scan);
+                self.content_library = library;
+            }
+            GuiEvent::InstallStopped => {
+                if self.installing_job.is_none() {
+                    self.pump_install_queue(context.clone());
+                }
+            }
+            GuiEvent::ModpackStopped => self.reload_instance_list(context),
             GuiEvent::ModInstallProgress(detail) => {
+                // A progress line can be queued just before Cancel aborts the
+                // worker; ignore it rather than resurrecting the banner.
+                if self.installing_job.is_none() {
+                    return;
+                }
                 self.install_detail = Some(detail.clone());
                 if let Some(job) = &self.installing_job {
                     self.set_status(
@@ -2923,32 +5033,25 @@ impl KaelisApp {
                     );
                 }
             }
-            GuiEvent::ManualInstalled(result) => {
-                self.manual_busy = false;
+            GuiEvent::ManualInstalled(result) => self.finish_manual_install(result, None),
+            GuiEvent::FilesAdded(result) => match result {
+                Ok((report, summary)) => self.finish_manual_install(Ok(report), Some(summary)),
+                Err(error) => self.finish_manual_install(Err(error), None),
+            },
+            GuiEvent::Portable(result) => {
+                self.portable_busy = false;
                 match result {
-                    Ok(report) => {
-                        let summary = report.summary();
-                        self.manual_status = summary.clone();
-                        self.last_install = Some(report);
-                        self.refresh_installed();
-                        let kind = if self
-                            .last_install
-                            .as_ref()
-                            .is_some_and(|report| report.warnings.is_empty())
-                        {
-                            StatusKind::Success
-                        } else {
-                            StatusKind::Warning
-                        };
-                        self.set_status(kind, summary);
+                    Ok((message, imported)) => {
+                        if imported {
+                            self.reload_instance_list(context);
+                        }
+                        self.set_status(StatusKind::Success, message);
                     }
-                    Err(error) => {
-                        self.manual_status = format!("Import failed: {error}");
-                        self.set_status(StatusKind::Error, self.manual_status.clone());
-                    }
+                    Err(error) => self.set_status(StatusKind::Error, error),
                 }
             }
             GuiEvent::ModInstalled(result) => {
+                self.install_task = None;
                 let Some(job) = self.installing_job.take() else {
                     // A late event from a job the user replaced; keep the UI
                     // consistent rather than resurrecting a stale row.
@@ -3021,6 +5124,62 @@ impl KaelisApp {
                     {
                         self.repair_mod_environment(context.clone());
                     }
+                }
+            }
+            GuiEvent::Updates {
+                instance_id,
+                result,
+            } => {
+                self.updates_busy = false;
+                match result {
+                    Ok(report) => {
+                        let summary = report.summary();
+                        let count = report.updates.len();
+                        let on_target = self
+                            .selected_instance()
+                            .map(|instance| instance.id.as_str())
+                            == Some(instance_id.as_str());
+                        self.update_report = Some((instance_id, report));
+                        if on_target {
+                            self.set_status(
+                                if count == 0 {
+                                    StatusKind::Success
+                                } else {
+                                    StatusKind::Info
+                                },
+                                summary,
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        self.update_report = None;
+                        self.set_status(
+                            StatusKind::Error,
+                            format!("Could not check mod updates: {error}"),
+                        );
+                    }
+                }
+            }
+            GuiEvent::ModUpdated {
+                project_id,
+                title,
+                result,
+            } => {
+                self.updating_mods.remove(&project_id);
+                match result {
+                    Ok(name) => {
+                        if let Some((_, report)) = &mut self.update_report {
+                            report
+                                .updates
+                                .retain(|update| update.project_id != project_id);
+                        }
+                        self.refresh_installed();
+                        self.set_status(StatusKind::Success, format!("Updated {title} to {name}."));
+                    }
+                    Err(error) => self.set_status(
+                        StatusKind::Error,
+                        format!("Could not update {title}: {error}"),
+                    ),
                 }
             }
             GuiEvent::EnvironmentRepaired(Ok(report)) => {
@@ -3204,12 +5363,21 @@ impl KaelisApp {
                     }
                 }
             }
-            GuiEvent::GameStarted => {
-                self.game_running = true;
-                self.set_status(
-                    StatusKind::Success,
-                    "Minecraft is running. Kaelis is sleeping in the tray.",
-                );
+            GuiEvent::GameStarted(instance_id) => {
+                self.running_instances.insert(instance_id.clone());
+                let count = self.running_instances.len();
+                let name = self
+                    .instances
+                    .iter()
+                    .find(|instance| instance.id == instance_id)
+                    .map(|instance| instance.name.clone())
+                    .unwrap_or_else(|| instance_id.clone());
+                let running = if count == 1 {
+                    format!("{name} is running. Kaelis is sleeping in the tray.")
+                } else {
+                    format!("{name} is running ({count} instances running).")
+                };
+                self.set_status(StatusKind::Success, running);
                 self.avatar = None;
                 if let Some(sweeper) = self.sweeper.take() {
                     sweeper.abort();
@@ -3217,24 +5385,130 @@ impl KaelisApp {
                 if let Some(cancel) = self.auth_cancel.take() {
                     let _ = cancel.send(true);
                 }
-                context.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-                context.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                // A second launch happens from a window the user restored to
+                // the tray; let it stay visible rather than fighting them.
+                if count == 1 {
+                    platform::hide_for_game(context);
+                }
             }
-            GuiEvent::GameExited(message) => {
-                self.game_running = false;
-                self.set_status(StatusKind::Info, message);
-                self.restart_sweeper();
-                self.restore_avatar(context);
-                show_window(context);
+            GuiEvent::GameExited {
+                instance_id,
+                message,
+            } => {
+                self.running_instances.remove(&instance_id);
+                self.clean_finished_instance(&instance_id);
+                self.set_status(
+                    StatusKind::Info,
+                    if self.running_instances.is_empty() {
+                        message
+                    } else {
+                        format!("{message} {} still running.", self.running_instances.len())
+                    },
+                );
+                if self.running_instances.is_empty() {
+                    self.restart_sweeper();
+                    self.restore_avatar(context);
+                    show_window(context);
+                }
             }
-            GuiEvent::GameFailed(error) => {
-                self.game_running = false;
+            GuiEvent::GameFailed { instance_id, error } => {
+                self.running_instances.remove(&instance_id);
+                self.clean_finished_instance(&instance_id);
                 self.set_status(StatusKind::Error, error);
-                self.restart_sweeper();
-                self.restore_avatar(context);
-                show_window(context);
+                if self.running_instances.is_empty() {
+                    self.restart_sweeper();
+                    self.restore_avatar(context);
+                    show_window(context);
+                }
             }
+            GuiEvent::InstanceDuplicated(result) => match *result {
+                Ok((duplicate, summary)) => {
+                    if let Some(path) = duplicate.icon.clone() {
+                        self.request_instance_icon(context, duplicate.id.clone(), path);
+                    }
+                    self.instances.push(duplicate.clone());
+                    self.instances.sort_by(|left, right| {
+                        right
+                            .last_played_unix
+                            .cmp(&left.last_played_unix)
+                            .then_with(|| left.name.cmp(&right.name))
+                    });
+                    self.refresh_instance_cards();
+                    self.select_instance(&duplicate.id);
+                    self.set_status(StatusKind::Success, summary);
+                }
+                Err(error) => {
+                    self.set_status(StatusKind::Error, format!("Could not duplicate: {error}"))
+                }
+            },
             GuiEvent::Notice(message) => self.set_status(StatusKind::Info, message),
+            GuiEvent::AccountsImported(result) => {
+                let (kind, text) = match result {
+                    Ok(scan) => {
+                        let files = scan.files.len();
+                        let (added, refreshed) = self.merge_imported_accounts(scan.accounts);
+                        let text = match (added, refreshed) {
+                            (0, 0) => "No new accounts found.".to_owned(),
+                            (added, 0) => {
+                                format!("Imported {added} account(s) from {files} file(s).")
+                            }
+                            (0, refreshed) => {
+                                format!("Refreshed {refreshed} saved account(s).")
+                            }
+                            (added, refreshed) => format!(
+                                "Imported {added} account(s) and refreshed {refreshed} from {files} file(s)."
+                            ),
+                        };
+                        (StatusKind::Success, text)
+                    }
+                    Err(error) => (
+                        StatusKind::Warning,
+                        format!("No accounts imported: {error}"),
+                    ),
+                };
+                self.auth_status = text.clone();
+                self.set_status(kind, text);
+                context.request_repaint();
+            }
+            GuiEvent::ArtworkPicked(path) => match std::fs::read(&path) {
+                Ok(bytes) => self.adopt_artwork_bytes(&bytes, context),
+                Err(error) => self.set_status(
+                    StatusKind::Error,
+                    format!("Could not read the image: {error}"),
+                ),
+            },
+            GuiEvent::InstanceArtworkPicked { id, path } => match std::fs::read(&path) {
+                Ok(bytes) => {
+                    self.select_instance(&id);
+                    self.apply_instance_artwork(&id, &bytes, context);
+                }
+                Err(error) => self.set_status(
+                    StatusKind::Error,
+                    format!("Could not read the image: {error}"),
+                ),
+            },
+            GuiEvent::Automation(run) => {
+                // Keep the last few results in the panel: a rule that fails
+                // every launch must stay visible after the status bar moves on.
+                let detail = run
+                    .lines
+                    .last()
+                    .filter(|_| !run.ok)
+                    .map(|line| format!("{}: {line}", run.summary))
+                    .unwrap_or_else(|| run.summary.clone());
+                self.automation_log.push(detail);
+                if self.automation_log.len() > 5 {
+                    self.automation_log.remove(0);
+                }
+                self.set_status(
+                    if run.ok {
+                        StatusKind::Success
+                    } else {
+                        StatusKind::Error
+                    },
+                    run.summary,
+                );
+            }
             GuiEvent::Handoff(arguments) => self.apply_handoff(context, &arguments),
             GuiEvent::Tray(action) => match action {
                 tray::TrayAction::Show => show_window(context),
@@ -3270,8 +5544,11 @@ impl KaelisApp {
                 };
                 self.select_instance(&instance_id);
                 self.current_tab = Tab::Instances;
-                if self.game_running {
-                    self.set_status(StatusKind::Warning, "Minecraft is already running.");
+                if self.instance_running(&instance_id) {
+                    self.set_status(
+                        StatusKind::Warning,
+                        format!("{} is already running.", instance.name),
+                    );
                     return;
                 }
                 if let Some(name) = offline_name {
@@ -3282,11 +5559,8 @@ impl KaelisApp {
                     let identity =
                         LaunchIdentity::offline(profile.name.clone(), profile.uuid.clone());
                     self.offline_account = Some(profile.clone());
-                    self.avatar = Some(context.load_texture(
-                        "kaelis-offline-profile-head",
-                        steve_head(),
-                        egui::TextureOptions::NEAREST,
-                    ));
+                    self.apply_offline_head(context, &profile.name);
+                    self.request_offline_skin(context, &profile.name);
                     self.auth_status = format!("Offline profile ready: {}", profile.name);
                     self.start_launch(instance, identity, context.clone());
                     return;
@@ -3317,13 +5591,7 @@ impl KaelisApp {
             .fill(SURFACE)
             .stroke(egui::Stroke::new(1.0_f32, BORDER))
             .rounding(egui::Rounding::same(CORNER_LG))
-            .shadow(egui::epaint::Shadow {
-                offset: egui::vec2(0.0, 6.0),
-                blur: 18.0,
-                spread: 0.0,
-                color: egui::Color32::from_black_alpha(52),
-            })
-            .inner_margin(egui::Margin::same(14.0))
+            .inner_margin(egui::Margin::symmetric(12.0, 9.0))
     }
 
     /// Tighter sibling of [`Self::glass_frame`] for repeated list rows.
@@ -3332,156 +5600,266 @@ impl KaelisApp {
             .fill(SURFACE_ALT)
             .stroke(egui::Stroke::new(1.0_f32, BORDER))
             .rounding(egui::Rounding::same(CORNER_MD))
-            .inner_margin(egui::Margin::symmetric(10.0, 8.0))
+            .inner_margin(egui::Margin::symmetric(10.0, 7.0))
     }
 
     fn paint_backdrop(context: &egui::Context) {
         let rect = context.screen_rect();
         let painter = context.layer_painter(egui::LayerId::background());
         let mut mesh = egui::Mesh::default();
-        mesh.colored_vertex(rect.left_top(), egui::Color32::from_rgb(9, 15, 25));
-        mesh.colored_vertex(rect.right_top(), egui::Color32::from_rgb(12, 19, 32));
-        mesh.colored_vertex(rect.right_bottom(), egui::Color32::from_rgb(5, 9, 16));
-        mesh.colored_vertex(rect.left_bottom(), egui::Color32::from_rgb(4, 7, 12));
+        // Two corners are pure black: on an OLED panel those pixels switch
+        // off entirely instead of glowing a faint grey in a dark room.
+        mesh.colored_vertex(rect.left_top(), egui::Color32::from_rgb(4, 5, 7));
+        mesh.colored_vertex(rect.right_top(), egui::Color32::from_rgb(6, 8, 11));
+        mesh.colored_vertex(rect.right_bottom(), egui::Color32::BLACK);
+        mesh.colored_vertex(rect.left_bottom(), egui::Color32::BLACK);
         mesh.add_triangle(0, 1, 2);
         mesh.add_triangle(0, 2, 3);
         painter.add(egui::Shape::mesh(mesh));
     }
 
     fn show_sidebar(&mut self, context: &egui::Context) {
+        // Development-only fixture: focus injection from a capture run is not
+        // reliable on every host, so the first row can ask for keyboard focus
+        // itself and still paint through the real focus-ring path.
+        let focus_first =
+            self.screenshot_path.is_some() && std::env::var_os("KAELIS_SCREENSHOT_FOCUS").is_some();
+        // The rail is a layout decision, not a font-size one: below the
+        // breakpoint labels move into tooltips so the workspace keeps its
+        // width instead of squeezing into a strip.
+        let rail = context.screen_rect().width() < RAIL_WIDTH;
+        let width = if rail {
+            RAIL_SIDEBAR_WIDTH
+        } else {
+            SIDEBAR_WIDTH
+        };
+        let margin = if rail { 9.0 } else { 12.0 };
         egui::SidePanel::left("kaelis-navigation")
             .resizable(false)
-            .default_width(204.0)
+            .exact_width(width)
             .frame(
                 egui::Frame::none()
                     .fill(SURFACE)
-                    .inner_margin(egui::Margin::symmetric(12.0, 12.0)),
+                    .inner_margin(egui::Margin::symmetric(margin, 12.0)),
             )
             .show(context, |ui| {
-                ui.horizontal(|ui| {
-                    draw_brand_mark(ui, 34.0);
-                    ui.add_space(4.0);
-                    ui.vertical(|ui| {
-                        ui.label(egui::RichText::new("KAELIS").strong().size(15.5));
-                        ui.label(
-                            egui::RichText::new("MINECRAFT LAUNCHER")
-                                .size(8.5)
-                                .color(MUTED),
-                        );
+                if rail {
+                    ui.vertical_centered(|ui| {
+                        draw_brand_mark(ui, 24.0);
                     });
-                });
-                ui.add_space(24.0);
-                ui.label(
-                    egui::RichText::new("WORKSPACE")
-                        .size(9.5)
-                        .strong()
-                        .color(MUTED),
+                } else {
+                    ui.horizontal(|ui| {
+                        draw_brand_mark(ui, 24.0);
+                        ui.add_space(8.0);
+                        ui.label(egui::RichText::new("KAELIS").strong().size(13.0));
+                    });
+                }
+                // Hairline under the brand block: one rule, no card, so the
+                // rail reads as chrome rather than a stack of panels.
+                ui.add_space(10.0);
+                let rule_y = ui.cursor().min.y;
+                ui.painter().hline(
+                    ui.max_rect().x_range(),
+                    rule_y,
+                    egui::Stroke::new(1.0_f32, BORDER),
                 );
-                ui.add_space(4.0);
-                for tab in Tab::ALL {
+                ui.add_space(9.0);
+                for (index, tab) in Tab::ALL.into_iter().enumerate() {
                     let selected = self.current_tab == tab;
-                    let fill = if selected {
-                        egui::Color32::from_rgba_unmultiplied(96, 196, 255, 18)
-                    } else {
-                        egui::Color32::TRANSPARENT
-                    };
-                    let text = egui::RichText::new(format!("        {}", tab.title()))
-                        .size(11.5)
-                        .color(if selected { TEXT } else { MUTED });
-                    let response = ui.add_sized(
-                        [ui.available_width(), 32.0],
-                        egui::Button::new(text)
-                            .fill(fill)
-                            .stroke(egui::Stroke::NONE)
-                            .rounding(egui::Rounding::same(CORNER_MD)),
+                    // Painted by hand: a capsule row with a short hover fade,
+                    // so selection glides in instead of snapping.
+                    let (rect, response) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), 27.0),
+                        egui::Sense::click(),
                     );
+                    let response = response
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text(format!(
+                            "{}  ·  {}+{}",
+                            tab.title(),
+                            shortcut_modifier(),
+                            index + 1
+                        ));
+                    response.widget_info(|| {
+                        // A selectable, not a plain button: screen readers get
+                        // the active tab as state instead of only a label.
+                        egui::WidgetInfo::selected(
+                            egui::WidgetType::SelectableLabel,
+                            true,
+                            selected,
+                            tab.title(),
+                        )
+                    });
+                    if focus_first && index == 0 {
+                        ui.memory_mut(|memory| memory.request_focus(response.id));
+                        self.keyboard_nav = true;
+                    }
+                    let hover = ui.ctx().animate_bool_with_time(
+                        response.id.with("hover"),
+                        response.hovered(),
+                        0.12,
+                    );
+                    let fill_alpha = if selected { 10 } else { (hover * 8.0) as u8 };
+                    if fill_alpha > 0 {
+                        ui.painter().rect_filled(
+                            rect,
+                            egui::Rounding::same(CORNER_MD),
+                            egui::Color32::from_rgba_unmultiplied(255, 255, 255, fill_alpha),
+                        );
+                    }
                     if selected {
-                        // A 2.5 px accent rail anchors the active row without
+                        // A 2 px accent rail anchors the active row without
                         // boxing it in; the fill alone is too quiet to find.
                         ui.painter().rect_filled(
                             egui::Rect::from_min_size(
-                                response.rect.left_top() + egui::vec2(0.0, 8.0),
-                                egui::vec2(2.5, response.rect.height() - 16.0),
+                                rect.left_top() + egui::vec2(0.0, 7.0),
+                                egui::vec2(2.0, rect.height() - 14.0),
                             ),
-                            egui::Rounding::same(1.5),
-                            ACCENT,
+                            egui::Rounding::same(1.0),
+                            accent(),
                         );
                     }
+                    if !rail && ui.is_rect_visible(rect) {
+                        ui.painter().text(
+                            rect.left_center() + egui::vec2(32.0, 0.0),
+                            egui::Align2::LEFT_CENTER,
+                            tab.title(),
+                            egui::FontId::proportional(11.0),
+                            if selected { TEXT } else { MUTED },
+                        );
+                    }
+                    let icon_at = if rail {
+                        rect.center()
+                    } else {
+                        rect.left_center() + egui::vec2(15.0, 0.0)
+                    };
                     paint_tab_icon(
                         ui.painter(),
-                        response.rect.left_center() + egui::vec2(19.0, 0.0),
+                        icon_at,
                         tab,
-                        if selected { ACCENT } else { MUTED },
+                        if selected { accent() } else { MUTED },
                     );
+                    if self.keyboard_nav && response.has_focus() {
+                        ui.painter().rect_stroke(
+                            rect.expand(0.5),
+                            egui::Rounding::same(CORNER_MD),
+                            egui::Stroke::new(1.4_f32, accent_soft()),
+                        );
+                    }
                     if response.clicked() {
                         self.current_tab = tab;
                     }
                     ui.add_space(1.0);
                 }
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                    ui.label(
-                        egui::RichText::new(format!("{} · Rust 2024", kaelis_core::brand::COMPANY))
-                            .size(9.0)
-                            .color(MUTED),
-                    );
-                    ui.horizontal(|ui| {
-                        ui.hyperlink_to(
-                            egui::RichText::new("Community ↗").size(9.5).color(ACCENT),
-                            kaelis_core::brand::DISCORD_HUB,
+                    if rail {
+                        // One 30 px identity button: the same click target as
+                        // the full card, without a label that cannot fit.
+                        let (rect, response) = ui.allocate_exact_size(
+                            egui::vec2(ui.available_width(), 32.0),
+                            egui::Sense::click(),
                         );
-                        ui.hyperlink_to(
-                            egui::RichText::new("GitHub ↗").size(9.5).color(MUTED),
-                            kaelis_core::brand::GITHUB_REPOSITORY,
-                        );
-                    });
-                    ui.hyperlink_to(
-                        egui::RichText::new(format!("Founder {}", kaelis_core::brand::FOUNDER))
-                            .size(9.0)
+                        if let Some(avatar) = &self.avatar {
+                            ui.painter().image(
+                                avatar.id(),
+                                rect.shrink(1.0),
+                                egui::Rect::from_min_max(
+                                    egui::pos2(0.0, 0.0),
+                                    egui::pos2(1.0, 1.0),
+                                ),
+                                egui::Color32::WHITE,
+                            );
+                        } else {
+                            ui.painter().circle_filled(rect.center(), 13.0, GLASS_LIGHT);
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                self.account_name().chars().next().unwrap_or('K'),
+                                egui::FontId::proportional(13.0),
+                                accent(),
+                            );
+                        }
+                        let response = response
+                            .on_hover_text(format!(
+                                "{} · {}",
+                                self.account_name(),
+                                self.account_kind()
+                            ))
+                            .on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if response.clicked() {
+                            self.current_tab = Tab::Account;
+                        }
+                        ui.add_space(6.0);
+                    } else {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{} · Rust 2024",
+                                kaelis_core::brand::COMPANY
+                            ))
+                            .size(8.5)
                             .color(MUTED),
-                        kaelis_core::brand::FOUNDER_URL,
-                    );
-                    ui.add_space(10.0);
-                    Self::glass_frame().show(ui, |ui| {
-                        ui.set_min_width(158.0);
+                        );
                         ui.horizontal(|ui| {
-                            if let Some(avatar) = &self.avatar {
-                                ui.add(
-                                    egui::Image::new((avatar.id(), egui::vec2(34.0, 34.0)))
-                                        .rounding(egui::Rounding::same(CORNER_MD)),
-                                );
-                            } else {
-                                let (rect, _) = ui.allocate_exact_size(
-                                    egui::vec2(34.0, 34.0),
-                                    egui::Sense::hover(),
-                                );
-                                ui.painter().circle_filled(rect.center(), 16.0, GLASS_LIGHT);
-                                ui.painter().text(
-                                    rect.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    if self.microsoft_session.is_some()
-                                        || self.offline_account.is_some()
-                                    {
-                                        self.account_name().chars().next().unwrap_or('K')
-                                    } else {
-                                        'K'
-                                    },
-                                    egui::FontId::proportional(15.0),
-                                    ACCENT,
-                                );
-                            }
-                            ui.vertical(|ui| {
-                                ui.label(
-                                    egui::RichText::new(self.account_name()).strong().size(12.5),
-                                );
-                                ui.label(
-                                    egui::RichText::new(self.account_kind())
-                                        .size(10.5)
-                                        .color(MUTED),
-                                );
+                            ui.hyperlink_to(
+                                egui::RichText::new("Community ↗").size(9.0).color(accent()),
+                                kaelis_core::brand::DISCORD_HUB,
+                            );
+                            ui.hyperlink_to(
+                                egui::RichText::new("GitHub ↗").size(9.0).color(MUTED),
+                                kaelis_core::brand::GITHUB_REPOSITORY,
+                            );
+                        });
+                        ui.add_space(7.0);
+                        let card = Self::glass_frame().show(ui, |ui| {
+                            ui.set_min_width(ui.available_width());
+                            ui.horizontal(|ui| {
+                                if let Some(avatar) = &self.avatar {
+                                    ui.add(
+                                        egui::Image::new((avatar.id(), egui::vec2(30.0, 30.0)))
+                                            .rounding(egui::Rounding::same(CORNER_SM)),
+                                    );
+                                } else {
+                                    let (rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(30.0, 30.0),
+                                        egui::Sense::hover(),
+                                    );
+                                    ui.painter().circle_filled(rect.center(), 14.0, GLASS_LIGHT);
+                                    ui.painter().text(
+                                        rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        self.account_name().chars().next().unwrap_or('K'),
+                                        egui::FontId::proportional(13.5),
+                                        accent(),
+                                    );
+                                }
+                                ui.vertical(|ui| {
+                                    ui.spacing_mut().item_spacing.y = 1.0;
+                                    ui.label(
+                                        egui::RichText::new(self.account_name())
+                                            .strong()
+                                            .size(12.0),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(self.account_kind())
+                                            .size(9.0)
+                                            .color(MUTED),
+                                    );
+                                });
                             });
                         });
-                    });
-                    ui.add_space(8.0);
+                        // The card itself is the target: one clickable surface
+                        // with no half-clipped button hanging off its edge.
+                        if card
+                            .response
+                            .interact(egui::Sense::click())
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text("Open the account manager")
+                            .clicked()
+                        {
+                            self.current_tab = Tab::Account;
+                        }
+                        ui.add_space(6.0);
+                    }
                 });
             });
     }
@@ -3498,13 +5876,19 @@ impl KaelisApp {
             .unwrap_or_else(|| "No account".to_owned())
     }
 
-    fn account_kind(&self) -> &'static str {
-        if self.microsoft_session.is_some() {
-            "Microsoft account"
+    /// Short identity line for the sidebar card. The saved count makes a
+    /// multi-account setup visible without opening the tab.
+    fn account_kind(&self) -> String {
+        let base = if self.microsoft_session.is_some() {
+            "Microsoft · online"
         } else if self.offline_account.is_some() {
-            "Offline profile"
+            "Offline · local"
         } else {
             "Not signed in"
+        };
+        match self.accounts.len() {
+            0 | 1 => base.to_owned(),
+            count => format!("{base} · {count} saved"),
         }
     }
 
@@ -3513,19 +5897,41 @@ impl KaelisApp {
         self.status = text.into();
     }
 
+    /// Re-read the selected instance's jars and content folders on a worker.
+    /// The scan opens every jar, so doing it inline froze the window on large
+    /// packs; the generation drops a result the user has already navigated
+    /// past, and clearing the old scan prevents another instance's mods from
+    /// flashing on the new card.
     fn refresh_installed(&mut self) {
-        let instance = self.selected_instance().cloned();
-        self.installed = instance.as_ref().map(scan_installed);
-        self.content_library = instance
-            .as_ref()
-            .map(ContentLibrary::scan)
-            .unwrap_or_default();
-        self.detected_loader = self
-            .installed
-            .as_ref()
-            .and_then(|scan| scan.detected_loader)
-            .map(str::to_owned);
         self.confirm_mod_delete = None;
+        self.installed_scan_generation = self.installed_scan_generation.wrapping_add(1);
+        let generation = self.installed_scan_generation;
+        let Some(instance) = self.selected_instance().cloned() else {
+            self.installed = None;
+            self.content_library = ContentLibrary::default();
+            self.detected_loader = None;
+            return;
+        };
+        self.installed = None;
+        self.content_library = ContentLibrary::default();
+        self.detected_loader = None;
+        let id = instance.id.clone();
+        let sender = self.sender.clone();
+        let repaint = self.egui_context.clone();
+        self.runtime.spawn_blocking(move || {
+            let scan = scan_installed(&instance);
+            let library = ContentLibrary::scan(&instance);
+            send_event(
+                &sender,
+                &repaint,
+                GuiEvent::InstalledScan {
+                    id,
+                    generation,
+                    scan,
+                    library,
+                },
+            );
+        });
     }
 
     /// Iris (Fabric/NeoForge) and Oculus (Forge) are the shader loaders; a pack
@@ -3540,6 +5946,85 @@ impl KaelisApp {
                         .any(|id| id.contains("iris") || id.contains("oculus"))
             })
         })
+    }
+
+    /// Compare the selected instance's jars with Modrinth, once per click.
+    fn start_update_check(&mut self, context: egui::Context) {
+        if self.updates_busy {
+            return;
+        }
+        let Some(instance) = self.selected_instance().cloned() else {
+            self.set_status(
+                StatusKind::Warning,
+                "Select an instance before checking for mod updates.",
+            );
+            return;
+        };
+        if instance.loader.eq_ignore_ascii_case("vanilla") {
+            self.set_status(StatusKind::Warning, "This instance has no mod loader.");
+            return;
+        }
+        let mut instance = instance;
+        if let Some(loader) = self.detected_loader.clone() {
+            instance.loader = loader;
+        }
+        let instance_id = instance.id.clone();
+        self.updates_busy = true;
+        self.update_report = None;
+        self.set_status(StatusKind::Busy, "Checking installed mods for updates…");
+        let http = self.http.clone();
+        let sender = self.sender.clone();
+        let repaint = context;
+        self.runtime.spawn(async move {
+            let result = check_updates(&http, &instance)
+                .await
+                .map_err(|error| error.to_string());
+            send_event(
+                &sender,
+                &repaint,
+                GuiEvent::Updates {
+                    instance_id,
+                    result,
+                },
+            );
+        });
+    }
+
+    /// Replace one installed jar with the newest compatible version.
+    fn apply_mod_update(&mut self, update: ModUpdate, context: egui::Context) {
+        if self.updating_mods.contains(&update.project_id) {
+            return;
+        }
+        let Some(instance) = self.selected_instance().cloned() else {
+            return;
+        };
+        let mods_dir = instance.root.join("mods");
+        let project_id = update.project_id.clone();
+        let title = update.title.clone();
+        self.updating_mods.insert(project_id.clone());
+        self.set_status(StatusKind::Busy, format!("Updating {}…", update.title));
+        let http = self.http.clone();
+        let sender = self.sender.clone();
+        let repaint = context;
+        self.runtime.spawn(async move {
+            let result = apply_update(&http, &mods_dir, &update)
+                .await
+                .map(|path| {
+                    path.file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_default()
+                })
+                .map_err(|error| error.to_string());
+            send_event(
+                &sender,
+                &repaint,
+                GuiEvent::ModUpdated {
+                    project_id,
+                    title,
+                    result,
+                },
+            );
+        });
     }
 
     /// Install every missing required mod for the selected instance.
@@ -3634,10 +6119,10 @@ impl KaelisApp {
             );
             return;
         };
-        if self.game_running {
+        if self.instance_running(&instance.id) {
             self.set_status(
                 StatusKind::Warning,
-                "Close Minecraft before erasing content.",
+                format!("Close {} before erasing content.", instance.name),
             );
             return;
         }
@@ -3728,6 +6213,39 @@ impl KaelisApp {
         }
     }
 
+    /// Copy an instance on a worker thread: a large modpack can be several
+    /// gigabytes, so the window never waits on the disk. The core crate picks
+    /// the new id and name, skips runtime output, and refuses links.
+    fn duplicate_instance(
+        &mut self,
+        instance: Instance,
+        with_saves: bool,
+        context: &egui::Context,
+    ) {
+        self.set_status(StatusKind::Busy, format!("Copying {}…", instance.name));
+        let sender = self.sender.clone();
+        let repaint = context.clone();
+        self.runtime.spawn_blocking(move || {
+            let options = DuplicateOptions {
+                content: true,
+                saves: with_saves,
+                settings: true,
+            };
+            let result = instance
+                .duplicate(options)
+                .map(|report| {
+                    let summary = report.summary();
+                    (report.instance, summary)
+                })
+                .map_err(|error| error.to_string());
+            send_event(
+                &sender,
+                &repaint,
+                GuiEvent::InstanceDuplicated(Box::new(result)),
+            );
+        });
+    }
+
     /// Wipe one instance completely in a single step: its whole directory tree,
     /// its JSON record, any temp record from an interrupted save, install jobs
     /// still queued for it, and every cached view of it.
@@ -3744,10 +6262,10 @@ impl KaelisApp {
         else {
             return;
         };
-        if self.game_running {
+        if self.instance_running(&instance.id) {
             self.set_status(
                 StatusKind::Warning,
-                "Close Minecraft before erasing an instance.",
+                format!("Close {} before erasing it.", instance.name),
             );
             return;
         }
@@ -3878,6 +6396,7 @@ impl KaelisApp {
             || self.installing_instance.is_some()
             || self.installing_runtime.is_some()
             || self.repairing_mods
+            || self.portable_busy
     }
 
     fn fraction(progress: Option<(usize, usize)>) -> Option<f32> {
@@ -3894,26 +6413,25 @@ impl KaelisApp {
         egui::TopBottomPanel::top("kaelis-header")
             .frame(
                 egui::Frame::none()
-                    .fill(egui::Color32::from_rgba_premultiplied(10, 15, 24, 242))
-                    .inner_margin(egui::Margin::symmetric(18.0, 7.0)),
+                    .fill(egui::Color32::from_rgba_premultiplied(7, 8, 11, 248))
+                    .inner_margin(egui::Margin::symmetric(14.0, 7.0)),
             )
             .show(context, |ui| {
                 ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        ui.label(
-                            egui::RichText::new("KAELIS WORKSPACE")
-                                .size(9.0)
-                                .color(MUTED),
-                        );
-                        ui.label(
-                            egui::RichText::new(self.current_tab.title())
-                                .size(18.0)
-                                .strong(),
-                        );
-                    });
+                    ui.label(
+                        egui::RichText::new(self.current_tab.title())
+                            .size(14.0)
+                            .strong(),
+                    );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if self.game_running {
-                            status_pill(ui, "PLAYING", StatusKind::Success.color());
+                        let running = self.running_instances.len();
+                        if running > 0 {
+                            let label = if running == 1 {
+                                "PLAYING".to_owned()
+                            } else {
+                                format!("PLAYING {running}")
+                            };
+                            status_pill(ui, &label, StatusKind::Success.color());
                         }
                         if self.is_busy() {
                             ui.add(egui::Spinner::new().size(12.0));
@@ -3936,31 +6454,21 @@ impl KaelisApp {
         egui::TopBottomPanel::bottom("kaelis-footer")
             .frame(
                 egui::Frame::none()
-                    .fill(egui::Color32::from_rgba_premultiplied(9, 13, 21, 235))
-                    .inner_margin(egui::Margin::symmetric(18.0, 3.0)),
+                    .fill(egui::Color32::from_rgba_premultiplied(7, 8, 11, 248))
+                    .inner_margin(egui::Margin::symmetric(14.0, 3.0)),
             )
             .show(context, |ui| {
                 ui.horizontal(|ui| {
+                    // The rail already carries Community and GitHub; repeating
+                    // them here only added noise to a 12 px strip.
                     ui.label(
-                        egui::RichText::new(kaelis_core::brand::LAUNCHER_NAME)
-                            .size(9.5)
-                            .color(MUTED),
-                    );
-                    ui.label(egui::RichText::new("·").size(9.5).color(MUTED));
-                    ui.hyperlink_to(
-                        egui::RichText::new("Community").size(9.5).color(MUTED),
-                        kaelis_core::brand::DISCORD_HUB,
-                    );
-                    ui.label(egui::RichText::new("·").size(9.5).color(MUTED));
-                    ui.hyperlink_to(
-                        egui::RichText::new("GitHub").size(9.5).color(MUTED),
-                        kaelis_core::brand::GITHUB_REPOSITORY,
-                    );
-                    ui.label(egui::RichText::new("·").size(9.5).color(MUTED));
-                    ui.label(
-                        egui::RichText::new(format!("Founder {}", kaelis_core::brand::FOUNDER))
-                            .size(9.5)
-                            .color(MUTED),
+                        egui::RichText::new(format!(
+                            "{} {}",
+                            kaelis_core::brand::LAUNCHER_NAME,
+                            env!("CARGO_PKG_VERSION")
+                        ))
+                        .size(8.5)
+                        .color(MUTED),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let fps = if self.governor.target_fps() == 0 {
@@ -3968,7 +6476,7 @@ impl KaelisApp {
                         } else {
                             "60 FPS while working"
                         };
-                        ui.label(egui::RichText::new(fps).size(9.5).color(MUTED));
+                        ui.label(egui::RichText::new(fps).size(8.5).color(MUTED));
                     });
                 });
             });
@@ -4015,26 +6523,19 @@ impl KaelisApp {
                     .unwrap_or(0),
             )
         });
-        ui.add_space(14.0);
+        ui.add_space(8.0);
         Self::glass_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                draw_brand_mark(ui, 62.0);
+                draw_brand_mark(ui, 44.0);
                 ui.add_space(10.0);
                 ui.vertical(|ui| {
                     ui.label(
                         egui::RichText::new(kaelis_core::brand::TAGLINE)
-                            .size(24.0)
+                            .size(19.0)
                             .strong(),
                     );
-                    ui.label(
-                        egui::RichText::new(
-                            "One quiet workspace for instances, content, and accounts. Built in Rust, local-first, and fast by default.",
-                        )
-                        .size(11.5)
-                        .color(MUTED),
-                    );
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         if primary_button(ui, "Launch selected").clicked() {
                             self.launch_selected(context.clone());
                         }
@@ -4052,20 +6553,20 @@ impl KaelisApp {
                 });
             });
         });
-        ui.add_space(10.0);
+        ui.add_space(7.0);
         Self::glass_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new("ACTIVE INSTANCE")
-                        .size(9.0)
+                        .size(8.5)
                         .strong()
                         .color(MUTED),
                 );
                 if let Some(instance) = &selected {
                     draw_instance_avatar(ui, selected_icon.as_ref(), instance);
                     ui.vertical(|ui| {
-                        ui.label(egui::RichText::new(&instance.name).size(15.0).strong());
+                        ui.label(egui::RichText::new(&instance.name).size(14.0).strong());
                         ui.label(
                             egui::RichText::new(format!(
                                 "Minecraft {} · {} · {} MiB",
@@ -4085,61 +6586,58 @@ impl KaelisApp {
                 });
             });
         });
-        ui.add_space(10.0);
+        ui.add_space(7.0);
         let mut open_kind = None;
-        ui.columns(4, |columns| {
-            for (column, (kind, count)) in columns.iter_mut().zip(counts.iter().copied()) {
-                let card = Self::glass_frame().show(column, |ui| {
-                    ui.label(
-                        egui::RichText::new(kind.label().to_ascii_uppercase())
-                            .size(8.5)
-                            .strong()
-                            .color(kind_color(kind)),
-                    );
-                    ui.label(egui::RichText::new(count.to_string()).size(24.0).strong());
-                    ui.label(
-                        egui::RichText::new("open in Content")
-                            .size(9.5)
-                            .color(MUTED),
-                    );
-                });
-                if card
-                    .response
-                    .interact(egui::Sense::click())
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .on_hover_text(format!("Manage {}", kind.label().to_ascii_lowercase()))
-                    .clicked()
-                {
-                    open_kind = Some(kind);
+        // Four cards need 720 px to keep their labels on one line; below that
+        // they become a 2×2 board rather than shrinking to unreadable chips.
+        if ui.available_width() >= 720.0 {
+            ui.columns(4, |columns| {
+                for (column, (kind, count)) in columns.iter_mut().zip(counts.iter().copied()) {
+                    if content_stat_card(column, kind, count) {
+                        open_kind = Some(kind);
+                    }
                 }
+            });
+        } else {
+            for row in counts.chunks(2) {
+                ui.columns(2, |columns| {
+                    for (column, (kind, count)) in columns.iter_mut().zip(row.iter().copied()) {
+                        if content_stat_card(column, kind, count) {
+                            open_kind = Some(kind);
+                        }
+                    }
+                });
+                ui.add_space(5.0);
             }
-        });
+        }
         if let Some(kind) = open_kind {
             self.content_kind = kind;
             self.current_tab = Tab::Content;
         }
-        ui.add_space(10.0);
-        ui.columns(2, |columns| {
-            Self::glass_frame().show(&mut columns[0], |ui| {
-                ui.label(egui::RichText::new("ACCOUNT").small().weak());
-                ui.heading(self.account_name());
-                ui.label(self.account_kind());
-                if ui.button("Manage account").clicked() {
-                    self.current_tab = Tab::Account;
-                }
+        ui.add_space(7.0);
+        let account_name = self.account_name();
+        let account_kind = self.account_kind();
+        let latest = self
+            .versions
+            .iter()
+            .find(|version| version.kind == "release")
+            .map(|version| version.id.clone())
+            .unwrap_or_else(|| "—".to_owned());
+        let mut manage_account = false;
+        if ui.available_width() >= 620.0 {
+            ui.columns(2, |columns| {
+                manage_account =
+                    account_summary_card(&mut columns[0], &account_name, &account_kind);
+                release_summary_card(&mut columns[1], &latest);
             });
-            Self::glass_frame().show(&mut columns[1], |ui| {
-                ui.label(egui::RichText::new("LATEST RELEASE").small().weak());
-                ui.heading(
-                    self.versions
-                        .iter()
-                        .find(|version| version.kind == "release")
-                        .map(|version| version.id.as_str())
-                        .unwrap_or("—"),
-                );
-                ui.label("Official Mojang version manifest");
-            });
-        });
+        } else {
+            manage_account = account_summary_card(ui, &account_name, &account_kind);
+            ui.add_space(5.0);
+            release_summary_card(ui, &latest);
+        }
+        if manage_account {
+            self.current_tab = Tab::Account;
+        }
     }
 
     fn show_instance_editor(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
@@ -4147,12 +6645,18 @@ impl KaelisApp {
             return;
         }
         ui.add_space(10.0);
-        let mut save = false;
+        let save_shortcut =
+            context.input(|input| input.modifiers.command && input.key_pressed(egui::Key::S));
+        let mut save = save_shortcut;
         let mut cancel = false;
         let mut revert = false;
         let mut folder = None;
         let mut manage_content = None;
         let mut erase_request: Option<String> = None;
+        let mut paste_artwork = false;
+        let mut browse_artwork = false;
+        let mut copy_json = false;
+        let mut paste_json = false;
         let content_counts = ContentKind::ALL.map(|kind| {
             (
                 kind,
@@ -4185,12 +6689,12 @@ impl KaelisApp {
                             egui::RichText::new("INSTANCE PROPERTIES")
                                 .size(9.5)
                                 .strong()
-                                .color(ACCENT),
+                                .color(accent()),
                         );
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new(&edit.name).size(19.0).strong());
                             chip(ui, &format!("MC {}", edit.mc_version), MUTED);
-                            chip(ui, &edit.loader, ACCENT);
+                            chip(ui, &edit.loader, accent());
                             chip(ui, &format!("{} MiB", edit.ram_mb), MUTED);
                         });
                     });
@@ -4205,6 +6709,17 @@ impl KaelisApp {
                                     manage_content = Some(kind);
                                     ui.close_menu();
                                 }
+                            }
+                        });
+                        ui.menu_button("Copy / Paste", |ui| {
+                            ui.set_min_width(190.0);
+                            if ui.button("Copy instance JSON").clicked() {
+                                copy_json = true;
+                                ui.close_menu();
+                            }
+                            if ui.button("Paste instance from clipboard").clicked() {
+                                paste_json = true;
+                                ui.close_menu();
                             }
                         });
                     });
@@ -4227,14 +6742,14 @@ impl KaelisApp {
                             editor_row(ui, "Name", |ui| {
                                 ui.add(
                                     egui::TextEdit::singleline(&mut edit.name)
-                                        .desired_width(250.0),
+                                        .desired_width(210.0),
                                 );
                             });
                             editor_row(ui, "Group", |ui| {
                                 ui.add(
                                     egui::TextEdit::singleline(&mut self.edit_group)
                                         .hint_text("Optional, e.g. Favourites")
-                                        .desired_width(250.0),
+                                        .desired_width(210.0),
                                 );
                             });
                             editor_row(ui, "Minecraft", |ui| {
@@ -4270,42 +6785,59 @@ impl KaelisApp {
                                 egui::TextEdit::multiline(&mut self.edit_notes)
                                     .desired_rows(3)
                                     .hint_text("Load order, pack notes, reminders…")
-                                    .desired_width(250.0),
+                                    .desired_width(210.0),
                             );
                         },
                     );
                     editor_section(
                         &mut columns[0],
                         "Appearance",
-                        "Card artwork and accent",
+                        "Card artwork",
                         |ui| {
                             editor_row(ui, "Artwork", |ui| {
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut self.edit_icon)
-                                        .hint_text("PNG / JPEG / WebP")
-                                        .desired_width(250.0),
-                                );
-                                if ui.small_button("Clear").clicked() {
-                                    self.edit_icon.clear();
-                                }
-                            });
-                            editor_row(ui, "Accent", |ui| {
-                                if ui
-                                    .selectable_label(edit.icon_variant.is_none(), "Auto")
-                                    .on_hover_text("Derive a stable color from the instance id.")
-                                    .clicked()
-                                {
-                                    edit.icon_variant = None;
-                                }
-                                for index in 0..INSTANCE_VARIANTS {
-                                    let selected = edit.icon_variant == Some(index);
-                                    if swatch_button(ui, variant_color(index), selected)
-                                        .on_hover_text(format!("Accent variant {}", index + 1))
-                                        .clicked()
-                                    {
-                                        edit.icon_variant = Some(index);
-                                    }
-                                }
+                                ui.vertical(|ui| {
+                                    ui.add(
+                                        egui::TextEdit::singleline(&mut self.edit_icon)
+                                            .id(egui::Id::new(ARTWORK_FIELD_ID))
+                                            .hint_text("Path, data URL, or base64")
+                                            .desired_width(210.0),
+                                    )
+                                    .on_hover_text(
+                                        "Drop a picture on the window, press Ctrl+V with a \
+                                         picture copied, or pick one below. PNG, JPEG, WebP, \
+                                         GIF, BMP, ICO, and SVG become one 256 px square.",
+                                    );
+                                    ui.horizontal(|ui| {
+                                        if ui
+                                            .button("Choose image…")
+                                            .on_hover_text("Pick a PNG, JPEG, WebP, GIF, BMP, ICO, or SVG from this computer.")
+                                            .clicked()
+                                        {
+                                            browse_artwork = true;
+                                        }
+                                        if ui
+                                            .button("Paste")
+                                            .on_hover_text("Use the picture on the clipboard (Ctrl+V works anywhere on this window).")
+                                            .clicked()
+                                        {
+                                            paste_artwork = true;
+                                        }
+                                        if ui.button("Clear").clicked() {
+                                            self.edit_icon.clear();
+                                        }
+                                        // Ctrl+V over this field means "the
+                                        // picture I copied", not text.
+                                        if ui.input(|input| {
+                                            input.modifiers.command
+                                                && input.key_pressed(egui::Key::V)
+                                        }) && ui.memory(|memory| {
+                                            memory.focused()
+                                                == Some(egui::Id::new(ARTWORK_FIELD_ID))
+                                        }) {
+                                            paste_artwork = true;
+                                        }
+                                    });
+                                });
                             });
                             ui.add_space(4.0);
                             ui.horizontal(|ui| {
@@ -4388,9 +6920,9 @@ impl KaelisApp {
                         |ui| {
                             editor_row(ui, "Java", |ui| {
                                 ui.add(
-                                    egui::TextEdit::singleline(&mut self.edit_java)
-                                        .hint_text("Managed runtime or java.exe")
-                                        .desired_width(250.0),
+                                egui::TextEdit::singleline(&mut self.edit_java)
+                                    .hint_text("Managed runtime or java.exe")
+                                    .desired_width(210.0),
                                 );
                                 if ui.small_button("Clear").clicked() {
                                     self.edit_java.clear();
@@ -4402,6 +6934,9 @@ impl KaelisApp {
                                     .size(10.0)
                                     .color(MUTED),
                             );
+                            // A set track keeps the value box inside the column
+                            // instead of drawing over the checkbox row below.
+                            ui.spacing_mut().slider_width = 200.0;
                             ui.add(
                                 egui::Slider::new(&mut edit.ram_mb, 512..=32_768)
                                     .step_by(512.0)
@@ -4458,7 +6993,7 @@ impl KaelisApp {
                                 ui.add(
                                     egui::TextEdit::singleline(&mut self.edit_quick_join)
                                         .hint_text("play.example.net:25565")
-                                        .desired_width(250.0),
+                                        .desired_width(210.0),
                                 );
                             });
                             ui.label(
@@ -4489,7 +7024,7 @@ impl KaelisApp {
                                         .code_editor()
                                         .desired_rows(3)
                                         .hint_text("-XX:+AlwaysPreTouch")
-                                        .desired_width(250.0),
+                                        .desired_width(210.0),
                                 );
                             },
                         );
@@ -4503,7 +7038,7 @@ impl KaelisApp {
                                         .code_editor()
                                         .desired_rows(3)
                                         .hint_text("--demo")
-                                        .desired_width(250.0),
+                                        .desired_width(210.0),
                                 );
                             },
                         );
@@ -4517,7 +7052,7 @@ impl KaelisApp {
                                         .code_editor()
                                         .desired_rows(3)
                                         .hint_text("JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8")
-                                        .desired_width(250.0),
+                                        .desired_width(210.0),
                                 );
                             },
                         );
@@ -4534,7 +7069,7 @@ impl KaelisApp {
                                 ui.add(
                                     egui::TextEdit::singleline(&mut self.edit_pre_launch)
                                         .hint_text("Optional command")
-                                        .desired_width(250.0),
+                                        .desired_width(210.0),
                                 );
                                 ui.label(
                                     egui::RichText::new("After exit")
@@ -4544,7 +7079,7 @@ impl KaelisApp {
                                 ui.add(
                                     egui::TextEdit::singleline(&mut self.edit_post_exit)
                                         .hint_text("Optional command")
-                                        .desired_width(250.0),
+                                        .desired_width(210.0),
                                 );
                                 ui.label(
                                     egui::RichText::new(
@@ -4563,7 +7098,10 @@ impl KaelisApp {
                 ui.separator();
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    if primary_button(ui, "Save changes").clicked() {
+                    if primary_button(ui, "Save changes")
+                        .on_hover_text("Save instance properties (Ctrl+S)")
+                        .clicked()
+                    {
                         save = true;
                     }
                     if ui.button("Revert").clicked() {
@@ -4613,6 +7151,18 @@ impl KaelisApp {
             });
         if let Some(id) = erase_request {
             self.erase_instance(&id);
+        }
+        if browse_artwork {
+            self.browse_artwork(context);
+        }
+        if paste_artwork {
+            self.paste_clipboard_artwork(context);
+        }
+        if copy_json {
+            self.copy_instance_json(context);
+        }
+        if paste_json {
+            self.paste_instance_json();
         }
         if save {
             self.save_instance_edit(context);
@@ -4701,7 +7251,7 @@ impl KaelisApp {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.new_instance_name)
                             .hint_text("Instance name")
-                            .desired_width(176.0),
+                            .desired_width((ui.available_width() * 0.24).clamp(176.0, 360.0)),
                     );
                     ui.label("Minecraft");
                     if self.new_instance_version.is_empty()
@@ -4778,6 +7328,37 @@ impl KaelisApp {
                     {
                         self.create_instance(context.clone());
                     }
+                    // Import and export are one pair of directions, so they
+                    // sit together and share one icon family. Export acts on
+                    // the selected instance, which the tooltip says plainly.
+                    if glyph_button(
+                        ui,
+                        PortableGlyph::Import,
+                        Some("Import"),
+                        !busy,
+                        "Open a .kaelis.zip, .mrpack, CurseForge or Prism export — or drop one anywhere in this window.",
+                    )
+                    .clicked()
+                    {
+                        self.pick_instance_archive(context);
+                    }
+                    let export_target = self.selected_instance().cloned();
+                    if glyph_button(
+                        ui,
+                        PortableGlyph::Export,
+                        Some("Export"),
+                        !busy && export_target.is_some(),
+                        if export_target.is_some() {
+                            "Write the selected instance and its files into a portable .kaelis.zip."
+                        } else {
+                            "Select an instance first, then export it as a portable .kaelis.zip."
+                        },
+                    )
+                    .clicked()
+                        && let Some(instance) = export_target
+                    {
+                        self.export_instance_archive(instance, context);
+                    }
                 });
                 ui.horizontal_wrapped(|ui| {
                     ui.checkbox(&mut self.show_snapshots, "Snapshots");
@@ -4791,7 +7372,7 @@ impl KaelisApp {
                         self.request_versions(context.clone());
                     }
                     let plan = if self.new_instance_name.trim().is_empty() {
-                        ("Name the instance to begin.".to_owned(), MUTED)
+                        ("Name it to begin.".to_owned(), MUTED)
                     } else if let Some(message) = &conflict {
                         (message.clone(), StatusKind::Warning.color())
                     } else if self.new_instance_version.trim().is_empty() {
@@ -4810,14 +7391,14 @@ impl KaelisApp {
                                 "Minecraft {} · {} · mods supported",
                                 self.new_instance_version, self.new_instance_loader
                             ),
-                            ACCENT_SOFT,
+                            accent_soft(),
                         )
                     };
                     ui.label(egui::RichText::new(plan.0).size(10.0).color(plan.1));
                 });
                 ui.label(
                     egui::RichText::new(
-                        "Java is provisioned on first play; existing instances are untouched.",
+                        "Java installs on first play. Existing instances stay as they are.",
                     )
                     .size(9.5)
                     .color(MUTED),
@@ -4828,15 +7409,13 @@ impl KaelisApp {
         ui.add_space(14.0);
         ui.horizontal(|ui| {
             ui.heading("Your instances");
-            ui.add(
-                egui::TextEdit::singleline(&mut self.instance_filter)
-                    .id(egui::Id::new(INSTANCE_FILTER_ID))
-                    .hint_text("Filter by name, group, version, or loader…")
-                    .desired_width(290.0),
+            search_pill(
+                ui,
+                &mut self.instance_filter,
+                INSTANCE_FILTER_ID,
+                "Filter by name, group, version, or loader…",
+                430.0,
             );
-            if !self.instance_filter.is_empty() && ui.small_button("×").clicked() {
-                self.instance_filter.clear();
-            }
             if ui
                 .button("Recheck")
                 .on_hover_text("Re-scan metadata, client jar, Java, and heap settings.")
@@ -4912,6 +7491,7 @@ impl KaelisApp {
                     let Some(card) = cards.get(&instance.id) else {
                         continue;
                     };
+                    let running = self.running_instances.contains(&instance.id);
                     let card_frame = Self::glass_frame().show(ui, |ui| {
                         ui.horizontal(|ui| {
                             let icon = icons.get(&instance.id).and_then(|state| match state {
@@ -4925,10 +7505,43 @@ impl KaelisApp {
                             ui.painter().rect_filled(
                                 stripe,
                                 egui::Rounding::same(2.0),
-                                instance_color(instance),
+                                accent(),
                             );
                             ui.add_space(6.0);
-                            draw_instance_avatar(ui, icon, instance);
+                            let avatar = draw_instance_avatar(ui, icon, instance);
+                            let pick = ui
+                                .interact(
+                                    avatar,
+                                    ui.id().with(("instance-artwork", instance.id.as_str())),
+                                    egui::Sense::click(),
+                                )
+                                .on_hover_text("Change icon…")
+                                .on_hover_cursor(egui::CursorIcon::PointingHand);
+                            // Screen readers and UI automation both get the same
+                            // wording as the tooltip.
+                            pick.widget_info(|| {
+                                egui::WidgetInfo::labeled(
+                                    egui::WidgetType::Button,
+                                    true,
+                                    "Change instance icon",
+                                )
+                            });
+                            if pick.hovered() {
+                                ui.painter().rect_filled(
+                                    avatar,
+                                    egui::Rounding::same(10.0),
+                                    egui::Color32::from_black_alpha(140),
+                                );
+                                let centre = avatar.center();
+                                let stroke = egui::Stroke::new(1.4_f32, TEXT);
+                                ui.painter()
+                                    .line_segment([centre - egui::vec2(5.0, 0.0), centre + egui::vec2(5.0, 0.0)], stroke);
+                                ui.painter()
+                                    .line_segment([centre - egui::vec2(0.0, 5.0), centre + egui::vec2(0.0, 5.0)], stroke);
+                            }
+                            if pick.clicked() {
+                                action = Some((index, InstanceAction::PickIcon));
+                            }
                             ui.add_space(8.0);
                             ui.vertical(|ui| {
                                 ui.horizontal(|ui| {
@@ -4940,10 +7553,13 @@ impl KaelisApp {
                                     if !instance.group.trim().is_empty() {
                                         chip(ui, instance.group.trim(), MUTED);
                                     }
+                                    if running {
+                                        chip(ui, "RUNNING", StatusKind::Success.color());
+                                    }
                                 });
                                 ui.label(egui::RichText::new(&card.detail).size(11.0));
                                 ui.horizontal(|ui| {
-                                    chip(ui, &card.content, instance_color(instance));
+                                    chip(ui, &card.content, accent());
                                     chip(ui, &card.last_played, MUTED);
                                 });
                                 if !card.notes_preview.is_empty() {
@@ -4951,7 +7567,7 @@ impl KaelisApp {
                                         egui::RichText::new(&card.notes_preview)
                                             .size(10.0)
                                             .italics()
-                                            .color(ACCENT_SOFT),
+                                            .color(accent_soft()),
                                     )
                                     .on_hover_text(&card.notes);
                                 }
@@ -5020,6 +7636,42 @@ impl KaelisApp {
                                             ui.close_menu();
                                         }
                                         if ui
+                                            .button("Change icon…")
+                                            .on_hover_text(
+                                                "Pick card artwork from the file explorer",
+                                            )
+                                            .clicked()
+                                        {
+                                            action = Some((index, InstanceAction::PickIcon));
+                                            ui.close_menu();
+                                        }
+                                        if ui
+                                            .button("Duplicate")
+                                            .on_hover_text(
+                                                "Copy mods, resource packs, shaders, settings, and notes — not worlds or logs",
+                                            )
+                                            .clicked()
+                                        {
+                                            action = Some((
+                                                index,
+                                                InstanceAction::Duplicate { saves: false },
+                                            ));
+                                            ui.close_menu();
+                                        }
+                                        if ui
+                                            .button("Duplicate with worlds")
+                                            .on_hover_text(
+                                                "Copy everything the plain duplicate does, plus every world save",
+                                            )
+                                            .clicked()
+                                        {
+                                            action = Some((
+                                                index,
+                                                InstanceAction::Duplicate { saves: true },
+                                            ));
+                                            ui.close_menu();
+                                        }
+                                        if ui
                                             .add_enabled(
                                                 !installing,
                                                 egui::Button::new("Install / Repair"),
@@ -5047,16 +7699,34 @@ impl KaelisApp {
                                             ui.close_menu();
                                         }
                                         ui.separator();
-                                        if ui.button("Open instance folder").clicked() {
-                                            action =
-                                                Some((index, InstanceAction::OpenFolder));
-                                            ui.close_menu();
-                                        }
-                                        if ui.button("Open mods folder").clicked() {
-                                            action =
-                                                Some((index, InstanceAction::OpenMods));
-                                            ui.close_menu();
-                                        }
+                                        ui.menu_button("Open folders", |ui| {
+                                            if ui.button("Instance folder").clicked() {
+                                                action =
+                                                    Some((index, InstanceAction::OpenFolder));
+                                                ui.close_menu();
+                                            }
+                                            if ui.button("Mods").clicked() {
+                                                action =
+                                                    Some((index, InstanceAction::OpenMods));
+                                                ui.close_menu();
+                                            }
+                                            for (label, folder) in [
+                                                ("Resource packs", "resourcepacks"),
+                                                ("Shaders", "shaderpacks"),
+                                                ("Worlds", "saves"),
+                                                ("Logs", "logs"),
+                                            ] {
+                                                if ui.button(label).clicked() {
+                                                    action = Some((
+                                                        index,
+                                                        InstanceAction::OpenPath(PathBuf::from(
+                                                            folder,
+                                                        )),
+                                                    ));
+                                                    ui.close_menu();
+                                                }
+                                            }
+                                        });
                                         ui.menu_button("Manage content", |ui| {
                                             for kind in ContentKind::ALL {
                                                 if ui.button(kind.label()).clicked() {
@@ -5088,6 +7758,20 @@ impl KaelisApp {
                                             ui.close_menu();
                                         }
                                     });
+                                    // The utility cluster sits at the right:
+                                    // export next to More, destructive Erase
+                                    // kept away from it.
+                                    if glyph_button(
+                                        ui,
+                                        PortableGlyph::Export,
+                                        None,
+                                        true,
+                                        "Export this instance as a portable .kaelis.zip",
+                                    )
+                                    .clicked()
+                                    {
+                                        action = Some((index, InstanceAction::Export));
+                                    }
                                     if danger_button(ui, "Erase")
                                         .on_hover_text(
                                             "Erase every file and record of this instance in one click",
@@ -5101,15 +7785,24 @@ impl KaelisApp {
                                     }
                                     if ui
                                         .add_enabled(
-                                            !installing,
+                                            !installing && !running,
                                             egui::Button::new(
-                                                egui::RichText::new("Play")
-                                                    .strong()
-                                                    .color(ACCENT_DARK),
+                                                egui::RichText::new(if running {
+                                                    "Running"
+                                                } else {
+                                                    "Play"
+                                                })
+                                                .strong()
+                                                .color(accent_on()),
                                             )
-                                            .fill(ACCENT)
-                                            .min_size(egui::vec2(62.0, 26.0)),
+                                            .fill(accent())
+                                            .min_size(egui::vec2(62.0, 24.0)),
                                         )
+                                        .on_disabled_hover_text(if running {
+                                            "This instance already has a game window. Use Show from the tray to manage it."
+                                        } else {
+                                            "Wait for the current installation to finish."
+                                        })
                                         .clicked()
                                     {
                                         action = Some((index, InstanceAction::Play));
@@ -5150,6 +7843,10 @@ impl KaelisApp {
             match action {
                 InstanceAction::Play => self.launch_selected(context.clone()),
                 InstanceAction::Select => {}
+                InstanceAction::PickIcon => {
+                    self.select_instance(&instance.id);
+                    self.browse_artwork_for(instance.id.clone(), context);
+                }
                 InstanceAction::Edit => self.begin_edit(instance),
                 InstanceAction::InstallVanilla => {
                     self.install_vanilla_instance(context.clone(), instance)
@@ -5167,6 +7864,21 @@ impl KaelisApp {
                     }
                 }
                 InstanceAction::OpenMods => self.open_mods_folder(),
+                InstanceAction::OpenPath(folder) => {
+                    let path = instance.root.join(folder);
+                    let result = std::fs::create_dir_all(&path)
+                        .map_err(|error| error.to_string())
+                        .and_then(|()| open_instance_path(&path, false));
+                    if let Err(error) = result {
+                        self.set_status(
+                            StatusKind::Error,
+                            format!("Could not open {}: {error}", path.display()),
+                        );
+                    }
+                }
+                InstanceAction::Export => {
+                    self.export_instance_archive(instance, context);
+                }
                 InstanceAction::ManageContent(kind) => {
                     self.current_tab = Tab::Content;
                     self.content_kind = kind;
@@ -5195,6 +7907,9 @@ impl KaelisApp {
                     }
                 }
                 InstanceAction::Erase => self.erase_instance(&instance.id),
+                InstanceAction::Duplicate { saves } => {
+                    self.duplicate_instance(instance, saves, context)
+                }
             }
         }
     }
@@ -5213,11 +7928,9 @@ impl KaelisApp {
                 ui.set_width(ui.available_width());
                 ui.heading("Create an instance first");
                 ui.label(
-                    egui::RichText::new(
-                        "An instance keeps its modpack, mods, resource packs, and shaders together.",
-                    )
-                    .size(11.0)
-                    .color(MUTED),
+                    egui::RichText::new("Mods, packs, shaders, and worlds stay together.")
+                        .size(11.0)
+                        .color(MUTED),
                 );
                 ui.add_space(6.0);
                 if primary_button(ui, "Create an instance").clicked() {
@@ -5229,13 +7942,6 @@ impl KaelisApp {
         if context.input(|input| input.modifiers.command && input.key_pressed(egui::Key::F)) {
             ui.memory_mut(|memory| memory.request_focus(egui::Id::new(MOD_SEARCH_ID)));
         }
-        let dropped = context.input(|input| {
-            input
-                .raw
-                .dropped_files
-                .iter()
-                .find_map(|file| file.path.clone())
-        });
         ui.add_space(4.0);
         Self::glass_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -5307,7 +8013,7 @@ impl KaelisApp {
                     chip(
                         ui,
                         &format!("MC {}", instance.mc_version),
-                        ACCENT_SOFT,
+                        accent_soft(),
                     );
                     chip(
                         ui,
@@ -5315,20 +8021,56 @@ impl KaelisApp {
                         if instance.loader.eq_ignore_ascii_case("vanilla") {
                             MUTED
                         } else {
-                            ACCENT
+                            accent()
                         },
                     );
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("Open folder").clicked() {
-                        request.open_folder = true;
-                    }
                     if ui
                         .small_button("Rescan")
                         .on_hover_text("Re-read the instance folders from disk.")
                         .clicked()
                     {
                         request.rescan = true;
+                    }
+                    let instance = self.selected_instance().cloned();
+                    ui.add_enabled_ui(instance.is_some(), |ui| {
+                        ui.menu_button("Folders", |ui| {
+                            let Some(instance) = instance.as_ref() else {
+                                return;
+                            };
+                            if ui.button("Instance folder").clicked() {
+                                request.open_path = Some(instance.root.clone());
+                                ui.close_menu();
+                            }
+                            ui.separator();
+                            for (label, folder) in [
+                                ("Mods", "mods"),
+                                ("Resource packs", "resourcepacks"),
+                                ("Shaders", "shaderpacks"),
+                                ("Worlds", "saves"),
+                            ] {
+                                if ui.button(label).clicked() {
+                                    request.open_path = Some(instance.root.join(folder));
+                                    ui.close_menu();
+                                }
+                            }
+                        })
+                        .response
+                        .on_hover_text("Open the instance or any content folder in the file manager.");
+                    });
+                    if ui
+                        .add_enabled(
+                            instance.is_some(),
+                            egui::Button::new("Add files…"),
+                        )
+                        .on_hover_text(
+                            "Pick mods, resource packs, or shader packs from the file manager.",
+                        )
+                        .on_disabled_hover_text("Select an instance first.")
+                        .clicked()
+                    {
+                        request.add_files = true;
                     }
                 });
             });
@@ -5347,7 +8089,7 @@ impl KaelisApp {
                     };
                     let selected = self.content_kind == kind;
                     let text = egui::RichText::new(format!("{}  ·  {count}", kind.label()))
-                        .size(11.0)
+                        .size(10.5)
                         .color(if selected { TEXT } else { MUTED });
                     let button = egui::Button::new(text)
                         .fill(if selected { SURFACE_HOVER } else { SURFACE_ALT })
@@ -5356,7 +8098,7 @@ impl KaelisApp {
                             if selected { kind_color(kind) } else { BORDER },
                         ))
                         .rounding(egui::Rounding::same(CORNER_MD));
-                    if ui.add_sized([tab_width, 28.0], button).clicked() && !selected {
+                    if ui.add_sized([tab_width, 26.0], button).clicked() && !selected {
                         self.content_kind = kind;
                         request.kind = Some(kind);
                     }
@@ -5370,14 +8112,9 @@ impl KaelisApp {
                 ContentKind::Modpack => "Search modpacks, or drop a .mrpack to install it…",
             };
             ui.horizontal(|ui| {
-                let width = (ui.available_width() - 300.0).max(200.0);
-                let query = ui.add(
-                    egui::TextEdit::singleline(&mut self.mod_query)
-                        .id(egui::Id::new(MOD_SEARCH_ID))
-                        .hint_text(hint)
-                        .desired_width(width),
-                );
-                let text = self.mod_query.trim();
+                let width = (ui.available_width() - 236.0).max(200.0);
+                let query = search_pill(ui, &mut self.mod_query, MOD_SEARCH_ID, hint, width);
+                let text = self.mod_query.trim().to_owned();
                 let link = text.starts_with("https://") || text.starts_with("http://");
                 let file_like = !link
                     && text.len() > 4
@@ -5389,7 +8126,7 @@ impl KaelisApp {
                 }
                 let submitted =
                     query.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
-                let project = kaelis_api::mods::parse_project_link(text);
+                let project = kaelis_api::mods::parse_project_link(&text);
                 let primary = match &project {
                     Some(link) => format!("Install {}", link.kind.singular()),
                     None if link => "Install link".to_owned(),
@@ -5401,7 +8138,7 @@ impl KaelisApp {
                     if project.is_some() || link {
                         import = Some(ManualImport::Url(text.to_owned()));
                     } else if file_like {
-                        import = Some(ManualImport::File(PathBuf::from(text)));
+                        import = Some(ManualImport::File(PathBuf::from(&text)));
                     } else {
                         request.search = true;
                     }
@@ -5409,9 +8146,6 @@ impl KaelisApp {
                 if (project.is_some() || link || file_like) && ui.small_button("Search text").clicked()
                 {
                     request.search = true;
-                }
-                if !self.mod_query.is_empty() && ui.small_button("×").clicked() {
-                    request.clear_search = true;
                 }
                 if ui
                     .button(if self.content_import_open {
@@ -5468,19 +8202,11 @@ impl KaelisApp {
                             import = Some(ManualImport::File(PathBuf::from(path)));
                         }
                     }
-                    if let Some(path) = &dropped {
-                        chip(
-                            ui,
-                            &format!("Dropped · {}", short_name(path)),
-                            ACCENT_SOFT,
-                        );
-                    } else {
-                        ui.label(
-                            egui::RichText::new("or drag a .jar / .zip anywhere")
-                                .size(9.5)
-                                .color(MUTED),
-                        );
-                    }
+                    ui.label(
+                        egui::RichText::new("or drop .jar / .zip anywhere")
+                            .size(9.5)
+                            .color(MUTED),
+                    );
                     if self.manual_busy {
                         ui.add(egui::Spinner::new().size(13.0));
                     }
@@ -5489,7 +8215,7 @@ impl KaelisApp {
                     ui.label(
                         egui::RichText::new(&self.manual_status)
                             .size(9.8)
-                            .color(if self.manual_busy { ACCENT } else { MUTED }),
+                            .color(if self.manual_busy { accent() } else { MUTED }),
                     );
                 }
             }
@@ -5557,7 +8283,7 @@ impl KaelisApp {
             });
             if self.content_kind == ContentKind::Modpack {
                 ui.horizontal_wrapped(|ui| {
-                    chip(ui, "Whole instances", ACCENT_SOFT).on_hover_text(
+                    chip(ui, "Whole instances", accent_soft()).on_hover_text(
                         "A pack ships its Minecraft version, loader, and mods, so it installs as its own instance.",
                     );
                     ui.label(
@@ -5645,7 +8371,7 @@ impl KaelisApp {
                         egui::RichText::new(format!("Importing {title}"))
                             .strong()
                             .size(11.5)
-                            .color(ACCENT),
+                            .color(accent()),
                     );
                     if !self.modpack_detail.is_empty() {
                         ui.label(
@@ -5654,6 +8380,14 @@ impl KaelisApp {
                                 .color(MUTED),
                         );
                     }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ghost_button(ui, "Cancel")
+                            .on_hover_text("Stop and remove the unfinished instance")
+                            .clicked()
+                        {
+                            request.cancel_modpack = true;
+                        }
+                    });
                 });
             });
         }
@@ -5667,14 +8401,22 @@ impl KaelisApp {
                         egui::RichText::new(format!("Installing {}", job.item.title))
                             .strong()
                             .size(11.5)
-                            .color(ACCENT),
+                            .color(accent()),
                     );
                     if let Some(detail) = &self.install_detail {
                         ui.label(egui::RichText::new(detail).size(10.0).color(MUTED));
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ghost_button(ui, "Cancel")
+                            .on_hover_text(
+                                "Stop this install; verified files already written are kept",
+                            )
+                            .clicked()
+                        {
+                            request.cancel_install = true;
+                        }
                         if !self.install_queue.is_empty() {
-                            if ui.small_button("Clear queue").clicked() {
+                            if ghost_button(ui, "Clear queue").clicked() {
                                 request.clear_queue = true;
                             }
                             ui.label(
@@ -5709,7 +8451,7 @@ impl KaelisApp {
                         .size(10.0)
                         .color(StatusKind::Warning.color()),
                     );
-                    if ui.small_button("Clear").clicked() {
+                    if ghost_button(ui, "Clear").clicked() {
                         request.clear_queue = true;
                     }
                 });
@@ -5739,8 +8481,7 @@ impl KaelisApp {
                         .truncate(),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .small_button("×")
+                        if ghost_button(ui, "×")
                             .on_hover_text("Dismiss this result")
                             .clicked()
                         {
@@ -5783,30 +8524,68 @@ impl KaelisApp {
         ui.add_space(4.0);
         let size = ui.available_size();
         let gap = 10.0;
-        let right_width = (size.x * 0.34).clamp(248.0, 372.0);
-        let left_width = (size.x - right_width - gap).max(280.0);
         let body_height = size.y.max(220.0);
-        ui.horizontal_top(|ui| {
+        if size.x < 960.0 {
+            // One full-height pane instead of two cramped ones: the selector
+            // swaps between searching and managing what is already there.
+            ui.horizontal(|ui| {
+                if ui
+                    .selectable_label(!self.content_show_installed, "Browse")
+                    .clicked()
+                {
+                    self.content_show_installed = false;
+                }
+                if ui
+                    .selectable_label(self.content_show_installed, "Installed")
+                    .clicked()
+                {
+                    self.content_show_installed = true;
+                }
+            });
+            let pane_height = (body_height - 30.0).max(200.0);
             ui.allocate_ui_with_layout(
-                egui::vec2(left_width, body_height),
+                egui::vec2(size.x, pane_height),
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
-                    ui.set_min_size(egui::vec2(left_width, body_height));
-                    self.show_content_results(ui, &mut request);
+                    ui.set_min_size(egui::vec2(size.x, pane_height));
+                    if self.content_show_installed {
+                        self.show_content_library(ui, &mut request);
+                    } else {
+                        self.show_content_results(ui, &mut request);
+                    }
                 },
             );
-            ui.add_space(gap);
-            ui.allocate_ui_with_layout(
-                egui::vec2(right_width, body_height),
-                egui::Layout::top_down(egui::Align::Min),
-                |ui| {
-                    ui.set_min_size(egui::vec2(right_width, body_height));
-                    self.show_content_library(ui, &mut request);
-                },
-            );
-        });
+        } else {
+            let right_width = (size.x * 0.34).clamp(248.0, 372.0);
+            let left_width = (size.x - right_width - gap).max(280.0);
+            ui.horizontal_top(|ui| {
+                ui.allocate_ui_with_layout(
+                    egui::vec2(left_width, body_height),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        ui.set_min_size(egui::vec2(left_width, body_height));
+                        self.show_content_results(ui, &mut request);
+                    },
+                );
+                ui.add_space(gap);
+                ui.allocate_ui_with_layout(
+                    egui::vec2(right_width, body_height),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        ui.set_min_size(egui::vec2(right_width, body_height));
+                        self.show_content_library(ui, &mut request);
+                    },
+                );
+            });
+        }
         if request.load_more {
             self.start_mod_search_page(context.clone(), true);
+        }
+        if request.cancel_modpack {
+            self.cancel_modpack_install(context.clone());
+        }
+        if request.cancel_install {
+            self.cancel_mod_install(context.clone());
         }
         if request.clear_queue {
             self.clear_install_queue();
@@ -5864,6 +8643,39 @@ impl KaelisApp {
         {
             self.open_content_folder(self.content_kind, &instance);
         }
+        if let Some(path) = request.open_path.take() {
+            let result = std::fs::create_dir_all(&path)
+                .map_err(|error| error.to_string())
+                .and_then(|()| open_instance_path(&path, false));
+            if let Err(error) = result {
+                self.set_status(
+                    StatusKind::Error,
+                    format!("Could not open {path:?}: {error}"),
+                );
+            }
+        }
+        if std::mem::take(&mut request.add_files) {
+            self.pick_content_files(context);
+        }
+        if request.check_updates {
+            self.start_update_check(context.clone());
+        }
+        if let Some(index) = request.apply_update
+            && let Some((_, report)) = &self.update_report
+            && let Some(update) = report.updates.get(index).cloned()
+        {
+            self.apply_mod_update(update, context.clone());
+        }
+        if request.apply_all_updates {
+            let updates = self
+                .update_report
+                .as_ref()
+                .map(|(_, report)| report.updates.clone())
+                .unwrap_or_default();
+            for update in updates {
+                self.apply_mod_update(update, context.clone());
+            }
+        }
         if request.repair {
             self.repair_mod_environment(context.clone());
         }
@@ -5898,8 +8710,6 @@ impl KaelisApp {
             self.manual_url.clear();
             self.manual_path.clear();
             self.start_manual_import(source, context.clone());
-        } else if let Some(path) = dropped {
-            self.start_manual_import(ManualImport::File(path), context.clone());
         }
     }
 
@@ -5932,15 +8742,13 @@ impl KaelisApp {
                         .color(MUTED),
                 );
                 let width = (ui.available_width() - 24.0).max(80.0);
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.mod_refine)
-                        .id(egui::Id::new(MOD_REFINE_ID))
-                        .hint_text("Filter these results…")
-                        .desired_width(width),
+                search_pill(
+                    ui,
+                    &mut self.mod_refine,
+                    MOD_REFINE_ID,
+                    "Filter these results…",
+                    width,
                 );
-                if !self.mod_refine.is_empty() && ui.small_button("×").clicked() {
-                    self.mod_refine.clear();
-                }
             });
             ui.horizontal_wrapped(|ui| {
                 for filter in ModFilter::ALL {
@@ -6034,7 +8842,10 @@ impl KaelisApp {
         let states = &self.install_states;
         let queue = &self.install_queue;
         let detail = self.install_detail.as_deref();
-        let list_height = (ui.available_height() - 34.0).max(120.0);
+        // Six pixels between the filter card and the first result, and no
+        // overshoot: a taller-than-available scroll area clips the first row.
+        ui.add_space(6.0);
+        let list_height = ui.available_height().max(120.0);
         egui::ScrollArea::vertical()
             .id_source("kaelis-content-results")
             .max_height(list_height)
@@ -6078,7 +8889,7 @@ impl KaelisApp {
                             detail
                                 .map(|detail| format!("Installing · {detail}"))
                                 .unwrap_or_else(|| "Installing…".to_owned()),
-                            ACCENT,
+                            accent(),
                         ),
                         Some(ModInstallState::Queued) => (
                             queue_position
@@ -6098,6 +8909,9 @@ impl KaelisApp {
                                 StatusKind::Warning.color()
                             },
                         ),
+                        Some(ModInstallState::Cancelled) => {
+                            ("Stopped".to_owned(), StatusKind::Warning.color())
+                        }
                         Some(ModInstallState::Failed(error)) => {
                             (format!("Failed · {error}"), StatusKind::Error.color())
                         }
@@ -6322,7 +9136,7 @@ impl KaelisApp {
                                     let name = egui::RichText::new(&instance.name)
                                         .strong()
                                         .size(12.0)
-                                        .color(if active { ACCENT_SOFT } else { TEXT });
+                                        .color(if active { accent_soft() } else { TEXT });
                                     ui.label(name);
                                     ui.label(
                                         egui::RichText::new(format!(
@@ -6412,15 +9226,169 @@ impl KaelisApp {
                     {
                         request.copy_list = true;
                     }
+                    if ui
+                        .small_button("Add files…")
+                        .on_hover_text("Add files to this folder from the file manager.")
+                        .clicked()
+                    {
+                        request.add_files = true;
+                    }
                 });
             });
-            let width = (ui.available_width() - 2.0).max(80.0);
-            ui.add(
-                egui::TextEdit::singleline(&mut filter)
-                    .id(egui::Id::new(INSTALLED_FILTER_ID))
-                    .hint_text("Filter installed…")
-                    .desired_width(width),
-            );
+            if kind == ContentKind::Mod {
+                let current = self.selected_instance.as_deref();
+                if let Some((report_id, report)) = self.update_report.as_ref()
+                    && Some(report_id.as_str()) == current
+                {
+                    ui.add_space(2.0);
+                    ui.horizontal_wrapped(|ui| {
+                        if report.updates.is_empty() {
+                            chip(ui, "up to date", StatusKind::Success.color());
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "{} current · {} not on Modrinth{}",
+                                    report.up_to_date,
+                                    report.unmatched,
+                                    if report.skipped > 0 {
+                                        format!(" · {} skipped", report.skipped)
+                                    } else {
+                                        String::new()
+                                    }
+                                ))
+                                .size(9.0)
+                                .color(MUTED),
+                            );
+                        } else {
+                            chip(
+                                ui,
+                                &format!(
+                                    "{} update{}",
+                                    report.updates.len(),
+                                    if report.updates.len() == 1 { "" } else { "s" }
+                                ),
+                                accent(),
+                            );
+                            if self.updating_mods.is_empty()
+                                && ui
+                                    .small_button("Update all")
+                                    .on_hover_text(
+                                        "Download and verify every update, keeping disabled jars disabled.",
+                                    )
+                                    .clicked()
+                            {
+                                request.apply_all_updates = true;
+                            }
+                        }
+                    });
+                    for (index, update) in report.updates.iter().enumerate() {
+                        ui.horizontal(|ui| {
+                            // Two lines inside a bounded column: the right pane
+                            // is narrow, so a single line of title + file names
+                            // + button used to run past the window edge.
+                            let button_width = 76.0;
+                            let width = (ui.available_width() - button_width).max(60.0);
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(width, 30.0),
+                                egui::Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    ui.label(
+                                        egui::RichText::new(&update.title)
+                                            .size(10.5)
+                                            .strong(),
+                                    );
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(format!(
+                                                "{} → {}{}",
+                                                update.current_file,
+                                                update.latest_version,
+                                                if update.channel == "release" {
+                                                    String::new()
+                                                } else {
+                                                    format!(" · {}", update.channel)
+                                                }
+                                            ))
+                                            .size(9.0)
+                                            .color(MUTED),
+                                        )
+                                        .truncate(),
+                                    );
+                                },
+                            );
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    let busy = self.updating_mods.contains(&update.project_id);
+                                    if ui
+                                        .add_enabled(
+                                            !busy,
+                                            egui::Button::new(if busy {
+                                                "Updating…"
+                                            } else {
+                                                "Update"
+                                            })
+                                            .small(),
+                                        )
+                                        .clicked()
+                                    {
+                                        request.apply_update = Some(index);
+                                    }
+                                },
+                            );
+                        });
+                    }
+                } else if self.updates_busy {
+                    ui.add_space(2.0);
+                    ui.horizontal(|ui| {
+                        ui.add(egui::Spinner::new().size(12.0));
+                        ui.label(
+                            egui::RichText::new("Checking Modrinth for newer versions…")
+                                .size(9.5)
+                                .color(MUTED),
+                        );
+                    });
+                }
+            }
+            // The filter and the update check share one row: both act on the
+            // installed list, and a separate header button squeezed the title
+            // out at the default window width.
+            let mut check_updates = false;
+            ui.horizontal(|ui| {
+                // Reserve the button's real width first; the field takes what
+                // is left. Reserving a guessed width clipped the button at the
+                // default window size.
+                let button_width = if kind == ContentKind::Mod { 82.0 } else { 0.0 };
+                let width = (ui.available_width() - button_width - 18.0).max(80.0);
+                search_pill(
+                    ui,
+                    &mut filter,
+                    INSTALLED_FILTER_ID,
+                    "Filter installed…",
+                    width,
+                );
+                if kind == ContentKind::Mod
+                    && self.selected_instance.is_some()
+                    && ui
+                        .add_enabled(
+                            !self.updates_busy,
+                            egui::Button::new(if self.updates_busy {
+                                "Checking…"
+                            } else {
+                                "Updates"
+                            })
+                            .small(),
+                        )
+                        .on_hover_text(
+                            "Hash installed jars and ask Modrinth for the newest compatible version of each.",
+                        )
+                        .clicked()
+                {
+                    check_updates = true;
+                }
+            });
+            if check_updates {
+                request.check_updates = true;
+            }
             if kind == ContentKind::Mod
                 && let Some(scan) = self.installed.as_ref()
             {
@@ -6468,10 +9436,20 @@ impl KaelisApp {
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     let tokens = filter_tokens(&filter);
+                    // The jar scan runs on a worker, so an empty pane here
+                    // means "in progress", not "nothing installed".
+                    let Some(scan) = self.installed.as_ref() else {
+                        ui.horizontal(|ui| {
+                            ui.add(egui::Spinner::new().size(12.0));
+                            ui.label(
+                                egui::RichText::new("Scanning the instance…")
+                                    .size(10.0)
+                                    .color(MUTED),
+                            );
+                        });
+                        return;
+                    };
                     if kind == ContentKind::Mod {
-                        let Some(scan) = self.installed.as_ref() else {
-                            return;
-                        };
                         let mut shown = 0_usize;
                         for file in &scan.files {
                             if !tokens.is_empty()
@@ -6641,7 +9619,7 @@ impl KaelisApp {
                         ui.label(
                             egui::RichText::new(&row.author_line)
                                 .size(10.5)
-                                .color(ACCENT_SOFT),
+                                .color(accent_soft()),
                         );
                         ui.horizontal(|ui| {
                             chip(ui, row.kind.label(), kind_color(row.kind));
@@ -6732,7 +9710,7 @@ impl KaelisApp {
                 ui.label(
                     egui::RichText::new(if item.kind == ContentKind::Modpack {
                         format!(
-                            "Creates a new instance with this pack's Minecraft version, loader, and mods. {} project metadata shown; no history is stored.",
+                            "Creates an instance with this pack's version, loader, and mods. {} projects listed; nothing stored.",
                             item.provider
                         )
                     } else {
@@ -6789,132 +9767,263 @@ impl KaelisApp {
         }
     }
 
+    /// Accounts, in one screen: the active identity, every saved row with its
+    /// skin head, and the two ways to add another. Rows are the only place an
+    /// identity can be switched or removed, so nothing is duplicated.
     fn show_account(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
-        ui.add_space(10.0);
+        ui.add_space(4.0);
+        ui.spacing_mut().item_spacing.y = 5.0;
+        self.ensure_account_heads(context);
+        self.ensure_steve_texture(context);
+
+        let signed_in = self.microsoft_session.is_some() || self.offline_account.is_some();
+        let online = self.microsoft_session.is_some();
+        let active_uuid = self
+            .microsoft_session
+            .as_ref()
+            .map(|session| session.profile.id.clone())
+            .or_else(|| {
+                self.offline_account
+                    .as_ref()
+                    .map(|profile| profile.uuid.clone())
+            })
+            .unwrap_or_default();
+
         Self::glass_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                if let Some(avatar) = &self.avatar {
-                    ui.add(
-                        egui::Image::new((avatar.id(), egui::vec2(58.0, 58.0)))
-                            .rounding(egui::Rounding::same(CORNER_MD)),
-                    );
-                } else {
-                    let (rect, _) =
-                        ui.allocate_exact_size(egui::vec2(58.0, 58.0), egui::Sense::hover());
-                    ui.painter().rect_filled(rect, CORNER_MD, GLASS_LIGHT);
-                    let signed_in = self.microsoft_session.is_some()
-                        || self.offline_account.is_some();
-                    ui.painter().text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        if signed_in {
-                            self.account_name().chars().next().unwrap_or('K')
-                        } else {
-                            'K'
-                        },
-                        egui::FontId::proportional(24.0),
-                        ACCENT,
-                    );
+                ui.spacing_mut().item_spacing.x = 9.0;
+                let size = 46.0;
+                match &self.avatar {
+                    Some(avatar) => {
+                        ui.add(
+                            egui::Image::new((avatar.id(), egui::vec2(size, size)))
+                                .rounding(egui::Rounding::same(CORNER_MD)),
+                        );
+                    }
+                    None => {
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+                        ui.painter().rect_filled(rect, CORNER_MD, GLASS_LIGHT);
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            if signed_in {
+                                self.account_name().chars().next().unwrap_or('K')
+                            } else {
+                                'K'
+                            },
+                            egui::FontId::proportional(21.0),
+                            accent(),
+                        );
+                    }
                 }
-                ui.add_space(10.0);
                 ui.vertical(|ui| {
-                    let signed_in = self.microsoft_session.is_some()
-                        || self.offline_account.is_some();
+                    ui.spacing_mut().item_spacing.y = 1.0;
                     ui.label(
                         egui::RichText::new(if signed_in {
                             self.account_name()
                         } else {
                             "Guest session".to_owned()
                         })
-                        .size(20.0)
+                        .size(17.0)
                         .strong(),
                     );
+                    let kind = if online {
+                        "Microsoft · online ready"
+                    } else if signed_in {
+                        "Offline · local only"
+                    } else {
+                        "Pick an account below"
+                    };
                     ui.label(
-                        egui::RichText::new(self.account_kind())
-                            .size(10.5)
-                            .color(if self.microsoft_session.is_some() {
-                                StatusKind::Success.color()
-                            } else {
-                                MUTED
-                            }),
+                        egui::RichText::new(kind)
+                            .size(9.5)
+                            .color(if online { StatusKind::Success.color() } else { MUTED }),
                     );
-                    let uuid = self
-                        .microsoft_session
-                        .as_ref()
-                        .map(|session| session.profile.id.as_str())
-                        .or_else(|| {
-                            self.offline_account
-                                .as_ref()
-                                .map(|profile| profile.uuid.as_str())
-                        })
-                        .unwrap_or("");
-                    if !uuid.is_empty() {
-                        ui.label(egui::RichText::new(uuid).size(9.0).color(MUTED));
+                    if !active_uuid.is_empty() {
+                        ui.label(egui::RichText::new(&active_uuid).size(9.0).color(MUTED));
                     }
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let signed_in = self.microsoft_session.is_some()
-                        || self.offline_account.is_some();
-                    if signed_in && ui.small_button("Copy name").clicked() {
+                    if signed_in
+                        && ui
+                            .small_button("Sign out")
+                            .on_hover_text(
+                                "Removes this saved identity. A Microsoft row also deletes its keychain token.",
+                            )
+                            .clicked()
+                    {
+                        self.forget_account(context.clone());
+                    }
+                    if !active_uuid.is_empty() && ui.small_button("Copy UUID").clicked() {
                         ui.output_mut(|output| {
-                            output.copied_text = self.account_name();
+                            output.copied_text = active_uuid.clone();
                         });
                     }
                 });
             });
-            ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new(
-                    "One identity at a time. Offline profiles are local and cannot join online-mode servers.",
-                )
-                .size(10.0)
-                .color(MUTED),
-            );
         });
-        ui.add_space(10.0);
+
+        let mut activate = None;
+        let mut remove = None;
         Self::glass_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.heading("Microsoft account");
-            ui.label("The browser flow uses authorization code + PKCE. Device code is available when a tenant blocks it. Refresh tokens never leave the OS credential store.");
-            if self.ms_client_id.trim().is_empty()
-                && std::env::var_os("KAELIS_MS_CLIENT_ID").is_none()
-            {
-                ui.colored_label(
-                    StatusKind::Warning.color(),
-                    "Microsoft sign-in needs a free public-client ID. Add one in Settings > Integrations; offline play works without it.",
-                );
-                if ui.button("Open Settings > Integrations").clicked() {
-                    self.current_tab = Tab::Settings;
-                }
-            }
-            ui.add_space(6.0);
             ui.horizontal(|ui| {
+                section_label(ui, "ACCOUNTS");
+                ui.label(
+                    egui::RichText::new(format!("{}", self.accounts.len()))
+                        .size(9.0)
+                        .color(MUTED),
+                );
+
+            });
+            if self.accounts.is_empty() {
+                ui.label(
+                    egui::RichText::new(
+                        "No saved identities yet. Add an offline name or sign in below.",
+                    )
+                    .size(10.0)
+                    .color(MUTED),
+                );
+                return;
+            }
+            for index in 0..self.accounts.len() {
+                let account = self.accounts[index].clone();
+                let key = account.key();
+                let active = self.active_identity_matches(&account);
+                // A resolved premium head wins. Everything else — still
+                // loading, or a name with no skin — falls back to the vanilla
+                // face, so a row never flashes a letter while it fetches.
+                let face = match self.account_heads.get(&key) {
+                    Some(Some(texture)) => Some(texture.id()),
+                    _ => self.steve_head_texture.as_ref().map(|steve| steve.id()),
+                };
+                let short_id = if account.uuid.len() >= 8 {
+                    format!("{}…", &account.uuid[..8])
+                } else if account.uuid.is_empty() {
+                    "no profile id yet".to_owned()
+                } else {
+                    account.uuid.clone()
+                };
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 7.0;
+                    match face {
+                        Some(texture) => {
+                            ui.add(
+                                egui::Image::new((texture, egui::vec2(26.0, 26.0)))
+                                    .rounding(egui::Rounding::same(CORNER_SM)),
+                            );
+                        }
+                        None => {
+                            let (rect, _) = ui
+                                .allocate_exact_size(egui::vec2(26.0, 26.0), egui::Sense::hover());
+                            ui.painter().rect_filled(rect, CORNER_SM, GLASS_LIGHT);
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                account.name.chars().next().unwrap_or('K'),
+                                egui::FontId::proportional(13.0),
+                                MUTED,
+                            );
+                        }
+                    }
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            ui.label(egui::RichText::new(&account.name).size(12.5).strong());
+                            if active {
+                                dot_label(ui, "in use", accent_soft());
+                            }
+                        });
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{} · {short_id}",
+                                account.kind.label()
+                            ))
+                            .size(9.0)
+                            .color(MUTED),
+                        );
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // The active row is removed with the header's Sign out,
+                        // so the list itself never offers a redundant action.
+                        if !active {
+                            if ui
+                                .small_button("Remove")
+                                .on_hover_text(
+                                    "Deletes this row. A Microsoft row also deletes its saved token.",
+                                )
+                                .clicked()
+                            {
+                                remove = Some(index);
+                            }
+                            if ui.small_button("Use").clicked() {
+                                activate = Some(index);
+                            }
+                        }
+                    });
+                });
+            }
+        });
+        if let Some(index) = remove {
+            self.remove_account(index, context);
+        } else if let Some(index) = activate {
+            self.activate_account(index, context);
+        }
+
+        Self::glass_frame().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            section_label(ui, "ADD ACCOUNT");
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 7.0;
+                self.refresh_offline_typing_avatar(context);
+                if let Some(texture) = &self.offline_typing_avatar {
+                    ui.add(
+                        egui::Image::new((texture.id(), egui::vec2(24.0, 24.0)))
+                            .rounding(egui::Rounding::same(CORNER_SM)),
+                    )
+                    .on_hover_text("Premium head for this name, or Steve when it is unclaimed.");
+                }
+                let edit = ui.add(
+                    egui::TextEdit::singleline(&mut self.offline_name)
+                        .hint_text("Username")
+                        .desired_width(150.0),
+                );
+                if edit.changed() {
+                    if valid_username(self.offline_name.trim()) {
+                        self.offline_skin_due = Some(
+                            std::time::Instant::now() + std::time::Duration::from_millis(350),
+                        );
+                        context.request_repaint_after(std::time::Duration::from_millis(350));
+                    } else {
+                        self.offline_skin_due = None;
+                    }
+                }
                 if ui
-                    .add_enabled(
-                        !self.auth_busy,
-                        egui::Button::new("Sign in with browser"),
-                    )
-                    .on_hover_text(
-                        "Opens Microsoft in your default browser and returns through a loopback redirect on this machine.",
-                    )
+                    .add_enabled(!self.auth_busy, egui::Button::new("Add offline"))
+                    .on_hover_text("Local name and vanilla OfflinePlayer UUID. Online servers reject it.")
+                    .clicked()
+                {
+                    self.sign_in_offline(context.clone());
+                }
+                ui.separator();
+                if ui
+                    .add_enabled(!self.auth_busy, egui::Button::new("Microsoft sign-in"))
+                    .on_hover_text("Authorization code + PKCE through your default browser.")
                     .clicked()
                 {
                     self.start_browser_sign_in(context.clone());
                 }
                 if ui
-                    .add_enabled(!self.auth_busy, egui::Button::new("Use device code"))
-                    .on_hover_text(
-                        "Shows a short code and opens Microsoft's verification page. Useful when a local browser callback is blocked.",
-                    )
+                    .add_enabled(!self.auth_busy, egui::Button::new("Device code"))
+                    .on_hover_text("Short code for tenants that block a localhost callback.")
                     .clicked()
                 {
                     self.start_sign_in(context.clone());
                 }
-                if ui
-                    .add_enabled(self.auth_busy, egui::Button::new("Cancel sign-in"))
-                    .clicked()
-                {
+                if self.auth_busy && ui.button("Cancel").clicked() {
                     if let Some(cancel) = self.auth_cancel.take() {
                         let _ = cancel.send(true);
                     }
@@ -6922,214 +10031,444 @@ impl KaelisApp {
                     self.auth_device = None;
                     self.auth_status = "Sign-in cancelled.".to_owned();
                 }
-                if (self.microsoft_session.is_some() || self.offline_account.is_some())
-                    && ui.button("Sign out and forget saved token").clicked()
+            });
+            ui.horizontal(|ui| {
+                ui.separator();
+                ui.label(
+                    egui::RichText::new("IMPORT")
+                        .size(9.0)
+                        .strong()
+                        .color(MUTED),
+                );
+                if ui
+                    .button("Scan for launchers")
+                    .on_hover_text(
+                        "Reads Minecraft Launcher, Prism, MultiMC, and PolyMC account files on this computer.",
+                    )
+                    .clicked()
                 {
-                    self.forget_account(context.clone());
+                    self.scan_for_accounts(context, true);
+                }
+                if ui
+                    .button("Import a file…")
+                    .on_hover_text("Any JSON with player records works, not only a known launcher file.")
+                    .clicked()
+                {
+                    self.pick_account_file(context);
                 }
             });
-            ui.label(&self.auth_status);
-            egui::CollapsingHeader::new("Set up Microsoft sign-in (one time)")
-                .default_open(false)
-                .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new(&self.auth_status)
+                    .size(9.5)
+                    .color(MUTED),
+            );
+            if self.microsoft_client_id().is_empty() {
+                ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new(
-                            "1. Open the Entra app registrations page and choose New registration.\n2. Name it Kaelis and pick “Personal Microsoft accounts only” (or your preferred account type).\n3. Authentication > Add platform > Mobile and desktop applications. Add http://localhost as the redirect URI.\n4. Advanced settings > Allow public client flows > Yes. Save.\n5. Copy the Application (client) ID into Settings > Integrations.",
-                        )
-                        .size(10.0)
-                        .color(MUTED),
+                        egui::RichText::new("Microsoft sign-in needs a public client ID.")
+                            .size(9.0)
+                            .color(StatusKind::Warning.color()),
                     );
-                    ui.hyperlink_to(
-                        egui::RichText::new("Open Entra app registrations ↗").size(10.5),
-                        AZURE_APP_REGISTRATION,
-                    );
-                    ui.label(
-                        egui::RichText::new(
-                            "No client secret is used. PKCE and device code are public-client flows; no Microsoft Graph permission is required beyond XboxLive.signin.",
-                        )
-                        .size(9.5)
-                        .color(MUTED),
-                    );
+                    if ui.small_button("Open Integrations").clicked() {
+                        self.current_tab = Tab::Settings;
+                    }
                 });
+            }
             if let Some(device) = &self.auth_device {
-                ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
-                        ui.label("Open this page and enter the code:");
+                        ui.spacing_mut().item_spacing.y = 2.0;
                         ui.label(
                             egui::RichText::new(&device.user_code)
-                                .size(28.0)
+                                .size(24.0)
                                 .strong()
-                                .color(ACCENT),
+                                .color(accent()),
                         );
                         let uri = device
                             .verification_uri_complete
                             .clone()
                             .unwrap_or_else(|| device.verification_uri.clone());
-                        if ui.button("Open sign-in page").clicked() {
-                            context.open_url(egui::OpenUrl::new_tab(uri.clone()));
-                        }
-                        if ui.button("Copy code").clicked() {
-                            ui.output_mut(|output| {
-                                output.copied_text = device.user_code.clone();
-                            });
-                        }
-                        ui.hyperlink_to(&device.verification_uri, uri);
+                        ui.horizontal(|ui| {
+                            if ui.small_button("Open page").clicked() {
+                                context.open_url(egui::OpenUrl::new_tab(uri.clone()));
+                            }
+                            if ui.small_button("Copy code").clicked() {
+                                ui.output_mut(|output| {
+                                    output.copied_text = device.user_code.clone();
+                                });
+                            }
+                        });
+                        ui.hyperlink_to(
+                            egui::RichText::new(&device.verification_uri).size(9.0),
+                            uri,
+                        );
                         if let Some(message) = &device.message {
-                            ui.label(egui::RichText::new(message).small().weak());
+                            ui.label(egui::RichText::new(message).size(9.0).weak());
                         }
                     });
                     show_qr(ui, device);
                 });
             }
-        });
-        if let Some(session) = &self.microsoft_session {
-            ui.add_space(10.0);
-            Self::glass_frame().show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.horizontal(|ui| {
-                    if let Some(avatar) = &self.avatar {
-                        ui.add(
-                            egui::Image::new((avatar.id(), egui::vec2(42.0, 42.0)))
-                                .rounding(egui::Rounding::same(9.0)),
-                        );
-                    }
-                    ui.vertical(|ui| {
-                        ui.label(
-                            egui::RichText::new(&session.profile.name)
-                                .size(15.0)
-                                .strong(),
-                        );
-                        ui.label(
-                            egui::RichText::new("Microsoft account · online mode ready")
-                                .size(10.5)
-                                .color(StatusKind::Success.color()),
-                        );
-                        ui.label(
-                            egui::RichText::new(&session.profile.id)
-                                .size(9.5)
-                                .color(MUTED),
-                        );
-                    });
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Copy UUID").clicked() {
-                            ui.output_mut(|output| {
-                                output.copied_text = session.profile.id.clone();
-                            });
-                        }
-                    });
-                });
-            });
-        }
-        ui.add_space(10.0);
-        Self::glass_frame().show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.heading("Offline profile");
-            ui.label("Creates the vanilla OfflinePlayer UUID. Offline accounts cannot access online-mode servers.");
-            ui.horizontal(|ui| {
-                ui.text_edit_singleline(&mut self.offline_name);
-                if ui.button("Use offline profile").clicked() {
-                    self.sign_in_offline(context.clone());
-                }
-            });
-        });
-        if let Some(profile) = &self.offline_account {
-            Self::glass_frame().show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.horizontal(|ui| {
-                    let image = steve_head();
-                    let texture = ui.ctx().load_texture(
-                        "kaelis-offline-account-preview",
-                        image,
-                        egui::TextureOptions::NEAREST,
+            egui::CollapsingHeader::new("Set up Microsoft sign-in (one time)")
+                .default_open(false)
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(
+                            "1. Entra > App registrations > New registration. Name it Kaelis and pick “Personal Microsoft accounts only”.\n2. Authentication > Add platform > Mobile and desktop applications. Redirect URI: http://localhost\n3. Advanced settings > Allow public client flows > Yes. Save.\n4. Copy the Application (client) ID into Settings > Integrations.",
+                        )
+                        .size(9.5)
+                        .color(MUTED),
                     );
-                    ui.add(
-                        egui::Image::new((texture.id(), egui::vec2(44.0, 44.0)))
-                            .rounding(egui::Rounding::same(CORNER_SM)),
+                    ui.hyperlink_to(
+                        egui::RichText::new("Open Entra app registrations ↗").size(9.5),
+                        AZURE_APP_REGISTRATION,
                     );
-                    ui.vertical(|ui| {
-                        ui.label(egui::RichText::new(&profile.name).strong().size(14.0));
-                        ui.label(
-                            egui::RichText::new("Offline profile · local UUID")
-                                .size(9.5)
-                                .color(MUTED),
-                        );
-                        ui.label(egui::RichText::new(&profile.uuid).size(9.0).color(MUTED));
-                    });
+                    ui.label(
+                        egui::RichText::new(
+                            "No client secret. PKCE and device code are public-client flows; only XboxLive.signin is requested.",
+                        )
+                        .size(9.0)
+                        .color(MUTED),
+                    );
                 });
-            });
-        }
-        ui.add_space(10.0);
-        Self::glass_frame().show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.heading("Security");
+        });
+
+        ui.add_space(2.0);
+        ui.horizontal(|ui| {
             ui.label(
-                egui::RichText::new(
-                    "Refresh tokens live in the operating-system credential store; access tokens and profile heads stay in memory. Nothing is written to instance JSON, logs, or the vault.",
-                )
-                .size(10.0)
-                .color(MUTED),
+                egui::RichText::new("Tokens stay in the OS credential store.")
+                    .size(8.5)
+                    .color(MUTED),
             );
             ui.hyperlink_to(
-                egui::RichText::new("Microsoft device-code guidance ↗").color(ACCENT),
+                egui::RichText::new("Device-code docs ↗")
+                    .size(8.5)
+                    .color(accent()),
                 AZURE_DEVICE_CODE_DOC,
             );
         });
     }
+    /// The command list. Every rule is one visible line: what it is called,
+    /// when it runs, and the exact shell string. Nothing is hidden behind a
+    /// second window, so the whole automation is readable at a glance.
+    fn show_automation_commands(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(10.0);
+        section_label(ui, "COMMANDS");
+        ui.label(
+            egui::RichText::new(
+                "A command runs in the instance folder. When: on demand, at start, \
+                 before launch, after exit, or every 15m. Edit automation.json directly \
+                 if you prefer a text editor.",
+            )
+            .size(9.5)
+            .color(MUTED),
+        );
+        let mut run: Option<Rule> = None;
+        let mut edit: Option<Rule> = None;
+        let mut delete: Option<String> = None;
+        let mut toggle: Option<(String, bool)> = None;
+        for rule in self.automation.rules().to_vec() {
+            ui.horizontal(|ui| {
+                let mut enabled = rule.enabled;
+                if ui
+                    .checkbox(&mut enabled, "")
+                    .on_hover_text("Run this command automatically.")
+                    .changed()
+                {
+                    toggle = Some((rule.id.clone(), enabled));
+                }
+                ui.label(egui::RichText::new(rule.title()).size(10.5));
+                chip(ui, &rule.trigger.label(), MUTED);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.small_button("Delete").clicked() {
+                        delete = Some(rule.id.clone());
+                    }
+                    if ui.small_button("Edit").clicked() {
+                        edit = Some(rule.clone());
+                    }
+                    if ui.small_button("Run").clicked() {
+                        run = Some(rule.clone());
+                    }
+                });
+            });
+        }
+        if self.automation.rules().is_empty() {
+            ui.label(
+                egui::RichText::new("No commands yet.")
+                    .size(10.0)
+                    .color(MUTED),
+            );
+        }
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut self.automation_draft_name)
+                    .hint_text("Name (optional)")
+                    .desired_width(132.0),
+            );
+            ui.add(
+                egui::TextEdit::singleline(&mut self.automation_draft_when)
+                    .hint_text("when")
+                    .desired_width(96.0),
+            );
+        });
+        ui.add(
+            egui::TextEdit::singleline(&mut self.automation_draft_command)
+                .hint_text("Command — for example ./backup.sh or dir mods")
+                .desired_width(f32::INFINITY),
+        );
+        ui.horizontal(|ui| {
+            let label = if self.automation_editing.is_some() {
+                "Save"
+            } else {
+                "Add command"
+            };
+            if ui.button(label).clicked() {
+                self.commit_automation_draft();
+            }
+            if self.automation_editing.is_some() && ui.button("Cancel").clicked() {
+                self.reset_automation_draft();
+            }
+        });
+        for line in self.automation_log.iter().rev().take(3) {
+            ui.add(egui::Label::new(egui::RichText::new(line).size(9.0).color(MUTED)).wrap());
+        }
+        if let Some((id, enabled)) = toggle
+            && let Some(rule) = self
+                .automation
+                .rules_mut()
+                .iter_mut()
+                .find(|rule| rule.id == id)
+        {
+            rule.enabled = enabled;
+            if let Err(error) = self.automation.save() {
+                self.set_status(StatusKind::Error, error.to_string());
+            }
+        }
+        if let Some(id) = delete
+            && self.automation.remove(&id)
+        {
+            match self.automation.save() {
+                Ok(()) => self.set_status(StatusKind::Info, "Command removed."),
+                Err(error) => self.set_status(StatusKind::Error, error.to_string()),
+            }
+        }
+        if let Some(rule) = edit {
+            self.automation_editing = Some(rule.id.clone());
+            self.automation_draft_name = rule.name.clone();
+            self.automation_draft_command = rule.command.clone();
+            self.automation_draft_when = rule.trigger.label();
+        }
+        if let Some(rule) = run {
+            let context = ui.ctx().clone();
+            self.spawn_automation(rule, &context);
+        }
+    }
+
+    /// Validate and store the draft. The same checks run for a typed rule and
+    /// for one loaded from disk, so a hand edit cannot smuggle in an interval
+    /// that fires every second.
+    fn commit_automation_draft(&mut self) {
+        let Some(trigger) = Trigger::parse(&self.automation_draft_when) else {
+            self.set_status(
+                StatusKind::Warning,
+                "Use on demand, at start, before launch, after exit, or every 15m.",
+            );
+            return;
+        };
+        let id = self
+            .automation_editing
+            .clone()
+            .unwrap_or_else(|| format!("rule-{}-{}", unix_now(), self.automation.rules().len()));
+        let previous = self.automation.rule(&id).map(|rule| rule.last_run_unix);
+        let mut rule = Rule::new(
+            &id,
+            self.automation_draft_name.trim(),
+            self.automation_draft_command.trim(),
+            trigger,
+        );
+        rule.last_run_unix = previous.unwrap_or(0);
+        if let Some(existing) = self.automation.rule(&id) {
+            rule.enabled = existing.enabled;
+            rule.timeout_secs = existing.timeout_secs;
+        }
+        if let Err(error) = self.automation.upsert(rule) {
+            self.set_status(StatusKind::Error, error.to_string());
+            return;
+        }
+        match self.automation.save() {
+            Ok(()) => {
+                let text = if self.automation_editing.is_some() {
+                    "Command saved."
+                } else {
+                    "Command added."
+                };
+                self.reset_automation_draft();
+                self.set_status(StatusKind::Success, text);
+            }
+            Err(error) => self.set_status(StatusKind::Error, error.to_string()),
+        }
+    }
+
+    fn reset_automation_draft(&mut self) {
+        self.automation_editing = None;
+        self.automation_draft_name.clear();
+        self.automation_draft_command.clear();
+        self.automation_draft_when = "before launch".to_owned();
+    }
+
+    /// Copy the selected instance record as JSON, ready for a chat message, a
+    /// ticket, or another machine running Kaelis.
+    fn copy_instance_json(&mut self, context: &egui::Context) {
+        let Some(instance) = self.selected_instance().cloned() else {
+            self.set_status(StatusKind::Warning, "Select an instance first.");
+            return;
+        };
+        match serde_json::to_string_pretty(&instance) {
+            Ok(text) => {
+                context.copy_text(text);
+                self.set_status(
+                    StatusKind::Success,
+                    format!("{} copied as JSON.", instance.name),
+                );
+            }
+            Err(error) => self.set_status(
+                StatusKind::Error,
+                format!("Could not encode the instance: {error}"),
+            ),
+        }
+    }
+
+    /// Add an instance from clipboard JSON. This copies settings only: mods,
+    /// saves, and worlds stay where they are, so pasting never pulls a large
+    /// folder through the clipboard.
+    fn paste_instance_json(&mut self) {
+        let text = match clipboard_text() {
+            Ok(text) => text,
+            Err(message) => {
+                self.set_status(StatusKind::Warning, message);
+                return;
+            }
+        };
+        let Some(decoded) = parse_instance_json(&text) else {
+            self.set_status(
+                StatusKind::Error,
+                "Clipboard text is not an instance JSON record.",
+            );
+            return;
+        };
+        let name = decoded.name.trim().to_owned();
+        if name.is_empty() || name.chars().count() > 64 {
+            self.set_status(
+                StatusKind::Error,
+                "The pasted instance needs a name of 64 characters or fewer.",
+            );
+            return;
+        }
+        if !valid_instance_version(&decoded.mc_version) {
+            self.set_status(
+                StatusKind::Error,
+                "The pasted instance has an invalid Minecraft version.",
+            );
+            return;
+        }
+        if decoded.loader.trim().is_empty() {
+            self.set_status(StatusKind::Error, "The pasted instance has no loader.");
+            return;
+        }
+        let mut unique = name.clone();
+        let mut counter = 2;
+        while self
+            .instances
+            .iter()
+            .any(|item| item.name.eq_ignore_ascii_case(&unique))
+        {
+            unique = format!("{name} {counter}");
+            counter += 1;
+        }
+        let mut id = format!("paste-{}-{}", unix_now(), self.instances.len());
+        let mut bump = 0;
+        while Instance::instances_dir().join(&id).exists() {
+            bump += 1;
+            id = format!("paste-{}-{bump}", unix_now());
+        }
+        let root = Instance::instances_dir().join(&id);
+        if let Err(error) = std::fs::create_dir_all(&root) {
+            self.set_status(
+                StatusKind::Error,
+                format!("Could not create the instance folder: {error}"),
+            );
+            return;
+        }
+        let mut instance = decoded;
+        instance.id = id.clone();
+        instance.name = unique.clone();
+        instance.root = root;
+        instance.last_played_unix = 0;
+        // Artwork from another machine points at a path that does not exist
+        // here; the variant monogram is a better default than a broken image.
+        if instance.icon.as_ref().is_some_and(|path| !path.is_file()) {
+            instance.icon = None;
+        }
+        match instance.save() {
+            Ok(_) => {
+                self.instances.insert(0, instance.clone());
+                self.refresh_instance_cards();
+                self.select_instance(&id);
+                self.set_status(
+                    StatusKind::Success,
+                    format!("{unique} added from the clipboard."),
+                );
+            }
+            Err(error) => self.set_status(
+                StatusKind::Error,
+                format!("Could not save the pasted instance: {error}"),
+            ),
+        }
+    }
 
     fn show_settings(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(4.0);
-        ui.spacing_mut().item_spacing.y = 5.0;
-        let mut save_automation = false;
-        let mut zoom_request: Option<f32> = None;
-        Self::glass_frame().show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            section_label(ui, "INTERFACE");
-            ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new("Scale").size(10.5).color(MUTED));
-                for zoom in [1.0_f32, 1.1, 1.25, 1.5] {
-                    let selected = (self.ui_zoom - zoom).abs() < 0.001;
-                    if ui
-                        .selectable_label(selected, format!("{}%", (zoom * 100.0).round() as u32))
-                        .clicked()
-                    {
-                        zoom_request = Some(zoom);
-                    }
-                }
-                ui.label(
-                    egui::RichText::new(
-                        "Ctrl +/− zoom · Ctrl+0 resets · window size and position are remembered",
-                    )
-                    .size(9.5)
-                    .color(MUTED),
-                );
+        ui.add_space(2.0);
+        ui.spacing_mut().item_spacing.y = 4.0;
+        // Two columns once the workspace can hold them: settings is a wall of
+        // short rows, and one 1180 px column reads as empty space.
+        if ui.available_width() >= 1000.0 {
+            ui.columns(2, |columns| {
+                self.settings_upper(&mut columns[0]);
+                self.settings_lower(&mut columns[1]);
             });
-        });
-        if let Some(zoom) = zoom_request {
-            self.set_ui_zoom(zoom, ui.ctx());
+        } else {
+            self.settings_upper(ui);
+            ui.add_space(6.0);
+            self.settings_lower(ui);
         }
-        ui.add_space(6.0);
+    }
+
+    fn settings_upper(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(2.0);
+        let mut save_automation = false;
         Self::glass_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
             section_label(ui, "PERFORMANCE");
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Heap").size(10.5).color(MUTED));
+                ui.add_sized(
+                    [74.0, 24.0],
+                    egui::Label::new(egui::RichText::new("Heap").size(10.5).strong().color(MUTED)),
+                );
+                ui.spacing_mut().slider_width = 210.0;
                 ui.add(
                     egui::Slider::new(&mut self.settings_ram_mb, 1024..=32768)
                         .step_by(512.0)
                         .suffix(" MiB"),
                 );
-                let fps = self.governor.target_fps();
-                ui.label(
-                    egui::RichText::new(if fps == 0 {
-                        "UI idle · event-driven".to_owned()
-                    } else {
-                        format!("UI {fps} FPS · while working")
-                    })
-                    .size(9.5)
-                    .color(MUTED),
-                );
             });
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new("JVM ARGUMENTS")
+                    .size(9.5)
+                    .strong()
+                    .color(MUTED),
+            );
             ui.add(
                 egui::TextEdit::multiline(&mut self.settings_jvm_args)
                     .code_editor()
@@ -7144,8 +10483,14 @@ impl KaelisApp {
                 Some(index) => {
                     let name = self.instances[index].name.clone();
                     if ui
-                        .button(format!("Apply to {name}"))
-                        .on_hover_text("Saves the heap and JVM arguments to this instance.")
+                        .horizontal(|ui| {
+                            ui.add_sized(
+                                [200.0, 24.0],
+                                egui::Button::new(format!("Apply to {name}")),
+                            )
+                            .on_hover_text("Saves the heap and JVM arguments to this instance.")
+                        })
+                        .inner
                         .clicked()
                     {
                         let instance = &mut self.instances[index];
@@ -7176,15 +10521,63 @@ impl KaelisApp {
                         );
                 }
             }
-            ui.label(
-                egui::RichText::new(
-                    "The runtime keeps its own G1 ergonomics; custom arguments are appended verbatim.",
-                )
-                .size(9.5)
-                .color(MUTED),
-            );
         });
-        ui.add_space(8.0);
+        ui.add_space(6.0);
+        Self::glass_frame().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            section_label(ui, "INTERFACE");
+            let mut chosen: Option<f32> = None;
+            ui.horizontal(|ui| {
+                ui.add_sized(
+                    [74.0, 22.0],
+                    egui::Label::new(
+                        egui::RichText::new("Scale")
+                            .size(10.0)
+                            .strong()
+                            .color(MUTED),
+                    ),
+                );
+                if ui
+                    .selectable_label(self.ui_scale <= 0.0, "Auto")
+                    .on_hover_text(
+                        "Follow the display size and DPI, including when the window moves.",
+                    )
+                    .clicked()
+                {
+                    chosen = Some(0.0);
+                }
+                for step in [0.9_f32, 1.0, 1.1, 1.25] {
+                    let selected = (self.ui_scale - step).abs() < 0.001;
+                    if ui
+                        .selectable_label(selected, format!("{}%", (step * 100.0).round()))
+                        .clicked()
+                    {
+                        chosen = Some(step);
+                    }
+                }
+                ui.label(egui::RichText::new("Ctrl + / − / 0").size(9.0).color(MUTED));
+                if self.ui_scale <= 0.0 {
+                    // Auto hides the resolved value behind a discrete choice;
+                    // naming it makes a monitor change visible at a glance.
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "· {}% now",
+                            (self.applied_zoom * 100.0).round()
+                        ))
+                        .size(9.0)
+                        .color(accent_soft()),
+                    );
+                }
+            });
+            if let Some(step) = chosen {
+                if step <= 0.0 {
+                    self.use_auto_scale(ui.ctx());
+                } else {
+                    self.set_ui_scale(ui.ctx(), step);
+                }
+            }
+        });
+        ui.add_space(6.0);
         Self::glass_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
             section_label(ui, "AUTOMATION");
@@ -7206,7 +10599,7 @@ impl KaelisApp {
                     "Disable older duplicate mods automatically",
                 )
                 .on_hover_text(
-                    "After an install, keeps the newest jar when a top-level mod id is duplicated and every other provided id remains satisfied.",
+                    "Keeps the newest jar when a mod id is duplicated.",
                 )
                 .changed()
             {
@@ -7215,10 +10608,10 @@ impl KaelisApp {
             if ui
                 .checkbox(
                     &mut self.auto_clean_junk,
-                    "Clean junk at every launch",
+                    "Auto-clean at launch",
                 )
                 .on_hover_text(
-                    "Deletes logs, crash reports, and interrupted-download staging files from every instance at startup. Saves, mods, configs, and options are never touched.",
+                    "Clears logs, caches, crash dumps, and staging files at launch and after every game. Saves, mods, and configs stay.",
                 )
                 .changed()
             {
@@ -7230,24 +10623,20 @@ impl KaelisApp {
                 }
                 if ui
                     .button("Clean junk now")
-                    .on_hover_text("Remove logs, crash reports, and staging leftovers from every instance.")
+                    .on_hover_text("Clear logs, caches, crash dumps, and staging leftovers.")
                     .clicked()
                 {
                     self.clean_junk_now(ui.ctx().clone());
                 }
             });
-            ui.label(
-                egui::RichText::new(
-                    "Repair resolves each missing mod id on Modrinth, installs the full required dependency graph, provisions Fabric API when its modules are absent, and disables only provably redundant duplicate jars.",
-                )
-                .size(9.5)
-                .color(MUTED),
-            );
+            self.show_automation_commands(ui);
         });
         if save_automation {
             self.persist_settings();
         }
-        ui.add_space(8.0);
+    }
+
+    fn settings_lower(&mut self, ui: &mut egui::Ui) {
         let mut save_integrations = false;
         Self::glass_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -7302,7 +10691,7 @@ impl KaelisApp {
             });
             ui.label(
                 egui::RichText::new(
-                    "The CurseForge key is never written to instance JSON, logs, or the vault. Environment variables KAELIS_MS_CLIENT_ID and CF_API_KEY remain supported fallbacks.",
+                    "The key stays in the OS credential store. Environment variables still work.",
                 )
                 .small()
                 .weak(),
@@ -7325,14 +10714,14 @@ impl KaelisApp {
                             .strong(),
                     );
                     ui.label(
-                        egui::RichText::new(format!(
-                            "{} {} · {} · built in Rust",
-                            kaelis_core::brand::LAUNCHER_NAME,
-                            env!("CARGO_PKG_VERSION"),
-                            kaelis_core::brand::TAGLINE
-                        ))
-                        .size(9.5)
-                        .color(MUTED),
+                        egui::RichText::new(kaelis_core::brand::TAGLINE)
+                            .size(9.5)
+                            .color(MUTED),
+                    );
+                    ui.label(
+                        egui::RichText::new(kaelis_core::brand::build_identity())
+                            .size(8.5)
+                            .color(MUTED),
                     );
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -7376,17 +10765,12 @@ impl KaelisApp {
                 }
                 if ui
                     .button("Copy diagnostics")
-                    .on_hover_text(
-                        "Version, OS, paths, and an instance summary. No tokens, keys, or account identifiers.",
-                    )
+                    .on_hover_text("Version, OS, paths, and a summary. No secrets.")
                     .clicked()
                 {
                     let text = diagnostics_text(&self.instances, self.selected_instance());
                     ui.ctx().copy_text(text);
-                    self.set_status(
-                        StatusKind::Success,
-                        "Diagnostics copied. No tokens, keys, or account identifiers included.",
-                    );
+                    self.set_status(StatusKind::Success, "Diagnostics copied. No secrets.");
                 }
                 ui.hyperlink_to(
                     egui::RichText::new("Website ↗").size(10.5),
@@ -7397,20 +10781,14 @@ impl KaelisApp {
                     kaelis_core::brand::GITHUB_REPOSITORY,
                 );
                 ui.hyperlink_to(
-                    egui::RichText::new(format!(
-                        "Founder {} ↗",
-                        kaelis_core::brand::FOUNDER
-                    ))
-                    .size(10.5),
+                    egui::RichText::new(format!("{} ↗", kaelis_core::brand::FOUNDER)).size(10.5),
                     kaelis_core::brand::FOUNDER_URL,
                 );
             });
             ui.label(
-                egui::RichText::new(
-                    "Logs live in a bounded RAM ring and vanish with the process. No telemetry, analytics, or background upload exists.",
-                )
-                .size(9.5)
-                .color(MUTED),
+                egui::RichText::new("Logs stay in memory and vanish on exit. No telemetry.")
+                    .size(9.5)
+                    .color(MUTED),
             );
         });
     }
@@ -7450,44 +10828,79 @@ impl KaelisApp {
         }
         if self.screenshot_frame == self.screenshot_at {
             context.send_viewport_cmd(egui::ViewportCommand::Screenshot);
+            // The screenshot arrives on a later frame; keep the loop alive so
+            // an idle window cannot stall between the request and the capture.
+            context.request_repaint();
         }
     }
 }
 
 impl eframe::App for KaelisApp {
     fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
+        self.apply_interface_scale(context);
+        self.handle_keyboard_navigation(context);
         if self.editing.is_none()
             && std::env::var_os("KAELIS_SCREENSHOT_EDIT").is_some()
             && let Some(instance) = self.instances.first().cloned()
         {
             self.begin_edit(instance);
         }
+        // Development-only fixture: a clipboard paste cannot be scripted from a
+        // capture run, so the same code path can be asked for on one frame.
+        if self.screenshot_path.is_some()
+            && self.screenshot_frame == 1
+            && std::env::var_os("KAELIS_SCREENSHOT_PASTE").is_some()
+        {
+            self.paste_clipboard_artwork(context);
+        }
+        // Development-only fixture: a native file picker cannot be scripted
+        // from a capture run, so the icon it would return can be supplied here
+        // and still travels the real read → store → refresh path.
+        if self.screenshot_path.is_some()
+            && self.screenshot_frame == 1
+            && let Some(path) = std::env::var_os("KAELIS_SCREENSHOT_ICON")
+            && let Ok(bytes) = std::fs::read(PathBuf::from(path))
+            && let Some(instance) = self.instances.first().cloned()
+        {
+            self.select_instance(&instance.id);
+            self.apply_instance_artwork(&instance.id, &bytes, context);
+        }
         while let Ok(event) = self.receiver.try_recv() {
             self.handle_event(context, event);
         }
-        // Zoom shortcuts work everywhere, like a browser: Ctrl +/- scales the
-        // whole interface and Ctrl+0 returns to 100 %.
-        let (zoom_in, zoom_out, zoom_reset) = context.input(|input| {
-            if !input.modifiers.command {
-                return (false, false, false);
-            }
-            (
-                input.key_pressed(egui::Key::Plus) || input.key_pressed(egui::Key::Equals),
-                input.key_pressed(egui::Key::Minus),
-                input.key_pressed(egui::Key::Num0),
-            )
-        });
-        if zoom_in || zoom_out || zoom_reset {
-            let target = if zoom_reset {
-                1.0
-            } else if zoom_in {
-                self.ui_zoom + 0.1
-            } else {
-                self.ui_zoom - 0.1
-            };
-            self.set_ui_zoom(target, context);
+        self.run_automation_tick(context);
+        self.handle_paste_fallback(context);
+        // A drop works on every tab: the file extension decides the destination
+        // and the active tab only breaks the .zip tie.
+        if let Some(paths) = dropped_paths(context) {
+            self.handle_drop(paths, context);
         }
-        self.governor.focused = context.input(|input| input.focused);
+        // Development-only fixture: seed the update panel so a single captured
+        // frame can prove its layout without automating a click.
+        if self.screenshot_path.is_some()
+            && self.screenshot_frame == 1
+            && self.update_report.is_none()
+            && !self.updates_busy
+            && std::env::var_os("KAELIS_SCREENSHOT_UPDATES").is_some()
+        {
+            self.start_update_check(context.clone());
+        }
+        // Debounced username → skin lookup: one request after typing settles,
+        // not one per keystroke.
+        if let Some(due) = self.offline_skin_due {
+            let now = std::time::Instant::now();
+            if now >= due {
+                self.offline_skin_due = None;
+                let name = self.offline_name.trim().to_owned();
+                self.request_offline_skin(context, &name);
+            } else {
+                context.request_repaint_after(due - now);
+            }
+        }
+        // A capture window may start unfocused; it still has to advance its
+        // warm-up frames, so screenshot mode is always treated as focused.
+        self.governor.focused =
+            context.input(|input| input.focused) || self.screenshot_path.is_some();
         // Screenshot mode walks a fixed number of frames, so it must keep
         // repainting even when nothing is animating.
         self.governor.animating = self.is_busy() || self.screenshot_path.is_some();
@@ -7496,97 +10909,289 @@ impl eframe::App for KaelisApp {
         self.show_header(context);
         self.show_sidebar(context);
         self.show_footer(context);
+        // On a wide monitor the surplus becomes margin, so text lines and
+        // form rows stay a readable width instead of stretching edge to edge.
+        let screen = context.screen_rect().width();
+        let sidebar = if screen < RAIL_WIDTH {
+            RAIL_SIDEBAR_WIDTH
+        } else {
+            SIDEBAR_WIDTH
+        };
+        let base = if screen < RAIL_WIDTH { 12.0 } else { 16.0 };
+        let gutter = ((screen - sidebar - CONTENT_MAX) * 0.5).max(0.0) + base;
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::none()
                     .fill(egui::Color32::TRANSPARENT)
-                    .inner_margin(egui::Margin::symmetric(18.0, 8.0)),
+                    .inner_margin(egui::Margin {
+                        left: gutter,
+                        right: gutter,
+                        top: 8.0,
+                        bottom: 6.0,
+                    }),
             )
             .show(context, |ui| self.show_tab(ui, context));
         self.show_content_preview(context);
+        self.show_drop_overlay(context);
         self.capture_screenshot(context);
     }
 }
 
-fn default_auto_repair() -> bool {
-    true
+/// Join an instance's own hook with the enabled user commands for the same
+/// event. The instance line runs first, so a rule never hides it, and the two
+/// share one shell so ordering is exact.
+fn merge_launch_command(existing: Option<String>, chain: Option<String>) -> Option<String> {
+    let existing = existing.filter(|command| !command.trim().is_empty());
+    match (existing, chain) {
+        (Some(existing), Some(chain)) => Some(format!("{} && {chain}", existing.trim())),
+        (Some(existing), None) => Some(existing),
+        (None, chain) => chain,
+    }
 }
 
-fn default_ui_zoom() -> f32 {
-    1.0
+/// File paths from one drag, consumed by the frame that received them.
+fn dropped_paths(context: &egui::Context) -> Option<Vec<PathBuf>> {
+    let paths = context.input(|input| {
+        input
+            .raw
+            .dropped_files
+            .iter()
+            .filter_map(|file| file.path.clone())
+            .collect::<Vec<_>>()
+    });
+    (!paths.is_empty()).then_some(paths)
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct LauncherSettings {
-    #[serde(default)]
-    ms_client_id: String,
-    #[serde(default)]
-    last_account: String,
-    /// Install missing required mods automatically before the next launch.
-    #[serde(default = "default_auto_repair")]
-    auto_repair: bool,
-    /// Disable older duplicate primary mod ids after an install when the
-    /// cleanup is provably safe.
-    #[serde(default = "default_auto_repair")]
-    auto_resolve_duplicates: bool,
-    /// Delete logs, crash reports, and interrupted-download staging files from
-    /// every instance at launch. Saves, mods, and configuration are never
-    /// included.
-    #[serde(default = "default_auto_repair")]
-    auto_clean: bool,
-    /// Last Content channel, so the tab reopens where the user left it.
-    #[serde(default)]
-    content_kind: ContentKind,
-    /// Interface zoom (`1.0` = 100 %). Persisted so the window reopens at the
-    /// same scale on high-DPI and small displays alike.
-    #[serde(default = "default_ui_zoom")]
-    ui_zoom: f32,
-    /// Last offline profile name, so the Steve-headed local account survives a
-    /// restart instead of having to be typed again.
-    #[serde(default)]
-    offline_account: String,
+/// A search field drawn as one quiet pill: a painted magnifier, the text, one
+/// paste action, and a clear action that appears only when there is something
+/// to clear. The painted glyphs keep the same shape on every platform, unlike
+/// a font icon, and the whole pill lights up while the field has focus.
+fn search_pill(
+    ui: &mut egui::Ui,
+    buffer: &mut String,
+    id: &str,
+    hint: &str,
+    width: f32,
+) -> egui::Response {
+    let field = egui::Id::new(id);
+    let focused = ui.memory(|memory| memory.has_focus(field));
+    // A fixed request that no longer fits would push the row past the window
+    // edge, so the pill claims what is left instead of overflowing.
+    let width = width.min((ui.available_width() - 4.0).max(140.0));
+    egui::Frame::none()
+        .fill(if focused { SURFACE_HOVER } else { SURFACE_ALT })
+        .stroke(egui::Stroke::new(
+            if focused { 1.2_f32 } else { 1.0 },
+            if focused { accent() } else { BORDER },
+        ))
+        .rounding(egui::Rounding::same(13.0))
+        .inner_margin(egui::Margin::symmetric(9.0, 3.0))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 7.0;
+                let (mark, magnifier) =
+                    ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::click());
+                let glyph = if focused { accent_soft() } else { MUTED };
+                let stroke = egui::Stroke::new(1.3_f32, glyph);
+                let centre = mark.center() - egui::vec2(0.8, 0.8);
+                ui.painter().circle_stroke(centre, 4.0, stroke);
+                ui.painter().line_segment(
+                    [centre + egui::vec2(3.0, 3.0), centre + egui::vec2(5.6, 5.6)],
+                    stroke,
+                );
+                if magnifier
+                    .on_hover_cursor(egui::CursorIcon::Text)
+                    .on_hover_text("Click to type, or press Ctrl+V to paste a link or file name.")
+                    .clicked()
+                {
+                    ui.memory_mut(|memory| memory.request_focus(field));
+                }
+                let text_width = (width - 126.0).max(70.0);
+                let response = ui
+                    .add_sized(
+                        [text_width, 20.0],
+                        egui::TextEdit::singleline(buffer)
+                            .id(field)
+                            .frame(false)
+                            .hint_text(hint),
+                    )
+                    .on_hover_text(
+                        "Ctrl+V pastes text, a link, or the name of a file copied in Explorer.",
+                    );
+                // Paste lives inside the pill, where the user is already
+                // looking, as a word rather than a glyph nobody has to decode.
+                let paste = ui
+                    .add(
+                        egui::Button::new(egui::RichText::new("Paste").size(11.0).color(
+                            if buffer.is_empty() {
+                                MUTED
+                            } else {
+                                accent_soft()
+                            },
+                        ))
+                        .frame(false),
+                    )
+                    .on_hover_text("Paste text, a link, or a copied file name (Ctrl+V).")
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                if paste.clicked()
+                    && let Some(pasted) = clipboard_query_text()
+                {
+                    buffer.clear();
+                    buffer.push_str(&pasted);
+                    ui.memory_mut(|memory| memory.request_focus(field));
+                }
+                let clear = egui::Button::new(egui::RichText::new("×").size(13.0).color(MUTED))
+                    .frame(false)
+                    .min_size(egui::vec2(16.0, 16.0));
+                if !buffer.is_empty() && ui.add(clear).clicked() {
+                    buffer.clear();
+                    ui.memory_mut(|memory| memory.request_focus(field));
+                }
+                response
+            })
+            .inner
+        })
+        .inner
 }
 
-impl Default for LauncherSettings {
-    fn default() -> Self {
-        Self {
-            ms_client_id: String::new(),
-            last_account: String::new(),
-            auto_repair: default_auto_repair(),
-            auto_resolve_duplicates: default_auto_repair(),
-            auto_clean: default_auto_repair(),
-            content_kind: ContentKind::Mod,
-            ui_zoom: default_ui_zoom(),
-            offline_account: String::new(),
+/// One coarse scale step per display size. Below a 640-point-tall window the
+/// whole shell steps down so a 1366×768 laptop still fits the footer; large
+/// canvases gain a little reading size instead of leaving the UI tiny.
+fn auto_scale_for(logical_height: f32) -> f32 {
+    [0.9, 1.0, 1.05, 1.12][auto_scale_band(logical_height)]
+}
+
+fn auto_scale_band(height: f32) -> usize {
+    if height < 640.0 {
+        0
+    } else if height < 900.0 {
+        1
+    } else if height < 1150.0 {
+        2
+    } else {
+        3
+    }
+}
+
+/// Resolve a step only after the display has clearly left the current band.
+///
+/// The threshold in each direction needs 24 points of travel, so a window
+/// dragged or resized onto 900 pt cannot alternate between 1.0 and 1.05. A
+/// jump across several bands is accepted immediately in the direction of
+/// travel, which keeps a move between very different monitors responsive.
+fn auto_scale_for_settled(height: f32, current: f32) -> f32 {
+    const HYSTERESIS: f32 = 24.0;
+    let current_band = if current < 0.95 {
+        0
+    } else if current < 1.02 {
+        1
+    } else if current < 1.08 {
+        2
+    } else {
+        3
+    };
+    let next_band = auto_scale_band(height);
+    if next_band == current_band {
+        return current;
+    }
+    let crossed = if next_band > current_band {
+        let upper = [640.0_f32, 900.0, 1150.0, f32::INFINITY][current_band];
+        height >= upper + HYSTERESIS
+    } else {
+        let lower = [f32::NEG_INFINITY, 640.0_f32, 900.0, 1150.0][current_band];
+        height <= lower - HYSTERESIS
+    };
+    if crossed {
+        auto_scale_for(height)
+    } else {
+        current
+    }
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+fn has_extension(path: &Path, extension: &str) -> bool {
+    path.extension()
+        .is_some_and(|value| value.to_string_lossy().eq_ignore_ascii_case(extension))
+}
+
+/// What a drag is allowed to carry. A stray file in the batch is ignored
+/// before it reaches the installer, so it cannot fail the whole drop.
+const DROP_EXTENSIONS: [&str; 10] = [
+    "jar", "zip", "mrpack", "png", "jpg", "jpeg", "webp", "gif", "bmp", "ico",
+];
+/// Upper bound on files expanded from one drag, so dropping a disk root is
+/// cheap instead of an unbounded crawl.
+const MAX_DROPPED_FILES: usize = 400;
+
+fn has_drop_extension(path: &Path) -> bool {
+    DROP_EXTENSIONS
+        .iter()
+        .any(|extension| has_extension(path, extension))
+}
+
+/// Files from one drag, with folders expanded.
+///
+/// People keep mods in folders (`mods-1.21/`, a downloaded pack directory), so
+/// a dropped folder is read as the files inside it instead of being rejected
+/// with "drop a file". Traversal is bounded and skips the folders the cleaner
+/// already treats as disposable, so it never walks logs or a git checkout.
+fn expand_dropped(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let mut seen = HashSet::new();
+    for path in paths {
+        if path.is_dir() {
+            collect_dropped_dir(&path, 0, &mut files, &mut seen);
+        } else if has_drop_extension(&path) && seen.insert(path.clone()) {
+            files.push(path);
         }
     }
+    files
 }
 
-fn launcher_settings_path() -> PathBuf {
-    let instances = Instance::instances_dir();
-    instances
-        .parent()
-        .map(std::path::Path::to_path_buf)
-        .unwrap_or_else(|| instances.clone())
-        .join("settings.json")
-}
-
-fn load_launcher_settings() -> LauncherSettings {
-    std::fs::read(launcher_settings_path())
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
-}
-
-fn save_launcher_settings(settings: &LauncherSettings) -> Result<(), String> {
-    let path = launcher_settings_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+fn collect_dropped_dir(
+    directory: &Path,
+    depth: usize,
+    files: &mut Vec<PathBuf>,
+    seen: &mut HashSet<PathBuf>,
+) {
+    if depth > 2 || files.len() >= MAX_DROPPED_FILES {
+        return;
     }
-    let bytes = serde_json::to_vec_pretty(settings).map_err(|error| error.to_string())?;
-    let temp = path.with_extension("json.tmp");
-    std::fs::write(&temp, bytes).map_err(|error| error.to_string())?;
-    std::fs::rename(&temp, &path).map_err(|error| error.to_string())
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return;
+    };
+    // Sorted so a folder drop installs in the same order every time.
+    let mut entries = entries.flatten().collect::<Vec<_>>();
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        if files.len() >= MAX_DROPPED_FILES {
+            return;
+        }
+        let path = entry.path();
+        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        if metadata.is_dir() {
+            let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+            if !matches!(
+                name.as_str(),
+                "logs" | "crash-reports" | ".cache" | ".git" | "temp" | "natives"
+            ) {
+                collect_dropped_dir(&path, depth + 1, files, seen);
+            }
+        } else if has_drop_extension(&path) && seen.insert(path.clone()) {
+            files.push(path);
+        }
+    }
 }
 
 fn send_event(sender: &mpsc::UnboundedSender<GuiEvent>, context: &egui::Context, event: GuiEvent) {
@@ -7636,6 +11241,9 @@ fn parse_handoff(arguments: &[String]) -> HandoffRequest {
 }
 
 fn show_window(context: &egui::Context) {
+    // A hidden viewport paints no frames, so egui's own command alone cannot
+    // bring the window back. Restore it natively first, then sync the toolkit.
+    platform::restore_now();
     context.send_viewport_cmd(egui::ViewportCommand::Visible(true));
     context.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
     context.send_viewport_cmd(egui::ViewportCommand::Focus);
@@ -8104,43 +11712,16 @@ fn valid_instance_version(version: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
 }
 
-/// Palette used by instance artwork. A fixed variant makes neighbouring
-/// instances easy to tell apart without requiring an image file.
-fn variant_color(index: u8) -> egui::Color32 {
-    match usize::from(index) % usize::from(INSTANCE_VARIANTS) {
-        0 => egui::Color32::from_rgb(112, 190, 255),
-        1 => egui::Color32::from_rgb(126, 231, 165),
-        2 => egui::Color32::from_rgb(255, 195, 120),
-        3 => egui::Color32::from_rgb(202, 166, 255),
-        4 => egui::Color32::from_rgb(255, 148, 178),
-        _ => egui::Color32::from_rgb(120, 220, 232),
-    }
-}
-
-fn instance_variant(id: &str) -> u8 {
-    let hash = id.bytes().fold(0_u32, |acc, byte| {
-        acc.wrapping_mul(31).wrapping_add(u32::from(byte))
-    });
-    (hash % u32::from(INSTANCE_VARIANTS)) as u8
-}
-
-fn instance_color(instance: &Instance) -> egui::Color32 {
-    variant_color(
-        instance
-            .icon_variant
-            .unwrap_or_else(|| instance_variant(&instance.id)),
-    )
-}
-
 fn draw_instance_avatar(
     ui: &mut egui::Ui,
     texture: Option<&egui::TextureHandle>,
     instance: &Instance,
-) {
+) -> egui::Rect {
     let size = egui::vec2(40.0, 40.0);
     if let Some(texture) = texture {
-        ui.add(egui::Image::new((texture.id(), size)).rounding(egui::Rounding::same(10.0)));
-        return;
+        let response =
+            ui.add(egui::Image::new((texture.id(), size)).rounding(egui::Rounding::same(10.0)));
+        return response.rect;
     }
     let (avatar, _) = ui.allocate_exact_size(size, egui::Sense::hover());
     ui.painter()
@@ -8150,45 +11731,58 @@ fn draw_instance_avatar(
         egui::Align2::CENTER_CENTER,
         instance.name.chars().next().unwrap_or('K'),
         egui::FontId::proportional(17.0),
-        instance_color(instance),
+        accent(),
     );
+    avatar
 }
 
 /// Reveal an instance folder or its metadata file with the platform's file
 /// manager. The process is detached, so a missing shell never blocks the UI.
 fn open_instance_path(path: &std::path::Path, reveal: bool) -> Result<(), String> {
-    let mut command = if cfg!(windows) {
-        std::process::Command::new("explorer")
+    // Linux desktops do not all ship `xdg-open`; try the freedesktop portals,
+    // then the KDE helper, before reporting a failure.
+    let candidates: &[(&str, &[&str])] = if cfg!(windows) {
+        &[("explorer", &[])]
     } else if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
+        &[("open", &[])]
     } else {
-        std::process::Command::new("xdg-open")
+        &[("xdg-open", &[]), ("gio", &["open"]), ("kde-open5", &[])]
     };
-    if cfg!(windows) && reveal {
-        command.arg(format!("/select,{}", path.display()));
-    } else {
-        command.arg(path);
+    let mut last_error = String::new();
+    for (program, leading) in candidates {
+        let mut command = std::process::Command::new(program);
+        command
+            .args(*leading)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        if cfg!(windows) && reveal {
+            command.arg(format!("/select,{}", path.display()));
+        } else {
+            command.arg(path);
+        }
+        match command.spawn() {
+            Ok(_) => return Ok(()),
+            Err(error) => last_error = format!("{program}: {error}"),
+        }
     }
-    command
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| error.to_string())
+    Err(last_error)
 }
 
-/// Small vector glyphs keep the navigation legible even when the platform
-/// font lacks geometric Unicode symbols.
+/// Small vector glyphs keep the navigation legible even when the platform font
+/// lacks geometric Unicode symbols. Every glyph is drawn on the same 16 px
+/// grid with one stroke weight, so the rail reads as a set rather than icons
+/// borrowed from five different families.
 fn paint_tab_icon(painter: &egui::Painter, center: egui::Pos2, tab: Tab, color: egui::Color32) {
-    let stroke = egui::Stroke::new(1.25_f32, color);
+    let stroke = egui::Stroke::new(1.4_f32, color);
+    let at = |x: f32, y: f32| center + egui::vec2(x, y);
     match tab {
         Tab::Overview => {
-            for x in [-1.0_f32, 1.0] {
-                for y in [-1.0_f32, 1.0] {
+            for x in [-3.4_f32, 1.0] {
+                for y in [-3.4_f32, 1.0] {
                     painter.rect_filled(
-                        egui::Rect::from_center_size(
-                            center + egui::vec2(x * 3.2, y * 3.2),
-                            egui::vec2(4.6, 4.6),
-                        ),
-                        egui::Rounding::same(1.2),
+                        egui::Rect::from_min_size(at(x, y), egui::vec2(4.4, 4.4)),
+                        egui::Rounding::same(1.3),
                         color,
                     );
                 }
@@ -8196,169 +11790,58 @@ fn paint_tab_icon(painter: &egui::Painter, center: egui::Pos2, tab: Tab, color: 
         }
         Tab::Instances => {
             painter.rect_stroke(
-                egui::Rect::from_center_size(center + egui::vec2(0.0, 1.0), egui::vec2(11.0, 9.0)),
+                egui::Rect::from_center_size(at(0.0, 0.0), egui::vec2(12.0, 10.0)),
                 egui::Rounding::same(2.0),
                 stroke,
             );
-            painter.line_segment(
-                [
-                    center + egui::vec2(-4.0, -4.8),
-                    center + egui::vec2(4.0, -4.8),
-                ],
-                stroke,
-            );
+            painter.line_segment([at(-3.2, -2.4), at(3.2, -2.4)], stroke);
         }
         Tab::Content => {
             painter.add(egui::Shape::convex_polygon(
                 vec![
-                    center + egui::vec2(0.0, -6.0),
-                    center + egui::vec2(2.2, -2.2),
-                    center + egui::vec2(6.0, 0.0),
-                    center + egui::vec2(2.2, 2.2),
-                    center + egui::vec2(0.0, 6.0),
-                    center + egui::vec2(-2.2, 2.2),
-                    center + egui::vec2(-6.0, 0.0),
-                    center + egui::vec2(-2.2, -2.2),
+                    at(0.0, -6.0),
+                    at(1.7, -1.7),
+                    at(6.0, 0.0),
+                    at(1.7, 1.7),
+                    at(0.0, 6.0),
+                    at(-1.7, 1.7),
+                    at(-6.0, 0.0),
+                    at(-1.7, -1.7),
                 ],
                 color,
                 egui::Stroke::NONE,
             ));
         }
         Tab::Account => {
-            painter.circle_stroke(center + egui::vec2(0.0, -2.6), 2.8, stroke);
-            painter.add(egui::Shape::line(
-                vec![
-                    center + egui::vec2(-5.2, 5.4),
-                    center + egui::vec2(-3.2, 2.6),
-                    center + egui::vec2(3.2, 2.6),
-                    center + egui::vec2(5.2, 5.4),
-                ],
-                stroke,
-            ));
+            painter.circle_stroke(at(0.0, -2.8), 2.9, stroke);
+            let shoulders = (0..=12)
+                .map(|step| {
+                    let angle = std::f32::consts::PI + step as f32 * std::f32::consts::PI / 12.0;
+                    at(angle.cos() * 5.6, 4.4 + angle.sin() * 3.6)
+                })
+                .collect::<Vec<_>>();
+            painter.add(egui::Shape::line(shoulders, stroke));
         }
         Tab::Settings => {
-            painter.circle_stroke(center, 2.8, stroke);
-            for index in 0..8 {
-                let angle = index as f32 * std::f32::consts::TAU / 8.0;
-                let direction = egui::vec2(angle.cos(), angle.sin());
-                painter.line_segment([center + direction * 4.4, center + direction * 5.8], stroke);
+            for (y, knob) in [(-4.0_f32, 2.2_f32), (0.0, -2.6), (4.0, 1.2)] {
+                painter.line_segment([at(-5.6, y), at(5.6, y)], stroke);
+                painter.circle_filled(at(knob, y), 1.7, color);
             }
         }
     }
 }
 
-/// Window and taskbar icon generated from the same geometry as the in-app
-/// mark. Rendered at 4x and box-filtered, so no image decoder or asset file
-/// is needed at startup.
 pub fn window_icon() -> egui::IconData {
-    const SIZE: usize = 64;
-    const SCALE: usize = 4;
-    const HIGH: usize = SIZE * SCALE;
-    let mut high = vec![[0_u8; 4]; HIGH * HIGH];
-    for y in 0..HIGH {
-        for x in 0..HIGH {
-            let p = egui::pos2(
-                (x as f32 + 0.5) / SCALE as f32,
-                (y as f32 + 0.5) / SCALE as f32,
-            );
-            let inset = 3.0;
-            let half = 64.0 - inset;
-            let radius = 34.0;
-            let q = egui::vec2(
-                (p.x - 64.0).abs() - (half - radius),
-                (p.y - 64.0).abs() - (half - radius),
-            );
-            let outside = egui::vec2(q.x.max(0.0), q.y.max(0.0)).length();
-            let distance = outside + q.x.max(q.y).min(0.0) - radius;
-            if distance > 0.5 {
-                continue;
-            }
-            let edge = (0.5 - distance).clamp(0.0, 1.0);
-            let blend = ((p.x + p.y) / 256.0).clamp(0.0, 1.0);
-            let plate = egui::Color32::from_rgb(
-                (17.0 + (7.0 - 17.0) * blend) as u8,
-                (28.0 + (12.0 - 28.0) * blend) as u8,
-                (45.0 + (22.0 - 45.0) * blend) as u8,
-            );
-            let mut color = plate;
-            if distance > -1.5 {
-                color = egui::Color32::from_rgb(55, 80, 109);
-            }
-            let strokes = [
-                (egui::pos2(40.0, 36.0), egui::pos2(40.0, 92.0)),
-                (egui::pos2(40.0, 64.0), egui::pos2(76.0, 36.0)),
-                (egui::pos2(40.0, 64.0), egui::pos2(76.0, 92.0)),
-            ];
-            let mut on_stroke = false;
-            for (start, end) in strokes {
-                let segment = end - start;
-                let relative = p - start;
-                let t = (relative.dot(segment) / segment.length_sq()).clamp(0.0, 1.0);
-                if (relative - segment * t).length() <= 5.6 {
-                    on_stroke = true;
-                }
-            }
-            if on_stroke {
-                color = egui::Color32::from_rgb(112, 202, 255);
-            }
-            if (p - egui::pos2(90.0, 36.0)).length() <= 5.0 {
-                color = egui::Color32::from_rgb(195, 236, 255);
-            }
-            high[y * HIGH + x] = [color.r(), color.g(), color.b(), (edge * 255.0) as u8];
-        }
-    }
-    let mut pixels = Vec::with_capacity(SIZE * SIZE * 4);
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let mut sums = [0_u32; 4];
-            for sy in 0..SCALE {
-                for sx in 0..SCALE {
-                    let pixel = high[(y * SCALE + sy) * HIGH + x * SCALE + sx];
-                    sums[0] += pixel[0] as u32;
-                    sums[1] += pixel[1] as u32;
-                    sums[2] += pixel[2] as u32;
-                    sums[3] += pixel[3] as u32;
-                }
-            }
-            let samples = (SCALE * SCALE) as u32;
-            pixels.push((sums[0] / samples) as u8);
-            pixels.push((sums[1] / samples) as u8);
-            pixels.push((sums[2] / samples) as u8);
-            pixels.push((sums[3] / samples) as u8);
-        }
-    }
-    egui::IconData {
-        rgba: pixels,
-        width: SIZE as u32,
-        height: SIZE as u32,
-    }
+    mark::primary_icon(64)
 }
 
+/// The mark, drawn from the same geometry as the window icon so the sidebar,
+/// About card, taskbar, and tray never drift apart.
 fn draw_brand_mark(ui: &mut egui::Ui, size: f32) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
-    let painter = ui.painter();
-    painter.rect_filled(rect, egui::Rounding::same(size * 0.3), ACCENT_DARK);
-    painter.rect_stroke(
-        rect,
-        egui::Rounding::same(size * 0.3),
-        egui::Stroke::new(1.0_f32, BORDER_BRIGHT),
-    );
-    let inset = size * 0.26;
-    let left = rect.left() + inset;
-    let top = rect.top() + inset;
-    let bottom = rect.bottom() - inset;
-    let right = rect.right() - inset;
-    let stroke = egui::Stroke::new(size * 0.09, ACCENT);
-    painter.line_segment([egui::pos2(left, top), egui::pos2(left, bottom)], stroke);
-    painter.line_segment(
-        [egui::pos2(left, rect.center().y), egui::pos2(right, top)],
-        stroke,
-    );
-    painter.line_segment(
-        [egui::pos2(left, rect.center().y), egui::pos2(right, bottom)],
-        stroke,
-    );
-    painter.circle_filled(egui::pos2(right, top), size * 0.045, ACCENT_SOFT);
+    if ui.is_rect_visible(rect) {
+        mark::paint(ui.painter(), rect);
+    }
     response
 }
 
@@ -8419,7 +11902,7 @@ fn relative_last_played(unix_seconds: i64) -> String {
 
 fn kind_color(kind: ContentKind) -> egui::Color32 {
     match kind {
-        ContentKind::Mod => ACCENT,
+        ContentKind::Mod => accent(),
         ContentKind::ResourcePack => egui::Color32::from_rgb(126, 231, 165),
         ContentKind::Shader => VIOLET,
         ContentKind::Modpack => egui::Color32::from_rgb(255, 195, 120),
@@ -8537,6 +12020,16 @@ fn steve_head() -> egui::ColorImage {
     }
 }
 
+/// Decode a 64 px head PNG into a texture-ready image. Bounded by the image
+/// crate's own limits; a bad response yields `None` instead of panicking.
+fn decode_head(bytes: &[u8]) -> Option<egui::ColorImage> {
+    let image = image::load_from_memory(bytes).ok()?.to_rgba8();
+    Some(egui::ColorImage::from_rgba_unmultiplied(
+        [image.width() as usize, image.height() as usize],
+        image.as_raw(),
+    ))
+}
+
 fn mod_item_key(item: &ModSearchItem) -> String {
     format!("{}-{:?}-{}", item.provider, item.kind, item.id)
 }
@@ -8569,24 +12062,10 @@ fn check_chip(
     dot_label(ui, label, state.color()).on_hover_text(detail)
 }
 
-/// A round colour swatch for the accent picker, painted rather than typed.
-fn swatch_button(ui: &mut egui::Ui, color: egui::Color32, selected: bool) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::click());
-    let painter = ui.painter();
-    if selected {
-        painter.circle_stroke(rect.center(), 9.0, egui::Stroke::new(1.5_f32, TEXT));
-    }
-    painter.circle_filled(rect.center(), 6.5, color);
-    if response.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    response
-}
-
 fn status_pill(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
     // The pill usually sits in a right-to-left row; size it explicitly so the
     // dot-then-label layout works without stretching the header.
-    let font = egui::FontId::proportional(10.0);
+    let font = egui::FontId::proportional(9.5);
     let text_width = ui.fonts(|fonts| {
         fonts
             .layout_no_wrap(text.to_owned(), font.clone(), color)
@@ -8598,14 +12077,14 @@ fn status_pill(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
             color.r(),
             color.g(),
             color.b(),
-            20,
+            14,
         ))
         .stroke(egui::Stroke::new(
             1.0_f32,
-            egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 46),
+            egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 34),
         ))
         .rounding(egui::Rounding::same(CORNER_MD))
-        .inner_margin(egui::Margin::symmetric(9.0, 3.0))
+        .inner_margin(egui::Margin::symmetric(8.0, 2.0))
         .show(ui, |ui| {
             ui.allocate_ui_with_layout(
                 egui::vec2(text_width + 12.0, 13.0),
@@ -8653,10 +12132,10 @@ fn discord_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
     let response = ui.add(
         egui::Button::new(
             egui::RichText::new(label)
-                .size(11.5)
+                .size(11.0)
                 .color(egui::Color32::WHITE),
         )
-        .rounding(egui::Rounding::same(CORNER_SM)),
+        .rounding(egui::Rounding::same(CORNER_MD)),
     );
     ui.style_mut().visuals.widgets = previous;
     response
@@ -8712,8 +12191,8 @@ fn danger_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
         }
     }
     let response = ui.add(
-        egui::Button::new(egui::RichText::new(label).size(11.5).color(DANGER))
-            .rounding(egui::Rounding::same(CORNER_SM)),
+        egui::Button::new(egui::RichText::new(label).size(11.0).color(DANGER))
+            .rounding(egui::Rounding::same(CORNER_MD)),
     );
     ui.style_mut().visuals.widgets = previous;
     response
@@ -8826,6 +12305,25 @@ fn short_name(path: &Path) -> String {
     )
 }
 
+/// "Added 2 mods, 1 resource pack" — one precise line for a mixed batch.
+fn added_summary(counts: &[(ContentKind, usize)]) -> String {
+    let mut parts = Vec::with_capacity(counts.len());
+    for (kind, count) in counts {
+        let noun = match (count, kind) {
+            (1, ContentKind::Mod) => "mod",
+            (_, ContentKind::Mod) => "mods",
+            (1, ContentKind::ResourcePack) => "resource pack",
+            (_, ContentKind::ResourcePack) => "resource packs",
+            (1, ContentKind::Shader) => "shader pack",
+            (_, ContentKind::Shader) => "shader packs",
+            (1, ContentKind::Modpack) => "modpack",
+            (_, ContentKind::Modpack) => "modpacks",
+        };
+        parts.push(format!("{count} {noun}"));
+    }
+    format!("Added {}", parts.join(", "))
+}
+
 fn chip(ui: &mut egui::Ui, text: &str, color: egui::Color32) -> egui::Response {
     egui::Frame::none()
         .fill(egui::Color32::from_rgba_unmultiplied(
@@ -8842,25 +12340,287 @@ fn chip(ui: &mut egui::Ui, text: &str, color: egui::Color32) -> egui::Response {
         .inner
 }
 
+/// A quiet action for banners and secondary rows: no box at rest, a faint
+/// surface on hover, and a compact text height. Keeping it a real Button means
+/// focus, tooltips, and accessibility still work.
+fn ghost_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    let previous = ui.style().visuals.widgets.clone();
+    {
+        let widgets = &mut ui.style_mut().visuals.widgets;
+        for (widget, fill_alpha, foreground) in [
+            (&mut widgets.inactive, 0, MUTED),
+            (&mut widgets.hovered, 10, TEXT),
+            (&mut widgets.active, 18, TEXT),
+        ] {
+            widget.weak_bg_fill = egui::Color32::from_rgba_unmultiplied(255, 255, 255, fill_alpha);
+            widget.bg_fill = egui::Color32::from_rgba_unmultiplied(255, 255, 255, fill_alpha);
+            widget.bg_stroke = egui::Stroke::NONE;
+            widget.fg_stroke = egui::Stroke::new(1.0_f32, foreground);
+        }
+    }
+    let response = ui
+        .add(
+            egui::Button::new(egui::RichText::new(text).size(10.5))
+                .small()
+                .rounding(egui::Rounding::same(CORNER_SM)),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    ui.style_mut().visuals.widgets = previous;
+    response
+}
+
+/// The two portable-instance directions, drawn as one icon family: a tray
+/// with an arrow entering (import) or leaving (export). Strokes instead of
+/// glyphs keep both crisp at any DPI and free of font fallback surprises.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PortableGlyph {
+    Import,
+    Export,
+}
+
+/// Width of the square the tray-and-arrow icon is drawn in.
+const GLYPH_BOX: f32 = 11.0;
+
+fn draw_portable_glyph(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    glyph: PortableGlyph,
+    ink: egui::Color32,
+) {
+    let stroke = egui::Stroke::new(1.4_f32, ink);
+    let centre = rect.center();
+    let half = GLYPH_BOX / 2.0;
+    let tray_top = centre.y + 0.5;
+    let tray_bottom = centre.y + half;
+    painter.line_segment(
+        [
+            egui::pos2(centre.x - half, tray_top),
+            egui::pos2(centre.x - half, tray_bottom),
+        ],
+        stroke,
+    );
+    painter.line_segment(
+        [
+            egui::pos2(centre.x - half, tray_bottom),
+            egui::pos2(centre.x + half, tray_bottom),
+        ],
+        stroke,
+    );
+    painter.line_segment(
+        [
+            egui::pos2(centre.x + half, tray_top),
+            egui::pos2(centre.x + half, tray_bottom),
+        ],
+        stroke,
+    );
+    // Arrow tip: down into the tray for import, up and out for export.
+    let (tail, tip, wing) = match glyph {
+        PortableGlyph::Import => (
+            egui::pos2(centre.x, centre.y - half),
+            egui::pos2(centre.x, centre.y + 0.5),
+            1.0_f32,
+        ),
+        PortableGlyph::Export => (
+            egui::pos2(centre.x, centre.y + 0.5),
+            egui::pos2(centre.x, centre.y - half),
+            -1.0_f32,
+        ),
+    };
+    painter.line_segment([tail, tip], stroke);
+    let head = 3.2_f32;
+    painter.line_segment([tip, tip + egui::vec2(-head, -wing * head)], stroke);
+    painter.line_segment([tip, tip + egui::vec2(head, -wing * head)], stroke);
+}
+
+/// One compact icon action. With a label it reads as a named control; without
+/// one it shrinks to a square, which is how the density-heavy instance card
+/// keeps its footer to a single row.
+fn glyph_button(
+    ui: &mut egui::Ui,
+    glyph: PortableGlyph,
+    label: Option<&str>,
+    enabled: bool,
+    detail: &str,
+) -> egui::Response {
+    let font = egui::FontId::proportional(11.0);
+    let text_width = label.map_or(0.0, |label| {
+        ui.fonts(|fonts| {
+            fonts
+                .layout_no_wrap(label.to_owned(), font.clone(), TEXT)
+                .size()
+                .x
+        })
+    });
+    let gap = if label.is_some() { 5.0 } else { 0.0 };
+    let padding = if label.is_some() { 10.0 } else { 6.5 };
+    let width = padding + GLYPH_BOX + gap + text_width + padding;
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    // Height follows the theme's interaction size, so the pair lines up with
+    // the text buttons in the same row instead of floating a pixel short.
+    let height = ui.spacing().interact_size.y;
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), sense);
+    if ui.is_rect_visible(rect) {
+        let widgets = ui.style().visuals.widgets.clone();
+        let widget = if !enabled {
+            widgets.noninteractive
+        } else if response.is_pointer_button_down_on() {
+            widgets.active
+        } else if response.hovered() {
+            widgets.hovered
+        } else {
+            widgets.inactive
+        };
+        let painter = ui.painter();
+        painter.rect_filled(rect, egui::Rounding::same(CORNER_MD), widget.weak_bg_fill);
+        painter.rect_stroke(rect, egui::Rounding::same(CORNER_MD), widget.bg_stroke);
+        let ink = if !enabled {
+            MUTED.gamma_multiply(0.55)
+        } else if response.hovered() {
+            TEXT
+        } else {
+            MUTED
+        };
+        let icon = egui::Rect::from_center_size(
+            egui::pos2(rect.left() + padding + GLYPH_BOX / 2.0, rect.center().y),
+            egui::vec2(GLYPH_BOX, GLYPH_BOX),
+        );
+        draw_portable_glyph(painter, icon, glyph, ink);
+        if let Some(label) = label {
+            painter.text(
+                egui::pos2(icon.right() + gap, rect.center().y),
+                egui::Align2::LEFT_CENTER,
+                label,
+                font,
+                if enabled { TEXT } else { ink },
+            );
+        }
+    }
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label.unwrap_or(detail))
+    });
+    if enabled {
+        response
+            .on_hover_text(detail)
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else {
+        response.on_hover_text(detail)
+    }
+}
+
 fn primary_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
-    ui.add(
+    // Drive the accent through the widget states instead of `Button::fill`, so
+    // hover and press actually answer the pointer.
+    let previous = ui.style().visuals.widgets.clone();
+    {
+        let widgets = &mut ui.style_mut().visuals.widgets;
+        for (widget, fill, stroke) in [
+            (&mut widgets.inactive, accent(), accent()),
+            (
+                &mut widgets.hovered,
+                egui::Color32::from_rgb(112, 158, 252),
+                accent_soft(),
+            ),
+            (
+                &mut widgets.active,
+                egui::Color32::from_rgb(74, 123, 228),
+                accent_soft(),
+            ),
+        ] {
+            widget.weak_bg_fill = fill;
+            widget.bg_fill = fill;
+            widget.bg_stroke = egui::Stroke::new(1.0_f32, stroke);
+        }
+    }
+    let response = ui.add(
         egui::Button::new(
             egui::RichText::new(text)
-                .size(12.0)
+                .size(11.0)
                 .strong()
-                .color(ACCENT_DARK),
+                .color(accent_on()),
         )
-        .fill(ACCENT)
-        .rounding(egui::Rounding::same(8.0))
-        .min_size(egui::vec2(112.0, 28.0)),
-    )
+        .rounding(egui::Rounding::same(CORNER_MD))
+        .min_size(egui::vec2(98.0, 24.0)),
+    );
+    ui.style_mut().visuals.widgets = previous;
+    response
+}
+
+/// One clickable tally on the Overview board. Returns whether it was clicked;
+/// the caller owns the navigation because the board is rebuilt every frame.
+fn content_stat_card(ui: &mut egui::Ui, kind: ContentKind, count: usize) -> bool {
+    let card = KaelisApp::glass_frame().show(ui, |ui| {
+        ui.set_min_width(ui.available_width());
+        ui.spacing_mut().item_spacing.y = 1.0;
+        ui.label(
+            egui::RichText::new(kind.label().to_ascii_uppercase())
+                .size(8.0)
+                .strong()
+                .color(kind_color(kind)),
+        );
+        ui.label(egui::RichText::new(count.to_string()).size(20.0).strong());
+        ui.label(
+            egui::RichText::new("open in Content")
+                .size(9.0)
+                .color(MUTED),
+        );
+    });
+    card.response
+        .interact(egui::Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(format!("Manage {}", kind.label().to_ascii_lowercase()))
+        .clicked()
+}
+
+fn account_summary_card(ui: &mut egui::Ui, name: &str, kind: &str) -> bool {
+    let card = KaelisApp::glass_frame().show(ui, |ui| {
+        ui.set_min_width(ui.available_width());
+        ui.spacing_mut().item_spacing.y = 2.0;
+        ui.label(
+            egui::RichText::new("ACCOUNT")
+                .size(8.0)
+                .strong()
+                .color(MUTED),
+        );
+        ui.label(egui::RichText::new(name).size(15.0).strong());
+        ui.label(egui::RichText::new(kind).size(9.5).color(MUTED));
+        ui.add_space(2.0);
+        // A top-down layout stretches a bare button to the card width; the
+        // horizontal wrapper keeps the action the size of its label.
+        ui.horizontal(|ui| ui.small_button("Manage account"))
+            .inner
+            .clicked()
+    });
+    card.inner
+}
+
+fn release_summary_card(ui: &mut egui::Ui, latest: &str) {
+    KaelisApp::glass_frame().show(ui, |ui| {
+        ui.set_min_width(ui.available_width());
+        ui.spacing_mut().item_spacing.y = 2.0;
+        ui.label(
+            egui::RichText::new("LATEST RELEASE")
+                .size(8.0)
+                .strong()
+                .color(MUTED),
+        );
+        ui.label(egui::RichText::new(latest).size(15.0).strong());
+        ui.label(
+            egui::RichText::new("Official Mojang version manifest")
+                .size(9.5)
+                .color(MUTED),
+        );
+    });
 }
 
 fn editor_section(ui: &mut egui::Ui, title: &str, hint: &str, add: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::none()
         .fill(SURFACE_ALT)
         .stroke(egui::Stroke::new(1.0_f32, BORDER))
-        .rounding(egui::Rounding::same(10.0))
+        .rounding(egui::Rounding::same(CORNER_MD))
         .inner_margin(egui::Margin::same(12.0))
         .show(ui, |ui| {
             ui.label(egui::RichText::new(title).size(10.0).strong().color(MUTED));
@@ -8876,7 +12636,7 @@ fn editor_section(ui: &mut egui::Ui, title: &str, hint: &str, add: impl FnOnce(&
 fn editor_row(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui)) {
     ui.horizontal(|ui| {
         ui.add_sized(
-            [70.0, 20.0],
+            [64.0, 20.0],
             egui::Label::new(egui::RichText::new(label).size(10.0).color(MUTED)),
         );
         add(ui);
@@ -8921,7 +12681,7 @@ fn draw_project_icon(
 fn draw_mod_icon(ui: &mut egui::Ui, texture: Option<&egui::TextureHandle>, item: &ModSearchItem) {
     let size = egui::vec2(MOD_ICON_SIZE, MOD_ICON_SIZE);
     if let Some(texture) = texture {
-        ui.add(egui::Image::new((texture.id(), size)).rounding(egui::Rounding::same(8.0)));
+        ui.add(egui::Image::new((texture.id(), size)).rounding(egui::Rounding::same(CORNER_SM)));
         return;
     }
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
@@ -8942,6 +12702,38 @@ fn draw_mod_icon(ui: &mut egui::Ui, texture: Option<&egui::TextureHandle>, item:
         egui::FontId::proportional(20.0),
         egui::Color32::WHITE,
     );
+}
+
+/// Fetch a pack's project picture for the new instance card. Bounded and
+/// best-effort: a missing or slow icon never delays a successful import.
+async fn fetch_pack_icon(client: &reqwest::Client, url: &str) -> Option<Vec<u8>> {
+    let parsed = reqwest::Url::parse(url).ok()?;
+    if parsed.scheme() != "https" {
+        return None;
+    }
+    let response = client
+        .get(parsed)
+        .timeout(std::time::Duration::from_secs(6))
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?;
+    if response
+        .content_length()
+        .is_some_and(|length| length > INSTANCE_ICON_BYTES)
+    {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    let mut response = response;
+    while let Some(chunk) = response.chunk().await.ok()? {
+        if bytes.len() + chunk.len() > INSTANCE_ICON_BYTES as usize {
+            return None;
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Some(bytes)
 }
 
 async fn fetch_mod_icon(client: &reqwest::Client, url: String) -> Result<egui::ColorImage, String> {
@@ -8989,23 +12781,319 @@ fn center_square(image: egui::ColorImage) -> egui::ColorImage {
     }
 }
 
-fn decode_instance_icon(bytes: &[u8]) -> Result<egui::ColorImage, String> {
-    decode_mod_icon(bytes).map(center_square)
+fn is_image_path(path: &Path) -> bool {
+    ["png", "jpg", "jpeg", "webp", "gif", "bmp", "ico", "svg"]
+        .iter()
+        .any(|extension| has_extension(path, extension))
 }
 
-fn decode_mod_icon(bytes: &[u8]) -> Result<egui::ColorImage, String> {
+/// SVG is text, so it is recognised by its tags instead of a binary signature.
+/// Compressed `.svgz` stays out: a second decoder buys nothing over saving the
+/// picture as PNG.
+fn looks_like_svg(bytes: &[u8]) -> bool {
+    let head = bytes.get(..1024.min(bytes.len())).unwrap_or(bytes);
+    String::from_utf8_lossy(head)
+        .to_ascii_lowercase()
+        .contains("<svg")
+}
+
+/// Rasterise SVG artwork once, at import size. Only the visible box is
+/// rendered, so a document-sized drawing cannot allocate a canvas.
+fn render_svg_artwork(bytes: &[u8], edge: u32) -> Result<image::RgbaImage, String> {
+    use resvg::tiny_skia;
+    let options = resvg::usvg::Options {
+        fontdb: svg_fonts(),
+        ..Default::default()
+    };
+    let tree = resvg::usvg::Tree::from_data(bytes, &options)
+        .map_err(|error| format!("The SVG could not be read: {error}"))?;
+    let size = tree.size();
+    let (width, height) = (size.width(), size.height());
+    if !(width.is_finite() && height.is_finite()) || width <= 0.0 || height <= 0.0 {
+        return Err("The SVG has no visible size.".to_owned());
+    }
+    let edge = edge.max(1);
+    let scale = (edge as f32 / width.max(height)).min(64.0);
+    let pixel_width = ((width * scale).ceil() as u32).clamp(1, edge);
+    let pixel_height = ((height * scale).ceil() as u32).clamp(1, edge);
+    let mut pixmap = tiny_skia::Pixmap::new(pixel_width, pixel_height)
+        .ok_or_else(|| "The SVG is too large to render.".to_owned())?;
+    resvg::render(
+        &tree,
+        tiny_skia::Transform::from_scale(scale, scale),
+        &mut pixmap.as_mut(),
+    );
+    image::RgbaImage::from_raw(pixel_width, pixel_height, pixmap.data().to_vec())
+        .ok_or_else(|| "The SVG produced no pixels.".to_owned())
+}
+
+/// System fonts for SVG text, loaded once per process and then shared.
+fn svg_fonts() -> std::sync::Arc<resvg::usvg::fontdb::Database> {
+    static FONTS: std::sync::OnceLock<std::sync::Arc<resvg::usvg::fontdb::Database>> =
+        std::sync::OnceLock::new();
+    std::sync::Arc::clone(FONTS.get_or_init(|| {
+        let mut database = resvg::usvg::fontdb::Database::new();
+        database.load_system_fonts();
+        std::sync::Arc::new(database)
+    }))
+}
+
+/// Decode any accepted picture (raster or SVG) into RGBA with bounded memory.
+fn decode_any_image(bytes: &[u8], edge: u32) -> Result<image::RgbaImage, String> {
+    if looks_like_svg(bytes) {
+        return render_svg_artwork(bytes, edge);
+    }
     let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
         .with_guessed_format()
-        .map_err(|error| error.to_string())?;
+        .map_err(|_| "That file is not a readable image.".to_owned())?;
     let mut limits = image::Limits::no_limits();
     limits.max_image_width = Some(MOD_ICON_MAX_EDGE);
     limits.max_image_height = Some(MOD_ICON_MAX_EDGE);
     limits.max_alloc = Some(MOD_ICON_MAX_ALLOC);
     reader.limits(limits);
-    let image = reader
+    reader
         .decode()
-        .map_err(|error| error.to_string())?
-        .to_rgba8();
+        .map_err(|error| format!("The image could not be decoded: {error}"))
+        .map(|image| image.to_rgba8())
+}
+
+/// Decode an inline image: a `data:` URL, a bare base64 payload, or pasted SVG
+/// markup. Text that looks like a path is left alone, so a normal file path is
+/// never decoded.
+fn decode_image_payload(text: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+    let trimmed = text.trim();
+    // Pasted SVG markup is already the picture; nothing to decode.
+    if looks_like_svg(trimmed.as_bytes()) {
+        return Some(trimmed.as_bytes().to_vec());
+    }
+    let payload = if let Some(rest) = trimmed.strip_prefix("data:") {
+        let (meta, body) = rest.split_once(',')?;
+        if meta.contains(";base64") {
+            body
+        } else if meta.contains("svg") {
+            // Only text formats can travel unencoded; a binary data URL that
+            // is not base64 is a broken link, not a picture.
+            return percent_decode(body).filter(|bytes| looks_like_svg(bytes));
+        } else {
+            return None;
+        }
+    } else {
+        // A filename always has a separator or a dot; base64 never does.
+        if trimmed.len() < 64 || trimmed.contains(['/', '\\', '.', '<']) {
+            return None;
+        }
+        trimmed
+    };
+    let compact = payload
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>();
+    use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
+    [&STANDARD, &STANDARD_NO_PAD, &URL_SAFE, &URL_SAFE_NO_PAD]
+        .into_iter()
+        .find_map(|engine| engine.decode(&compact).ok())
+        .filter(|bytes| bytes.len() > 8)
+}
+
+/// Decode `%2F`-style escapes in an unencoded `data:` URL.
+fn percent_decode(text: &str) -> Option<Vec<u8>> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let hex = bytes.get(index + 1..index + 3)?;
+            let value = u8::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok()?;
+            out.push(value);
+            index += 3;
+        } else {
+            out.push(bytes[index]);
+            index += 1;
+        }
+    }
+    Some(out)
+}
+
+/// Read the picture on the system clipboard as PNG bytes.
+fn clipboard_picture() -> Result<Vec<u8>, String> {
+    let mut clipboard = arboard::Clipboard::new()
+        .map_err(|error| format!("The clipboard is not available: {error}"))?;
+    let picture = clipboard
+        .get_image()
+        .map_err(|_| "The clipboard holds no picture. Copy an image first.".to_owned())?;
+    let width = u32::try_from(picture.width).ok().filter(|width| *width > 0);
+    let height = u32::try_from(picture.height)
+        .ok()
+        .filter(|height| *height > 0);
+    let (Some(width), Some(height)) = (width, height) else {
+        return Err("The clipboard picture is empty.".to_owned());
+    };
+    if u64::from(width) * u64::from(height) > u64::from(MOD_ICON_MAX_EDGE).pow(2) {
+        return Err(format!(
+            "The clipboard picture is too large ({width} x {height})."
+        ));
+    }
+    let buffer = image::RgbaImage::from_raw(width, height, picture.bytes.into_owned())
+        .ok_or_else(|| "The clipboard picture is malformed.".to_owned())?;
+    let mut png = Vec::new();
+    image::DynamicImage::ImageRgba8(buffer)
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .map_err(|error| format!("Could not read the clipboard picture: {error}"))?;
+    Ok(png)
+}
+
+/// Read clipboard text, for pasting a shared instance.
+fn clipboard_text() -> Result<String, String> {
+    let mut clipboard = arboard::Clipboard::new()
+        .map_err(|error| format!("The clipboard is not available: {error}"))?;
+    clipboard
+        .get_text()
+        .map_err(|_| "The clipboard holds no text.".to_owned())
+}
+
+/// Files copied in Explorer or Finder. Windows exposes them as `CF_HDROP`, which
+/// is not text: a text field would otherwise paste nothing at all.
+#[cfg(windows)]
+fn clipboard_files() -> Vec<PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::System::DataExchange::{
+        CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
+    };
+    use windows_sys::Win32::UI::Shell::{DragQueryFileW, HDROP};
+    const CF_HDROP: u32 = 15;
+    // SAFETY: every Win32 call is checked, the clipboard is closed on every
+    // path after a successful open, and DragQueryFileW writes into a buffer
+    // sized from the length it just reported.
+    unsafe {
+        if IsClipboardFormatAvailable(CF_HDROP) == 0 {
+            return Vec::new();
+        }
+        if OpenClipboard(std::ptr::null_mut()) == 0 {
+            return Vec::new();
+        }
+        let mut files = Vec::new();
+        let handle = GetClipboardData(CF_HDROP);
+        if !handle.is_null() {
+            let drop = handle as HDROP;
+            let count = DragQueryFileW(drop, u32::MAX, std::ptr::null_mut(), 0);
+            for index in 0..count {
+                let length = DragQueryFileW(drop, index, std::ptr::null_mut(), 0);
+                if length == 0 {
+                    continue;
+                }
+                let mut buffer = vec![0_u16; length as usize + 1];
+                let written = DragQueryFileW(drop, index, buffer.as_mut_ptr(), length + 1) as usize;
+                if written == 0 {
+                    continue;
+                }
+                buffer.truncate(written);
+                files.push(PathBuf::from(std::ffi::OsString::from_wide(&buffer)));
+            }
+        }
+        CloseClipboard();
+        files
+    }
+}
+
+#[cfg(not(windows))]
+fn clipboard_files() -> Vec<PathBuf> {
+    // X11 and Wayland expose file lists as `text/uri-list`; a text paste already
+    // carries the path, so nothing extra is read here.
+    Vec::new()
+}
+
+/// What a pasted clipboard should become in a text field: its text, or the
+/// name of a copied file.
+fn clipboard_query_text() -> Option<String> {
+    if let Ok(text) = clipboard_text() {
+        let text = text.trim();
+        if !text.is_empty() {
+            return Some(text.to_owned());
+        }
+    }
+    clipboard_files().first().map(|path| {
+        path.file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string())
+    })
+}
+
+/// The first image among the copied files, if any.
+fn clipboard_artwork_file() -> Option<PathBuf> {
+    let files = clipboard_files();
+    files.into_iter().find(|path| is_image_path(path))
+}
+
+/// Read an instance record pasted from a chat, a ticket, or another machine.
+/// Markdown fences are stripped because that is how JSON usually arrives.
+fn parse_instance_json(text: &str) -> Option<Instance> {
+    let trimmed = text.trim();
+    let trimmed = trimmed
+        .strip_prefix("```json")
+        .or_else(|| trimmed.strip_prefix("```JSON"))
+        .or_else(|| trimmed.strip_prefix("```"))
+        .unwrap_or(trimmed)
+        .trim();
+    let trimmed = trimmed.strip_suffix("```").unwrap_or(trimmed).trim();
+    serde_json::from_str(trimmed).ok()
+}
+
+/// One size for stored artwork: a 256 px square PNG. Every accepted source is
+/// cropped to its centre and resized once, so the launcher never decodes a
+/// multi-megabyte picture at paint time.
+fn store_instance_artwork(root: &Path, bytes: &[u8]) -> Result<PathBuf, String> {
+    if bytes.len() as u64 > INSTANCE_ICON_BYTES {
+        return Err("Artwork is larger than 8 MiB.".to_owned());
+    }
+    let decoded = decode_any_image(bytes, MOD_ICON_MAX_EDGE)?;
+    let (width, height) = decoded.dimensions();
+    if width == 0 || height == 0 {
+        return Err("The image has no pixels.".to_owned());
+    }
+    let side = width.min(height);
+    let cropped = image::imageops::crop_imm(
+        &decoded,
+        (width - side) / 2,
+        (height - side) / 2,
+        side,
+        side,
+    )
+    .to_image();
+    let square = image::imageops::resize(
+        &cropped,
+        ARTWORK_EDGE,
+        ARTWORK_EDGE,
+        image::imageops::FilterType::Lanczos3,
+    );
+    let directory = root.join(".kaelis");
+    std::fs::create_dir_all(&directory)
+        .map_err(|error| format!("Could not create the artwork folder: {error}"))?;
+    let path = directory.join("artwork.png");
+    square
+        .save(&path)
+        .map_err(|error| format!("Could not write the artwork: {error}"))?;
+    Ok(path)
+}
+
+/// Store a pack's picture as the new instance's card artwork. A bad or
+/// oversized picture never fails the pack import; the monogram stays.
+fn apply_pack_artwork(instance: &mut Instance, bytes: &[u8]) -> bool {
+    match store_instance_artwork(&instance.root, bytes) {
+        Ok(path) => {
+            instance.icon = Some(path);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+fn decode_instance_icon(bytes: &[u8]) -> Result<egui::ColorImage, String> {
+    decode_mod_icon(bytes).map(center_square)
+}
+
+fn decode_mod_icon(bytes: &[u8]) -> Result<egui::ColorImage, String> {
+    let image = decode_any_image(bytes, MOD_ICON_MAX_EDGE)?;
     let thumbnail = image::imageops::thumbnail(&image, 96, 96);
     let size = [thumbnail.width() as usize, thumbnail.height() as usize];
     Ok(egui::ColorImage::from_rgba_unmultiplied(
@@ -9050,15 +13138,19 @@ fn show_qr(ui: &mut egui::Ui, device: &DeviceCodeResponse) {
 #[cfg(test)]
 mod tests {
     use super::{
-        CheckState, HandoffRequest, INSTANCE_VARIANTS, InstalledFile, InstalledScan,
-        InstanceHealth, KaelisApp, LauncherSettings, ModFilter, ModSort, ModView, StatusKind,
-        build_mod_rows, center_square, content_list_text, decode_instance_icon, decode_mod_icon,
-        draw_instance_avatar, draw_mod_icon, filter_tokens, https_icon_url, install_state_key,
-        instance_color, instance_matches, instance_name_conflict, instance_variant, mod_item_key,
-        note_preview, parse_handoff, parse_jvm_args, scan_installed, significant_tokens, slugify,
-        valid_instance_version, variant_color, visible_mod_indices, window_icon,
+        ARTWORK_EDGE, CheckState, HandoffRequest, InstalledFile, InstalledScan, InstanceHealth,
+        KaelisApp, ModFilter, ModSort, ModView, StatusKind, Tab, apply_pack_artwork,
+        auto_scale_for, auto_scale_for_settled, build_mod_rows, center_square, clipboard_picture,
+        content_list_text, decode_image_payload, decode_instance_icon, decode_mod_icon,
+        draw_instance_avatar, draw_mod_icon, expand_dropped, filter_tokens, has_extension,
+        https_icon_url, install_state_key, instance_matches, instance_name_conflict,
+        looks_like_svg, merge_launch_command, mod_item_key, note_preview, parse_handoff,
+        parse_instance_json, parse_jvm_args, scan_installed, significant_tokens, slugify,
+        store_instance_artwork, tab_from_shortcuts, valid_instance_version, visible_mod_indices,
+        window_icon,
     };
-    use kaelis_api::mods::{ModProvider, ModSearchItem};
+    use kaelis_api::accounts::LauncherSettings;
+    use kaelis_api::mods::{ContentKind, ModProvider, ModSearchItem};
     use kaelis_core::instance::Instance;
     use std::path::PathBuf;
 
@@ -9365,6 +13457,105 @@ mod tests {
     }
 
     #[test]
+    fn automatic_scale_steps_are_coarse_monotonic_and_bounded() {
+        // One step per display band, and the interface never shrinks as the
+        // window grows.
+        let mut previous = 0.0;
+        for height in [320.0, 639.0, 640.0, 899.0, 900.0, 1149.0, 1150.0, 2160.0] {
+            let scale = auto_scale_for(height);
+            assert!(scale >= previous, "{height} px picked {scale}");
+            assert!((0.85..=1.5).contains(&scale));
+            previous = scale;
+        }
+        assert_eq!(auto_scale_for(520.0), 0.9);
+        assert_eq!(auto_scale_for(720.0), 1.0);
+        assert_eq!(auto_scale_for(1080.0), 1.05);
+        assert_eq!(auto_scale_for(1440.0), 1.12);
+    }
+
+    #[test]
+    fn automatic_scale_does_not_flap_around_a_boundary() {
+        // Rising needs 24 points of clearance above the 900 boundary.
+        assert_eq!(auto_scale_for_settled(910.0, 1.0), 1.0);
+        assert_eq!(auto_scale_for_settled(924.0, 1.0), 1.05);
+        // Falling needs the same clearance below it.
+        assert_eq!(auto_scale_for_settled(890.0, 1.05), 1.05);
+        assert_eq!(auto_scale_for_settled(876.0, 1.05), 1.0);
+        // A jump across bands is accepted in the direction of travel.
+        assert_eq!(auto_scale_for_settled(1400.0, 0.9), 1.12);
+        assert_eq!(auto_scale_for_settled(500.0, 1.12), 0.9);
+    }
+
+    #[test]
+    fn ctrl_number_selects_the_matching_tab() {
+        // winit reports the physical ctrl key as both `ctrl` and `command`
+        // off macOS, so the event has to carry both flags, not just COMMAND.
+        let ctrl = egui::Modifiers {
+            ctrl: true,
+            command: true,
+            ..Default::default()
+        };
+        let keys = [
+            (egui::Key::Num1, Tab::Overview),
+            (egui::Key::Num2, Tab::Instances),
+            (egui::Key::Num3, Tab::Content),
+            (egui::Key::Num4, Tab::Account),
+            (egui::Key::Num5, Tab::Settings),
+        ];
+        for (key, expected) in keys {
+            let context = egui::Context::default();
+            let mut selected = None;
+            let _ = context.run(
+                egui::RawInput {
+                    events: vec![egui::Event::Key {
+                        key,
+                        physical_key: Some(key),
+                        pressed: true,
+                        repeat: false,
+                        modifiers: ctrl,
+                    }],
+                    ..Default::default()
+                },
+                |context| selected = context.input_mut(tab_from_shortcuts),
+            );
+            assert_eq!(selected, Some(expected), "{key:?}");
+        }
+
+        // A bare digit belongs to the focused field, not to navigation.
+        let context = egui::Context::default();
+        let mut plain = None;
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::Num3,
+                    physical_key: Some(egui::Key::Num3),
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::default(),
+                }],
+                ..Default::default()
+            },
+            |context| plain = context.input_mut(tab_from_shortcuts),
+        );
+        assert_eq!(plain, None);
+    }
+
+    #[test]
+    fn interface_scale_survives_settings_json() {
+        let settings = LauncherSettings {
+            ui_scale: 1.25,
+            ..LauncherSettings::default()
+        };
+        let json = serde_json::to_string(&settings).expect("serialize settings");
+        let restored: LauncherSettings = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(restored.ui_scale, 1.25);
+        // Older files have no scale and must mean automatic, not 0%.
+        let legacy: LauncherSettings =
+            serde_json::from_str("{\"last_account\":\"\"}").expect("legacy settings");
+        assert_eq!(legacy.ui_scale, 0.0);
+    }
+
+    #[test]
     fn launcher_settings_round_trip_the_content_channel() {
         let settings = LauncherSettings {
             content_kind: kaelis_api::mods::ContentKind::Shader,
@@ -9379,6 +13570,17 @@ mod tests {
             serde_json::from_str("{\"ms_client_id\":\"\",\"last_account\":\"\"}")
                 .expect("legacy settings");
         assert_eq!(legacy.content_kind, kaelis_api::mods::ContentKind::Mod);
+        // Files written before the interface zoom was removed still load; the
+        // unknown key is ignored rather than rejecting every other setting.
+        let with_zoom: LauncherSettings = serde_json::from_str(
+            "{\"ui_zoom\":1.25,\"content_kind\":\"modpack\",\"auto_clean\":false}",
+        )
+        .expect("settings with the retired zoom key");
+        assert_eq!(
+            with_zoom.content_kind,
+            kaelis_api::mods::ContentKind::Modpack
+        );
+        assert!(!with_zoom.auto_clean);
     }
 
     #[test]
@@ -9409,13 +13611,57 @@ mod tests {
     }
 
     #[test]
+    fn drop_extensions_ignore_case_and_reject_partial_names() {
+        use std::path::Path;
+        assert!(has_extension(Path::new("Fabulous.MRPACK"), "mrpack"));
+        assert!(has_extension(Path::new("pack.ZIP"), "zip"));
+        assert!(!has_extension(Path::new("notes.txt"), "jar"));
+        assert!(!has_extension(Path::new("jar"), "jar"));
+    }
+
+    #[test]
+    fn classifies_picked_files_by_extension_and_channel() {
+        use std::path::Path;
+        assert_eq!(
+            KaelisApp::classify_local_file(Path::new("sodium.jar"), ContentKind::Shader),
+            Some(ContentKind::Mod)
+        );
+        assert_eq!(
+            KaelisApp::classify_local_file(Path::new("pack.zip"), ContentKind::ResourcePack),
+            Some(ContentKind::ResourcePack)
+        );
+        assert_eq!(
+            KaelisApp::classify_local_file(Path::new("pack.zip"), ContentKind::Shader),
+            Some(ContentKind::Shader)
+        );
+        assert_eq!(
+            KaelisApp::classify_local_file(Path::new("fabulous.mrpack"), ContentKind::Mod),
+            Some(ContentKind::Modpack)
+        );
+        // A disabled jar would be re-copied as `foo.jar.disabled.jar`, so it is
+        // reported instead of silently producing a broken file name.
+        assert_eq!(
+            KaelisApp::classify_local_file(Path::new("foo.jar.disabled"), ContentKind::Mod),
+            None
+        );
+        assert_eq!(
+            KaelisApp::classify_local_file(Path::new("notes.txt"), ContentKind::Mod),
+            None
+        );
+    }
+
+    #[test]
     fn window_icon_is_square_with_a_transparent_corner() {
         let icon = window_icon();
         assert_eq!((icon.width, icon.height), (64, 64));
         assert_eq!(icon.rgba.len(), 64 * 64 * 4);
         assert_eq!(icon.rgba[3], 0, "corner must stay transparent");
-        let center = (32 * 64 + 32) * 4;
-        assert_eq!(icon.rgba[center + 3], 255, "plate center must be opaque");
+        // The mark has no plate, so the point inside a plane is opaque and the
+        // margin beside it stays clear.
+        let plane = (26 * 64 + 32) * 4;
+        assert_eq!(icon.rgba[plane + 3], 255, "glyph must be opaque");
+        let margin = (32 * 64 + 2) * 4;
+        assert_eq!(icon.rgba[margin + 3], 0, "no background plate");
     }
 
     #[test]
@@ -9511,28 +13757,6 @@ mod tests {
             );
         }
         assert!(!valid_instance_version(&"1".repeat(65)));
-    }
-
-    #[test]
-    fn instance_variants_override_and_wrap_the_palette() {
-        let mut instance = Instance::new(
-            "fabulous-1-21",
-            "Fabulous",
-            "1.21",
-            "fabric",
-            PathBuf::from("kaelis-variant-test"),
-        );
-        instance.icon_variant = Some(0);
-        assert_eq!(instance_color(&instance), variant_color(0));
-        instance.icon_variant = Some(INSTANCE_VARIANTS + 2);
-        assert_eq!(instance_color(&instance), variant_color(2));
-        assert_ne!(variant_color(0), variant_color(1));
-        // A missing variant falls back to the stable id-derived colour.
-        instance.icon_variant = None;
-        assert_eq!(
-            instance_color(&instance),
-            variant_color(instance_variant(&instance.id))
-        );
     }
 
     #[test]
@@ -9752,5 +13976,209 @@ mod tests {
         assert!(instance_name_conflict(&instances, "Vanilla 1.22").is_none());
         assert!(instance_name_conflict(&instances, "日本語").is_none());
         assert!(instance_name_conflict(&instances, "   ").is_none());
+    }
+
+    fn scratch_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("kaelis-drop-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        dir
+    }
+
+    fn touch(path: &PathBuf) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("parent");
+        }
+        std::fs::write(path, b"x").expect("file");
+    }
+
+    #[test]
+    fn a_dropped_folder_contributes_the_files_inside_it() {
+        let root = scratch_dir("folder");
+        touch(&root.join("alpha.jar"));
+        touch(&root.join("nested/beta.zip"));
+        touch(&root.join("deeper/one/two/gamma.jar"));
+        touch(&root.join("notes.txt"));
+        let files = expand_dropped(vec![root.clone()]);
+        let names = files
+            .iter()
+            .map(|path| {
+                path.strip_prefix(&root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["alpha.jar", "nested/beta.zip"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_dropped_folder_never_walks_disposable_or_hidden_directories() {
+        let root = scratch_dir("junk");
+        touch(&root.join("mods/keep.jar"));
+        touch(&root.join("logs/drop.jar"));
+        touch(&root.join(".cache/drop.jar"));
+        touch(&root.join("crash-reports/drop.jar"));
+        touch(&root.join(".git/drop.jar"));
+        let files = expand_dropped(vec![root.clone()]);
+        assert_eq!(files.len(), 1);
+        assert!(files[0].ends_with("keep.jar"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn launch_commands_keep_the_instance_hook_ahead_of_user_rules() {
+        assert_eq!(
+            merge_launch_command(Some("echo one".to_owned()), Some("echo two".to_owned())),
+            Some("echo one && echo two".to_owned())
+        );
+        assert_eq!(
+            merge_launch_command(Some("  ".to_owned()), Some("echo two".to_owned())),
+            Some("echo two".to_owned())
+        );
+        assert_eq!(
+            merge_launch_command(Some("echo one".to_owned()), None),
+            Some("echo one".to_owned())
+        );
+        assert_eq!(merge_launch_command(None, None), None);
+        assert_eq!(
+            merge_launch_command(None, Some("echo two".to_owned())),
+            Some("echo two".to_owned())
+        );
+    }
+
+    #[test]
+    fn artwork_payloads_accept_data_urls_and_bare_base64() {
+        use base64::Engine;
+        // A real payload is long; the 64-character floor keeps short words
+        // that happen to be valid base64 from being decoded as pictures.
+        let bytes = vec![0x89_u8; 120];
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        assert_eq!(decode_image_payload(&encoded).as_deref(), Some(&bytes[..]));
+        let data_url = format!("data:image/png;base64,{encoded}");
+        assert_eq!(decode_image_payload(&data_url).as_deref(), Some(&bytes[..]));
+        // Paths, plain words, and text URLs are never decoded.
+        assert!(decode_image_payload("C:/art/icon.png").is_none());
+        assert!(decode_image_payload("https://example.com/a.png").is_none());
+        assert!(decode_image_payload("data:image/png,not-base64").is_none());
+    }
+
+    #[test]
+    fn a_modpack_icon_becomes_the_instance_artwork() {
+        let root = scratch_dir("pack-artwork");
+        let mut instance = Instance::new("pack", "Pack", "1.21.1", "fabric", root.clone());
+        let mut icon = image::RgbaImage::new(12, 8);
+        for (x, _, pixel) in icon.enumerate_pixels_mut() {
+            *pixel = image::Rgba([x as u8 * 20, 90, 200, 255]);
+        }
+        let mut encoded = Vec::new();
+        icon.write_to(
+            &mut std::io::Cursor::new(&mut encoded),
+            image::ImageFormat::Png,
+        )
+        .expect("encode");
+        assert!(apply_pack_artwork(&mut instance, &encoded));
+        let stored = instance.icon.clone().expect("icon path");
+        assert!(stored.ends_with(".kaelis/artwork.png"));
+        assert_eq!(
+            image::open(&stored).expect("open").to_rgba8().dimensions(),
+            (ARTWORK_EDGE, ARTWORK_EDGE)
+        );
+        // A bad picture leaves the instance untouched rather than failing an
+        // otherwise complete import.
+        assert!(!apply_pack_artwork(&mut instance, b"not an image"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn artwork_is_cropped_to_one_square_png() {
+        let root = scratch_dir("artwork");
+        let mut wide = image::RgbaImage::new(80, 40);
+        for (x, _, pixel) in wide.enumerate_pixels_mut() {
+            *pixel = image::Rgba([x as u8, 40, 90, 255]);
+        }
+        let mut encoded = Vec::new();
+        wide.write_to(
+            &mut std::io::Cursor::new(&mut encoded),
+            image::ImageFormat::Png,
+        )
+        .expect("encode");
+        let stored = store_instance_artwork(&root, &encoded).expect("store");
+        assert!(stored.ends_with(".kaelis/artwork.png"));
+        let decoded = image::open(&stored).expect("reopen").to_rgba8();
+        assert_eq!(decoded.dimensions(), (ARTWORK_EDGE, ARTWORK_EDGE));
+        assert!(store_instance_artwork(&root, b"not an image").is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn svg_artwork_is_rasterised_instead_of_rejected() {
+        let root = scratch_dir("artwork-svg");
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 4"><rect width="8" height="4" fill="#3d82f6"/></svg>"##;
+        assert!(looks_like_svg(svg));
+        let stored = store_instance_artwork(&root, svg).expect("store svg");
+        let decoded = image::open(&stored).expect("reopen").to_rgba8();
+        assert_eq!(decoded.dimensions(), (ARTWORK_EDGE, ARTWORK_EDGE));
+        // A centre pixel proves the rectangle rendered, not a blank canvas.
+        let pixel = decoded.get_pixel(ARTWORK_EDGE / 2, ARTWORK_EDGE / 2);
+        assert!(pixel[2] > 200 && pixel[0] < 120, "pixel: {pixel:?}");
+        // Markup pasted as text is used directly.
+        assert!(decode_image_payload(std::str::from_utf8(svg).unwrap()).is_some());
+        // An unencoded data URL decodes its escapes.
+        let data_url = "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3C%2Fsvg%3E";
+        assert!(decode_image_payload(data_url).is_some());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    #[ignore = "needs a desktop clipboard; run locally with --ignored"]
+    fn clipboard_picture_round_trips_as_png() {
+        let source = image::RgbaImage::from_pixel(4, 3, image::Rgba([10, 120, 240, 255]));
+        let mut clipboard = arboard::Clipboard::new().expect("clipboard");
+        clipboard
+            .set_image(arboard::ImageData {
+                width: 4,
+                height: 3,
+                bytes: source.as_raw().clone().into(),
+            })
+            .expect("set image");
+        let png = clipboard_picture().expect("read clipboard picture");
+        let decoded = image::load_from_memory(&png).expect("png").to_rgba8();
+        assert_eq!(decoded.dimensions(), (4, 3));
+        assert_eq!(decoded.get_pixel(1, 1).0, [10, 120, 240, 255]);
+    }
+
+    #[test]
+    fn pasted_instance_json_accepts_fences_and_rejects_other_text() {
+        let instance = Instance::new("demo", "Demo", "1.21.1", "fabric", PathBuf::from("C:/x"));
+        let json = serde_json::to_string_pretty(&instance).expect("encode");
+        assert_eq!(
+            parse_instance_json(&json).map(|instance| instance.name),
+            Some("Demo".to_owned())
+        );
+        let fenced = format!("```json\n{json}\n```");
+        assert_eq!(
+            parse_instance_json(&fenced).map(|instance| instance.id),
+            Some("demo".to_owned())
+        );
+        assert!(parse_instance_json("hello").is_none());
+        // A record missing required fields is not an instance.
+        assert!(parse_instance_json("{\"id\":\"x\"}").is_none());
+    }
+
+    #[test]
+    fn a_drop_keeps_supported_files_and_ignores_the_rest() {
+        let root = scratch_dir("files");
+        let jar = root.join("one.jar");
+        let pack = root.join("two.MRPACK");
+        let readme = root.join("readme.md");
+        for path in [&jar, &pack, &readme] {
+            touch(path);
+        }
+        // The same path twice is one install, not two.
+        let files = expand_dropped(vec![jar.clone(), readme.clone(), jar.clone(), pack.clone()]);
+        assert_eq!(files, vec![jar, pack]);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

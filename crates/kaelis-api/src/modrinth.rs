@@ -86,6 +86,10 @@ pub struct ModVersion {
     pub files: Vec<ModVersionFile>,
     #[serde(default)]
     pub dependencies: Vec<ModDependency>,
+    /// `release`, `beta`, or `alpha`. Older payloads omit it, so callers treat
+    /// an empty value as a release.
+    #[serde(default)]
+    pub version_type: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -225,6 +229,24 @@ pub async fn version_by_id(
         return Err(ModrinthError::InvalidVersionId);
     }
     let url = format!("{MODRINTH_API}/version/{version_id}");
+    let response = crate::retry::get_with_retry(&crate::retry::RetryPolicy::default(), || {
+        agent(client.get(url.as_str()))
+    })
+    .await?;
+    let version = response.error_for_status()?.json::<ModVersion>().await?;
+    Ok(version)
+}
+
+/// The version a local file belongs to, used to decide whether following a
+/// prerelease channel is appropriate for this jar.
+pub async fn version_file(
+    client: &reqwest::Client,
+    hash: &str,
+) -> Result<ModVersion, ModrinthError> {
+    if hash.len() != 40 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(ModrinthError::InvalidVersionId);
+    }
+    let url = format!("{MODRINTH_API}/version_file/{hash}?algorithm=sha1");
     let response = crate::retry::get_with_retry(&crate::retry::RetryPolicy::default(), || {
         agent(client.get(url.as_str()))
     })

@@ -1,0 +1,6 @@
+# Kaelis — robots policy
+User-agent: *
+Allow: /
+
+# Everything is static HTML; crawlers that ignore CSS still get full text.
+Sitemap: https://fuvji.github.io/kaelis/sitemap.xml

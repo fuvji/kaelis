@@ -41,6 +41,12 @@ pub enum LaunchError {
     UnsafePath(String),
     #[error("quick-join address is invalid: {0}")]
     InvalidQuickJoin(String),
+    #[error("{0}")]
+    InstanceBusy(#[from] kaelis_core::instance_guard::InstanceGuardError),
+    #[error(
+        "{0} is not provisioned for this instance yet; Kaelis installs Fabric and Quilt automatically, but {0} must be added before playing"
+    )]
+    LoaderNotProvisioned(String),
 }
 
 pub struct LaunchIdentity {
@@ -236,10 +242,12 @@ fn collect_jars(root: &Path, output: &mut Vec<PathBuf>) -> Result<(), std::io::E
                 pending.push(path);
             } else if file_type.is_file()
                 && path.extension().is_some_and(|extension| extension == "jar")
-                && !path
-                    .file_name()
-                    .is_some_and(|name| name.to_string_lossy().contains("natives-"))
             {
+                // Natives jars belong on the classpath: since LWJGL 3.3 the
+                // native libraries are loaded either from `java.library.path`
+                // or, as a fallback, from their jar on the classpath. Excluding
+                // them produced `UnsatisfiedLinkError: Failed to locate
+                // library: lwjgl.dll` on every modern version.
                 output.push(path);
             }
         }
@@ -287,8 +295,6 @@ fn extract_natives(
     libraries_root: &Path,
     native_dir: &Path,
 ) -> Result<(), LaunchError> {
-    let java_native_dir = native_dir.join("java");
-    std::fs::create_dir_all(&java_native_dir)?;
     for directory in ["jna", "lwjgl", "netty"] {
         std::fs::create_dir_all(native_dir.join(directory))?;
     }
@@ -330,7 +336,11 @@ fn extract_natives(
                     if !is_native_binary {
                         continue;
                     }
-                    java_native_dir.join(
+                    // Classifier natives (`natives-windows`, …) store the
+                    // DLLs under `windows/x64/org/lwjgl/…` inside the jar.
+                    // `java.library.path` only looks at the top level, so
+                    // flatten the binaries into the natives directory.
+                    native_dir.join(
                         relative
                             .file_name()
                             .ok_or_else(|| LaunchError::UnsafePath(entry.name().to_owned()))?,
@@ -338,19 +348,14 @@ fn extract_natives(
                 } else {
                     native_dir.join(relative)
                 };
-                let destination_root = if is_maven_native {
-                    &java_native_dir
-                } else {
-                    native_dir
-                };
-                if !destination.starts_with(destination_root) {
+                if !destination.starts_with(native_dir) {
                     continue;
                 }
                 if let Some(parent) = destination.parent() {
                     std::fs::create_dir_all(parent)?;
                 }
                 let mut file = std::fs::File::create(destination)?;
-                std::io::copy(&mut entry, &mut file)?;
+                kaelis_core::stream::copy_stream(&mut entry, &mut file)?;
             }
         }
     }
@@ -414,14 +419,17 @@ fn prepare_launch_plan(
             client_jar.display().to_string(),
         ));
     }
-    // A provisioned Fabric loader replaces the vanilla main class and adds its
-    // own JVM arguments; without the marker the launch stays vanilla.
-    let fabric = if instance.loader.eq_ignore_ascii_case("fabric") {
-        crate::loader::load_installed(&instance.root, &instance.mc_version)
-    } else {
-        None
-    };
-    let main_class = fabric
+    // A provisioned Fabric-family loader (Fabric or Quilt) replaces the
+    // vanilla main class and adds its own JVM arguments.
+    let loader_install =
+        crate::loader::load_for(&instance.root, &instance.mc_version, &instance.loader);
+    // Launching vanilla under a modded label would look successful while every
+    // mod silently stayed unloaded, so refuse it with an actionable message.
+    let loader_name = instance.loader.trim().to_ascii_lowercase();
+    if !loader_name.is_empty() && loader_name != "vanilla" && loader_install.is_none() {
+        return Err(LaunchError::LoaderNotProvisioned(instance.loader.clone()));
+    }
+    let main_class = loader_install
         .as_ref()
         .map(|install| install.main_class.as_str())
         .or_else(|| version.get("mainClass").and_then(Value::as_str))
@@ -519,8 +527,8 @@ fn prepare_launch_plan(
         args.push(OsString::from("-cp"));
         args.push(classpath);
     }
-    if let Some(fabric) = &fabric {
-        args.extend(fabric.jvm_arguments.iter().cloned().map(OsString::from));
+    if let Some(install) = &loader_install {
+        args.extend(install.jvm_arguments.iter().cloned().map(OsString::from));
     }
     args.extend(instance.jvm_args.iter().cloned().map(OsString::from));
     args.push(OsString::from(main_class));
@@ -561,8 +569,8 @@ fn prepare_launch_plan(
             OsString::from(version_type),
         ]);
     }
-    if let Some(fabric) = &fabric {
-        args.extend(fabric.game_arguments.iter().cloned().map(OsString::from));
+    if let Some(install) = &loader_install {
+        args.extend(install.game_arguments.iter().cloned().map(OsString::from));
     }
     args.extend(
         window_and_join_args(instance)?
@@ -809,6 +817,9 @@ pub async fn run_instance<F>(
 where
     F: FnOnce() + Send + 'static,
 {
+    // One instance, one JVM. Different instances are independent, so the lock
+    // is per instance rather than per launcher.
+    let _guard = kaelis_core::instance_guard::InstanceGuard::claim(&instance.id)?;
     let mut plan = tokio::task::spawn_blocking(move || prepare_launch_plan(&instance, &identity))
         .await
         .map_err(|error| LaunchError::Join(error.to_string()))??;
@@ -857,8 +868,15 @@ where
         let _ = task.await;
     }
     let exit = status?;
-    if let Some(hook) = plan.post_exit.as_deref() {
-        run_hook(hook, &plan.current_dir, &plan.env, &log, "post-exit").await;
+    // A post-exit hook can take up to two minutes; run it beside the return so
+    // the launcher window comes back the instant the game process is gone.
+    if let Some(hook) = plan.post_exit.take() {
+        let cwd = plan.current_dir.clone();
+        let env = plan.env.clone();
+        let hook_log = log.clone();
+        tokio::spawn(async move {
+            run_hook(&hook, &cwd, &env, &hook_log, "post-exit").await;
+        });
     }
     plan.native_dir.cleanup();
     Ok(exit)
@@ -1101,14 +1119,73 @@ mod tests {
         });
         extract_natives(&version, &libraries_root, &native_dir).unwrap();
 
+        // Flattened into the directory passed as `-Djava.library.path`; LWJGL
+        // loads `lwjgl.dll` from there, not from a nested `java/` folder.
         assert_eq!(
-            std::fs::read(native_dir.join("java/lwjgl.dll")).unwrap(),
+            std::fs::read(native_dir.join("lwjgl.dll")).unwrap(),
             b"native library fixture"
         );
-        assert!(!native_dir.join("java/lwjgl.dll.sha1").exists());
+        assert!(!native_dir.join("lwjgl.dll.sha1").exists());
+        assert!(!native_dir.join("java/lwjgl.dll").exists());
         assert!(native_dir.join("jna").is_dir());
         assert!(native_dir.join("lwjgl").is_dir());
         assert!(native_dir.join("netty").is_dir());
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_modded_instance_without_its_loader_is_refused() {
+        let sequence = TEST_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "kaelis-unprovisioned-loader-{}-{sequence}",
+            std::process::id()
+        ));
+        let version_dir = root.join("versions/1.21.1");
+        std::fs::create_dir_all(&version_dir).unwrap();
+        std::fs::write(
+            version_dir.join("1.21.1.json"),
+            br#"{"id":"1.21.1","mainClass":"net.minecraft.client.main.Main","libraries":[]}"#,
+        )
+        .unwrap();
+        std::fs::write(version_dir.join("1.21.1.jar"), b"jar").unwrap();
+        let instance = Instance::new(
+            "forge-probe",
+            "Forge probe",
+            "1.21.1",
+            "forge",
+            root.clone(),
+        );
+        let identity = LaunchIdentity::offline("Tester".to_owned(), "uuid".to_owned());
+
+        let result = prepare_launch_plan(&instance, &identity);
+
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(
+            matches!(result, Err(LaunchError::LoaderNotProvisioned(ref loader)) if loader == "forge"),
+            "a modded launch must not silently fall back to vanilla"
+        );
+    }
+
+    #[test]
+    fn natives_jars_stay_on_the_classpath() {
+        let sequence = TEST_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "kaelis-classpath-natives-{}-{sequence}",
+            std::process::id()
+        ));
+        let jars = root.join("org/lwjgl/lwjgl/3.3.3");
+        std::fs::create_dir_all(&jars).unwrap();
+        for name in ["lwjgl-3.3.3.jar", "lwjgl-3.3.3-natives-windows.jar"] {
+            std::fs::write(jars.join(name), b"jar").unwrap();
+        }
+        let mut collected = Vec::new();
+        collect_jars(&root, &mut collected).unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert_eq!(
+            collected.len(),
+            2,
+            "both the API and natives jar are needed"
+        );
     }
 }

@@ -66,24 +66,9 @@ pub(crate) enum TrayAction {
     Quit,
 }
 
+/// Same geometry as the window icon, so the tray and taskbar never show two
+/// different logos.
 fn brand_icon() -> Result<Icon, tray_icon::BadIcon> {
-    const SIZE: usize = 64;
-    let mut rgba = vec![0_u8; SIZE * SIZE * 4];
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let inset = (8..56).contains(&x) && (8..56).contains(&y);
-            let diagonal =
-                (x as isize - y as isize).unsigned_abs() <= 5 || (x + y).abs_diff(63) <= 5;
-            if inset {
-                let index = (y * SIZE + x) * 4;
-                let accent = if diagonal {
-                    [120, 199, 255, 255]
-                } else {
-                    [26, 34, 52, 255]
-                };
-                rgba[index..index + 4].copy_from_slice(&accent);
-            }
-        }
-    }
-    Icon::from_rgba(rgba, SIZE as u32, SIZE as u32)
+    let data = crate::mark::primary_icon(32);
+    Icon::from_rgba(data.rgba, data.width, data.height)
 }

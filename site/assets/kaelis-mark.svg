@@ -1,16 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
-  <title id="title">Kaelis mark</title>
-  <defs>
-    <linearGradient id="plate" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#111c2d"/>
-      <stop offset="1" stop-color="#070c16"/>
-    </linearGradient>
-    <linearGradient id="stroke" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#a8e0ff"/>
-      <stop offset="1" stop-color="#4fb8ff"/>
-    </linearGradient>
-  </defs>
-  <rect x="3" y="3" width="122" height="122" rx="34" fill="url(#plate)" stroke="#37506d" stroke-width="2"/>
-  <path d="M40 36v56M40 64l36-28M40 64l36 28" fill="none" stroke="url(#stroke)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="90" cy="36" r="5" fill="#c3ecff"/>
+  <title id="title">Kaelis mark: a folded launch dart</title>
+  <g shape-rendering="geometricPrecision">
+    <polygon points="12.8,17.92 115.2,64 38.4,62.656" fill="#70a5ff"/>
+    <polygon points="38.4,65.344 115.2,64 12.8,110.08" fill="#2e70e8"/>
+  </g>
 </svg>

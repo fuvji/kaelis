@@ -3,8 +3,8 @@ name = "kaelis-gui"
 version = "0.1.0"
 edition.workspace = true
 description = "Kaelis desktop interface: content studio, instances, and accounts"
-homepage = "https://github.com/epufk/kaelis"
-repository = "https://github.com/epufk/kaelis"
+homepage = "https://github.com/fuvji/kaelis"
+repository = "https://github.com/fuvji/kaelis"
 
 [dependencies]
 kaelis-core = { path = "../kaelis-core" }
@@ -13,9 +13,34 @@ tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
 eframe = { version = "0.28", features = ["default_fonts", "glow"] }
 egui = "0.28"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
-qrcode = "0.14"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "ico", "bmp"] }
+base64 = "0.22"
+# Any picture from a browser, a screenshot tool, or an image editor can be
+# pasted as artwork without a file dialog.
+arboard = "3"
+# SVG artwork is vector, so it is rasterised once on import instead of being
+# stored as an unscalable bitmap. Default features pull GIF, WebP, and system
+# font scanning, none of which an icon needs; text layout stays on so a
+# wordmark renders instead of disappearing.
+resvg = { version = "0.48", default-features = false, features = ["text"] }
+# resvg's text support reads fonts through fontdb, whose system scan is off by
+# default. Enabling only the file-system scan keeps SVG text visible without
+# pulling fontconfig or memory-mapped font files.
+fontdb = { version = "0.24", default-features = false, features = ["fs"] }
+# Only the matrix is used: `show_qr` paints the modules itself, so the default
+# image/SVG/pic renderers would add code and crates for nothing.
+qrcode = { version = "0.14", default-features = false }
 tray-icon = "0.19"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "tokio"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_DataExchange",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }

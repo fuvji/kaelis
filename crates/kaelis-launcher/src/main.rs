@@ -1,12 +1,15 @@
 //! Kaelis entry point: claim the OS mutex before creating a runtime, parse a
 //! small CLI surface, then run the desktop app or the requested operation.
 
+use kaelis_api::accounts::{
+    AccountKind, active_account, load_settings, migrated_accounts, switch_account,
+};
 use kaelis_api::auth::offline_profile;
 use kaelis_api::launch::{LaunchIdentity, run_instance};
 use kaelis_core::{
     ephemeral_log::EphemeralLog,
     handoff::{self, HandoffServer},
-    instance::Instance,
+    instance::{DuplicateOptions, Instance},
     single_instance::{SingleInstance, SingleInstanceError},
 };
 use std::process::ExitCode;
@@ -15,15 +18,24 @@ use std::process::ExitCode;
 enum Action {
     Gui,
     Help,
+    Version {
+        json: bool,
+    },
     ListVersions {
         show_alpha: bool,
         show_beta: bool,
         show_snapshots: bool,
+        json: bool,
     },
-    Offline(String),
+    Offline {
+        name: String,
+        json: bool,
+    },
     Play {
         instance_id: String,
-        username: String,
+        /// Explicit offline name; otherwise the saved active offline account is
+        /// used, so the CLI and the GUI launch as the same identity.
+        username: Option<String>,
     },
     InstallMod {
         instance_id: String,
@@ -36,6 +48,46 @@ enum Action {
         instance_id: String,
         pack_path: String,
     },
+    ExportInstance {
+        instance_id: String,
+        destination: String,
+    },
+    ImportInstance {
+        archive: String,
+    },
+    /// Copy one instance into a new one, optionally with its world saves.
+    Duplicate {
+        instance_id: String,
+        saves: bool,
+        json: bool,
+    },
+    /// Machine-readable inventory for scripts, MCP servers, and CI.
+    ListInstances {
+        json: bool,
+    },
+    /// Machine-readable environment report.
+    Status {
+        json: bool,
+    },
+    /// Every saved identity, with the one the next launch will use.
+    Accounts {
+        json: bool,
+    },
+    /// Choose the saved identity the next launch uses.
+    UseAccount {
+        name: String,
+        json: bool,
+    },
+    /// Compare installed mods with the newest compatible Modrinth versions.
+    CheckUpdates {
+        instance_id: String,
+        json: bool,
+    },
+    /// Download and install every available mod update.
+    UpdateMods {
+        instance_id: String,
+        json: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -46,6 +98,11 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    // A double-clicked GUI binary gets its own console window; hide it before
+    // the first expensive step so it never flashes over the desktop.
+    if matches!(&action, Action::Gui) {
+        hide_own_console();
+    }
     // Screenshot mode is a development-only visual check. It must be able to
     // run beside an installed launcher without claiming the global mutex or
     // handoff endpoint, and it closes itself after one captured frame.
@@ -85,33 +142,103 @@ fn main() -> ExitCode {
             println!("{}", usage());
             ExitCode::SUCCESS
         }
-        Action::Offline(name) => {
-            let profile = offline_profile(&name);
-            println!("offline profile: {} ({})", profile.name, profile.uuid);
-            println!(
-                "head: {}",
-                kaelis_api::auth::crafatar_head_url(&profile.uuid, 64)
-            );
+        Action::Version { json } => {
+            if json {
+                print_json(serde_json::json!({
+                    "name": kaelis_core::brand::LAUNCHER_NAME,
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "platform": kaelis_core::brand::build_platform(),
+                    "profile": if cfg!(debug_assertions) { "debug" } else { "release" },
+                    "website": kaelis_core::brand::WEBSITE,
+                    "checksums": kaelis_core::brand::CHECKSUMS_URL,
+                }));
+                return ExitCode::SUCCESS;
+            }
+            println!("{}", kaelis_core::brand::build_identity());
+            println!("site: {}", kaelis_core::brand::WEBSITE);
+            println!("checksums: {}", kaelis_core::brand::CHECKSUMS_URL);
             ExitCode::SUCCESS
         }
+        Action::Offline { name, json } => {
+            let profile = offline_profile(&name);
+            let head = kaelis_api::auth::crafatar_head_url(&profile.uuid, 64);
+            if json {
+                print_json(serde_json::json!({
+                    "name": profile.name,
+                    "uuid": profile.uuid,
+                    "head": head,
+                }));
+                return ExitCode::SUCCESS;
+            }
+            println!("offline profile: {} ({})", profile.name, profile.uuid);
+            println!("head: {head}");
+            ExitCode::SUCCESS
+        }
+        Action::ListInstances { json } => list_instances(json),
+        Action::Status { json } => status(json),
+        Action::Accounts { json } => list_accounts(json),
+        Action::UseAccount { name, json } => use_account(&name, json),
+        Action::CheckUpdates { instance_id, json } => check_mod_updates(&instance_id, json, false),
+        Action::UpdateMods { instance_id, json } => check_mod_updates(&instance_id, json, true),
         Action::ListVersions {
             show_alpha,
             show_beta,
             show_snapshots,
-        } => list_versions(show_alpha, show_beta, show_snapshots),
+            json,
+        } => list_versions(show_alpha, show_beta, show_snapshots, json),
         Action::Play {
             instance_id,
             username,
-        } => play_instance(&instance_id, &username),
+        } => play_instance(&instance_id, username.as_deref()),
         Action::InstallMod { instance_id, spec } => install_mod(&instance_id, &spec),
         Action::Repair { instance_id } => repair_instance(&instance_id),
         Action::ImportPack {
             instance_id,
             pack_path,
         } => import_pack(&instance_id, &pack_path),
+        Action::ExportInstance {
+            instance_id,
+            destination,
+        } => export_instance(&instance_id, &destination),
+        Action::ImportInstance { archive } => import_instance(&archive),
+        Action::Duplicate {
+            instance_id,
+            saves,
+            json,
+        } => duplicate_instance(&instance_id, saves, json),
         Action::Gui => run_gui(handoff),
     }
 }
+
+/// Hide the console Windows creates for a double-clicked GUI binary.
+///
+/// The process deliberately keeps the console subsystem so `--help`, `--play`
+/// and the headless commands still print when run from a terminal. A console
+/// shared with the launching shell has more than one attached process and is
+/// left untouched; an explorer-created console belongs only to us and is
+/// hidden, so the desktop app opens without a black window behind it.
+#[cfg(windows)]
+fn hide_own_console() {
+    use windows_sys::Win32::System::Console::{GetConsoleProcessList, GetConsoleWindow};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, ShowWindow};
+
+    // SAFETY: both calls only read the current process console and toggle the
+    // visibility of the window handle the OS just returned.
+    unsafe {
+        let window = GetConsoleWindow();
+        if window.is_null() {
+            return;
+        }
+        let mut processes = [0_u32; 2];
+        let attached = GetConsoleProcessList(processes.as_mut_ptr(), processes.len() as u32);
+        if attached <= 1 {
+            ShowWindow(window, SW_HIDE);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn hide_own_console() {}
 
 fn forward_to_primary() -> ExitCode {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
@@ -129,6 +256,7 @@ fn forward_to_primary() -> ExitCode {
 fn parse_args(args: impl Iterator<Item = String>) -> Result<Action, String> {
     let mut args = args.peekable();
     let mut help = false;
+    let mut version = false;
     let mut list_versions = false;
     let mut show_alpha = false;
     let mut show_beta = false;
@@ -138,13 +266,50 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Action, String> {
     let mut repair_instance_id = None;
     let mut install_mod = None;
     let mut import_pack = None;
+    let mut export_instance = None;
+    let mut import_instance = None;
+    let mut duplicate_instance = None;
+    let mut duplicate_with_worlds = false;
+    let mut list_instances = false;
+    let mut status = false;
+    let mut accounts_report = false;
+    let mut use_account = None;
+    let mut check_updates = None;
+    let mut update_mods = None;
+    let mut json = false;
     while let Some(argument) = args.next() {
         match argument.as_str() {
             "--help" | "-h" => help = true,
+            "--version" | "-V" => version = true,
             "--list-versions" => list_versions = true,
             "--show-alpha" => show_alpha = true,
             "--show-beta" => show_beta = true,
             "--hide-snapshots" => show_snapshots = false,
+            "--list-instances" => list_instances = true,
+            "--json" => json = true,
+            "--status" => status = true,
+            "--accounts" => accounts_report = true,
+            "--check-updates" => {
+                check_updates = Some(
+                    args.next()
+                        .filter(|value| !value.starts_with('-'))
+                        .ok_or_else(|| "--check-updates requires an instance id".to_owned())?,
+                );
+            }
+            "--update-mods" => {
+                update_mods = Some(
+                    args.next()
+                        .filter(|value| !value.starts_with('-'))
+                        .ok_or_else(|| "--update-mods requires an instance id".to_owned())?,
+                );
+            }
+            "--use-account" => {
+                use_account = Some(
+                    args.next()
+                        .filter(|value| !value.starts_with('-'))
+                        .ok_or_else(|| "--use-account requires an account name".to_owned())?,
+                );
+            }
             "--offline" => {
                 offline_name = Some(
                     args.next()
@@ -190,11 +355,144 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Action, String> {
                     .ok_or_else(|| "--import-modpack requires a .mrpack or .zip path".to_owned())?;
                 import_pack = Some((target, pack_path));
             }
+            "--export-instance" => {
+                let target = args
+                    .next()
+                    .filter(|value| !value.starts_with('-'))
+                    .ok_or_else(|| "--export-instance requires an instance id".to_owned())?;
+                let destination = args
+                    .next()
+                    .filter(|value| !value.starts_with('-'))
+                    .ok_or_else(|| {
+                        "--export-instance requires a .zip destination path".to_owned()
+                    })?;
+                export_instance = Some((target, destination));
+            }
+            "--import-instance" => {
+                import_instance = Some(
+                    args.next()
+                        .filter(|value| !value.starts_with('-'))
+                        .ok_or_else(|| "--import-instance requires an archive path".to_owned())?,
+                );
+            }
+            "--duplicate" => {
+                duplicate_instance = Some(
+                    args.next()
+                        .filter(|value| !value.starts_with('-'))
+                        .ok_or_else(|| "--duplicate requires an instance id".to_owned())?,
+                );
+            }
+            "--with-worlds" => duplicate_with_worlds = true,
             unknown => return Err(format!("unknown option: {unknown}")),
         }
     }
     if help {
         return Ok(Action::Help);
+    }
+    if json
+        && !version
+        && offline_name.is_none()
+        && !list_instances
+        && !status
+        && !list_versions
+        && !accounts_report
+        && use_account.is_none()
+        && check_updates.is_none()
+        && update_mods.is_none()
+        && duplicate_instance.is_none()
+    {
+        return Err(
+            "--json refines --version, --offline, --list-versions, --list-instances, --status, --accounts or --use-account"
+                .to_owned(),
+        );
+    }
+    if accounts_report && use_account.is_some() {
+        return Err("--accounts and --use-account are separate commands".to_owned());
+    }
+    if accounts_report || use_account.is_some() {
+        let mixed = version
+            || list_versions
+            || list_instances
+            || status
+            || instance_id.is_some()
+            || offline_name.is_some()
+            || install_mod.is_some()
+            || import_pack.is_some()
+            || export_instance.is_some()
+            || import_instance.is_some()
+            || duplicate_instance.is_some()
+            || repair_instance_id.is_some();
+        if mixed {
+            return Err("--accounts and --use-account are standalone commands".to_owned());
+        }
+        if accounts_report {
+            return Ok(Action::Accounts { json });
+        }
+        if let Some(name) = use_account {
+            return Ok(Action::UseAccount { name, json });
+        }
+    }
+    if version {
+        return Ok(Action::Version { json });
+    }
+    if check_updates.is_some() && update_mods.is_some() {
+        return Err("--check-updates and --update-mods are separate operations".to_owned());
+    }
+    if check_updates.is_some() || update_mods.is_some() {
+        let apply = update_mods.is_some();
+        let mixed = version
+            || list_versions
+            || list_instances
+            || status
+            || accounts_report
+            || use_account.is_some()
+            || instance_id.is_some()
+            || offline_name.is_some()
+            || install_mod.is_some()
+            || import_pack.is_some()
+            || export_instance.is_some()
+            || import_instance.is_some()
+            || duplicate_instance.is_some()
+            || repair_instance_id.is_some();
+        if mixed {
+            return Err("--check-updates and --update-mods are standalone operations".to_owned());
+        }
+        let target = check_updates
+            .or(update_mods)
+            .expect("a checked instance id is present");
+        return Ok(if apply {
+            Action::UpdateMods {
+                instance_id: target,
+                json,
+            }
+        } else {
+            Action::CheckUpdates {
+                instance_id: target,
+                json,
+            }
+        });
+    }
+    if list_instances && status {
+        return Err("--list-instances and --status are separate reports".to_owned());
+    }
+    if (list_instances || status)
+        && (instance_id.is_some()
+            || offline_name.is_some()
+            || install_mod.is_some()
+            || import_pack.is_some()
+            || export_instance.is_some()
+            || import_instance.is_some()
+            || duplicate_instance.is_some()
+            || repair_instance_id.is_some()
+            || list_versions)
+    {
+        return Err("--list-instances and --status are standalone reports".to_owned());
+    }
+    if list_instances {
+        return Ok(Action::ListInstances { json });
+    }
+    if status {
+        return Ok(Action::Status { json });
     }
     if list_versions && (offline_name.is_some() || instance_id.is_some() || install_mod.is_some()) {
         return Err(
@@ -216,14 +514,62 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Action, String> {
     if import_pack.is_some() && (instance_id.is_some() || offline_name.is_some()) {
         return Err("--import-modpack cannot be combined with --play or --offline".to_owned());
     }
+    if export_instance.is_some()
+        && (instance_id.is_some()
+            || offline_name.is_some()
+            || install_mod.is_some()
+            || import_pack.is_some()
+            || import_instance.is_some()
+            || duplicate_instance.is_some()
+            || repair_instance_id.is_some()
+            || list_versions)
+    {
+        return Err("--export-instance is a standalone operation".to_owned());
+    }
+    if import_instance.is_some()
+        && (instance_id.is_some()
+            || offline_name.is_some()
+            || install_mod.is_some()
+            || import_pack.is_some()
+            || duplicate_instance.is_some()
+            || repair_instance_id.is_some()
+            || list_versions)
+    {
+        return Err("--import-instance is a standalone operation".to_owned());
+    }
     if install_mod.is_some() && import_pack.is_some() {
         return Err("--install-mod and --import-modpack are separate operations".to_owned());
+    }
+    if duplicate_with_worlds && duplicate_instance.is_none() {
+        return Err("--with-worlds requires --duplicate".to_owned());
+    }
+    if let Some(duplicate_id) = duplicate_instance {
+        let mixed = version
+            || list_versions
+            || list_instances
+            || status
+            || instance_id.is_some()
+            || offline_name.is_some()
+            || install_mod.is_some()
+            || import_pack.is_some()
+            || export_instance.is_some()
+            || import_instance.is_some()
+            || repair_instance_id.is_some();
+        if mixed {
+            return Err("--duplicate is a standalone operation".to_owned());
+        }
+        return Ok(Action::Duplicate {
+            instance_id: duplicate_id,
+            saves: duplicate_with_worlds,
+            json,
+        });
     }
     if list_versions {
         return Ok(Action::ListVersions {
             show_alpha,
             show_beta,
             show_snapshots,
+            json,
         });
     }
     if let Some((instance_id, spec)) = install_mod {
@@ -232,6 +578,15 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Action, String> {
     if let Some(instance_id) = repair_instance_id {
         return Ok(Action::Repair { instance_id });
     }
+    if let Some((instance_id, destination)) = export_instance {
+        return Ok(Action::ExportInstance {
+            instance_id,
+            destination,
+        });
+    }
+    if let Some(archive) = import_instance {
+        return Ok(Action::ImportInstance { archive });
+    }
     if let Some((instance_id, pack_path)) = import_pack {
         return Ok(Action::ImportPack {
             instance_id,
@@ -239,14 +594,13 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Action, String> {
         });
     }
     if let Some(instance_id) = instance_id {
-        let username = offline_name.unwrap_or_else(|| "Player".to_owned());
         return Ok(Action::Play {
             instance_id,
-            username,
+            username: offline_name,
         });
     }
     if let Some(name) = offline_name {
-        return Ok(Action::Offline(name));
+        return Ok(Action::Offline { name, json });
     }
     if show_alpha || show_beta || !show_snapshots {
         return Err("version filters require --list-versions".to_owned());
@@ -257,16 +611,40 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Action, String> {
 fn usage() -> &'static str {
     "Kaelis — Rust Minecraft Java launcher\n\
      Usage:\n\
-       kaelis [--help]\n\
+       kaelis [--help | --version]\n\
        kaelis --list-versions [--show-alpha] [--show-beta] [--hide-snapshots]\n\
        kaelis --offline <username>\n\
        kaelis --play <instance-id> [--offline <username>]\n\
        kaelis --install-mod <instance-id> <modrinth:project|curseforge:id|slug>\n\
        kaelis --repair <instance-id>\n\
        kaelis --import-modpack <instance-id> <pack.mrpack|pack.zip>\n\
+       kaelis --export-instance <instance-id> <destination.kaelis.zip>\n\
+       kaelis --import-instance <kaelis.zip|prism.zip|curseforge.zip|pack.zip>\n\
+       kaelis --duplicate <instance-id> [--with-worlds] [--json]\n\
+       kaelis --list-instances [--json]\n\
+       kaelis --status [--json]\n\
+       kaelis --accounts [--json]\n\
+       kaelis --use-account <name> [--json]\n\
+       kaelis --check-updates <instance-id> [--json]\n\
+       kaelis --update-mods <instance-id> [--json]\n\
      With no arguments, open the Kaelis desktop launcher.\n\
+     --play without --offline uses the saved offline account that is active, so\n\
+     a command-line launch and the desktop launch agree.\n\
+     --use-account switches the identity the next launch uses; an unknown but\n\
+     valid offline username is added to the saved list. It changes no token, so\n\
+     a Microsoft row needs a token stored by a previous GUI sign-in.\n\
      --install-mod also installs every required dependency, and --repair installs\n\
-     every required mod that the instance is missing."
+     every required mod that the instance is missing.\n\
+     --check-updates hashes installed mods and asks Modrinth for the newest\n\
+     compatible version of each; --update-mods also downloads and verifies every\n\
+     update, keeping disabled jars disabled.\n\
+     --export-instance writes a portable archive. --import-instance reads\n\
+     Kaelis, Prism/MultiMC, and CurseForge archives and loose game-folder zips,\n\
+     creating an instance under a free id.\n\
+     --duplicate copies mods, packs, shaders, settings, and notes under a free\n\
+     id; add --with-worlds to copy saves too. Logs and crash reports never copy.\n\
+     --json prints one machine-readable document instead of prose; every report\n\
+     is stable across versions so scripts and MCP servers can parse it."
 }
 
 fn effective_loader(instance: &Instance) -> String {
@@ -438,6 +816,97 @@ fn repair_instance(instance_id: &str) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Compare installed mods with Modrinth, optionally applying every update.
+fn check_mod_updates(instance_id: &str, json: bool, apply: bool) -> ExitCode {
+    let instance = match Instance::load(instance_id) {
+        Ok(instance) => instance,
+        Err(error) => {
+            eprintln!("[Kaelis] could not load instance {instance_id}: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if instance.loader.eq_ignore_ascii_case("vanilla") {
+        eprintln!("[Kaelis] mod updates require a Fabric, Quilt, Forge or NeoForge instance");
+        return ExitCode::FAILURE;
+    }
+    let runtime = match runtime() {
+        Ok(runtime) => runtime,
+        Err(error) => return fail(error),
+    };
+    let http = match http_client() {
+        Ok(http) => http,
+        Err(error) => return fail(error),
+    };
+    let report = match runtime.block_on(kaelis_api::updates::check_updates(&http, &instance)) {
+        Ok(report) => report,
+        Err(error) => return fail(format!("could not check mod updates: {error}")),
+    };
+    let mods_dir = instance.root.join("mods");
+    let mut applied = Vec::new();
+    let mut failures = Vec::new();
+    if apply {
+        for update in &report.updates {
+            match runtime.block_on(kaelis_api::updates::apply_update(&http, &mods_dir, update)) {
+                Ok(path) => applied.push(
+                    path.file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                ),
+                Err(error) => failures.push(format!("{}: {error}", update.title)),
+            }
+        }
+    }
+    if json {
+        print_json(serde_json::json!({
+            "instance": instance.id,
+            "mc_version": instance.mc_version,
+            "loader": instance.loader,
+            "checked": report.checked,
+            "up_to_date": report.up_to_date,
+            "unmatched": report.unmatched,
+            "skipped": report.skipped,
+            "updates": report.updates,
+            "applied": applied,
+            "failed": failures,
+        }));
+    } else {
+        println!("{}", report.summary());
+        for update in &report.updates {
+            println!(
+                "  {}  {} → {}{} ({})",
+                update.title,
+                update.current_file,
+                update.latest_version,
+                if update.channel == "release" {
+                    String::new()
+                } else {
+                    format!(" [{}]", update.channel)
+                },
+                kaelis_api::portable::human_bytes(update.size)
+            );
+        }
+        if report.skipped > 0 {
+            println!(
+                "  skipped {} file(s) beyond the per-run request cap",
+                report.skipped
+            );
+        }
+        if apply {
+            for name in &applied {
+                println!("updated {name}");
+            }
+        }
+        for failure in &failures {
+            eprintln!("[Kaelis] update failed: {failure}");
+        }
+    }
+    if failures.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
 fn import_pack(instance_id: &str, pack_path: &str) -> ExitCode {
     let instance = match Instance::load(instance_id) {
         Ok(instance) => instance,
@@ -474,6 +943,340 @@ fn import_pack(instance_id: &str, pack_path: &str) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Write one portable archive for a saved instance.
+fn export_instance(instance_id: &str, destination: &str) -> ExitCode {
+    let instance = match Instance::load(instance_id) {
+        Ok(instance) => instance,
+        Err(error) => {
+            eprintln!("[Kaelis] could not load instance {instance_id}: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match kaelis_api::portable::export_instance(&instance, std::path::Path::new(destination)) {
+        Ok(report) => {
+            println!("{} → {destination}", report.summary());
+            for skipped in report.skipped.iter().take(10) {
+                println!("  skipped {skipped}");
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("[Kaelis] instance export failed: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Copy one saved instance under a fresh id, reporting real file counts.
+fn duplicate_instance(instance_id: &str, saves: bool, json: bool) -> ExitCode {
+    let instance = match Instance::load(instance_id) {
+        Ok(instance) => instance,
+        Err(error) => {
+            eprintln!("[Kaelis] could not load instance {instance_id}: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let options = DuplicateOptions {
+        content: true,
+        saves,
+        settings: true,
+    };
+    match instance.duplicate(options) {
+        Ok(report) => {
+            if json {
+                print_json(serde_json::json!({
+                    "source": instance_id,
+                    "id": report.instance.id,
+                    "name": report.instance.name,
+                    "root": report.instance.root,
+                    "mc_version": report.instance.mc_version,
+                    "loader": report.instance.loader,
+                    "files": report.files,
+                    "bytes": report.bytes,
+                    "skipped": report.skipped,
+                }));
+            } else {
+                println!("{} ({})", report.summary(), report.instance.id);
+                for skipped in report.skipped.iter().take(10) {
+                    println!("  skipped {skipped}");
+                }
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("[Kaelis] instance duplicate failed: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Unpack a portable archive into the live instances folder.
+fn import_instance(archive: &str) -> ExitCode {
+    let path = std::path::Path::new(archive);
+    let probe = match kaelis_api::foreign::probe_archive(path) {
+        Ok(probe) => probe,
+        Err(error) => {
+            eprintln!("[Kaelis] this is not a recognisable instance: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let instances = Instance::instances_dir();
+    if probe.kind == kaelis_api::foreign::ForeignKind::Modrinth {
+        eprintln!(
+            "[Kaelis] this is a Modrinth pack: open Kaelis and drop it on Content, or use --import-modpack."
+        );
+        return ExitCode::FAILURE;
+    }
+    let result = if probe.kind == kaelis_api::foreign::ForeignKind::Kaelis {
+        kaelis_api::portable::import_instance(path, &instances)
+            .map(|report| (report.summary(), report.instance.id))
+            .map_err(|error| error.to_string())
+    } else {
+        kaelis_api::foreign::import_foreign_archive(path, &probe, &instances, "")
+            .map(|report| (report.summary(), report.instance.id))
+            .map_err(|error| error.to_string())
+    };
+    match result {
+        Ok((summary, id)) => {
+            println!("{summary} ({id})");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("[Kaelis] instance import failed: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Print one JSON document on stdout. Machine consumers read only this stream;
+/// warnings stay on stderr so a parse cannot be corrupted by diagnostics.
+fn print_json(value: serde_json::Value) {
+    match serde_json::to_string_pretty(&value) {
+        Ok(text) => println!("{text}"),
+        Err(error) => eprintln!("[Kaelis] could not encode JSON: {error}"),
+    }
+}
+
+fn instance_mod_count(instance: &Instance) -> usize {
+    std::fs::read_dir(instance.root.join("mods"))
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|entry| {
+                    entry
+                        .path()
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("jar"))
+                })
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+fn short_uuid(uuid: &str) -> String {
+    if uuid.len() >= 8 {
+        format!("{}…", &uuid[..8])
+    } else if uuid.is_empty() {
+        "no profile id yet".to_owned()
+    } else {
+        uuid.to_owned()
+    }
+}
+
+/// Saved identities and the one the next launch prefers.
+fn list_accounts(json: bool) -> ExitCode {
+    let settings = match kaelis_api::accounts::try_load_settings() {
+        Ok(settings) => settings,
+        Err(error) => return fail(format!("could not read settings: {error}")),
+    };
+    let accounts = migrated_accounts(&settings);
+    let active = active_account(&settings, &accounts);
+    let is_active = |account: &kaelis_api::accounts::SavedAccount| {
+        active.is_some_and(|active| {
+            active.kind == account.kind && active.name.eq_ignore_ascii_case(&account.name)
+        })
+    };
+    if json {
+        let records = accounts
+            .iter()
+            .map(|account| {
+                serde_json::json!({
+                    "kind": account.kind.as_str(),
+                    "name": account.name,
+                    "uuid": account.uuid,
+                    "added_unix": account.added_unix,
+                    "active": is_active(account),
+                })
+            })
+            .collect::<Vec<_>>();
+        print_json(serde_json::json!({
+            "count": records.len(),
+            "active": active.map(|account| serde_json::json!({
+                "kind": account.kind.as_str(),
+                "name": account.name,
+                "uuid": account.uuid,
+            })),
+            "accounts": records,
+        }));
+        return ExitCode::SUCCESS;
+    }
+    if accounts.is_empty() {
+        println!("no saved accounts yet");
+        return ExitCode::SUCCESS;
+    }
+    match active {
+        Some(account) => println!(
+            "{} saved account{} · active: {} ({})",
+            accounts.len(),
+            if accounts.len() == 1 { "" } else { "s" },
+            account.name,
+            account.kind.label().to_ascii_lowercase()
+        ),
+        None => println!(
+            "{} saved account{} · none active",
+            accounts.len(),
+            if accounts.len() == 1 { "" } else { "s" }
+        ),
+    }
+    for account in &accounts {
+        println!(
+            "  {} {:<18} {:<10} {}",
+            if is_active(account) { "*" } else { " " },
+            account.name,
+            account.kind.label().to_ascii_lowercase(),
+            short_uuid(&account.uuid)
+        );
+    }
+    ExitCode::SUCCESS
+}
+
+/// Choose the identity the next launch uses. No credential is read or written.
+fn use_account(name: &str, json: bool) -> ExitCode {
+    let account = match switch_account(name) {
+        Ok(account) => account,
+        Err(error) => return fail(format!("could not switch account: {error}")),
+    };
+    if json {
+        print_json(serde_json::json!({
+            "active": {
+                "kind": account.kind.as_str(),
+                "name": account.name,
+                "uuid": account.uuid,
+            },
+            "restart_required": true,
+        }));
+        return ExitCode::SUCCESS;
+    }
+    println!(
+        "Active account: {} ({})",
+        account.name,
+        account.kind.label().to_ascii_lowercase()
+    );
+    println!("Takes effect on the next Kaelis launch.");
+    ExitCode::SUCCESS
+}
+
+/// Report every saved instance without touching the network.
+fn list_instances(json: bool) -> ExitCode {
+    let instances = match Instance::load_all() {
+        Ok(instances) => instances,
+        Err(error) => return fail(format!("could not read instances: {error}")),
+    };
+    if json {
+        let records = instances
+            .iter()
+            .map(|instance| {
+                serde_json::json!({
+                    "id": instance.id,
+                    "name": instance.name,
+                    "mc_version": instance.mc_version,
+                    "loader": effective_loader(instance),
+                    "root": instance.root.display().to_string(),
+                    "mods": instance_mod_count(instance),
+                    "ram_mb": instance.ram_mb,
+                    "group": instance.group,
+                    "last_played_unix": instance.last_played_unix,
+                })
+            })
+            .collect::<Vec<_>>();
+        print_json(serde_json::json!({
+            "count": records.len(),
+            "instances": records,
+        }));
+        return ExitCode::SUCCESS;
+    }
+    if instances.is_empty() {
+        println!("no instances yet");
+        return ExitCode::SUCCESS;
+    }
+    for instance in &instances {
+        println!(
+            "{}  {}  {}  {}  {} mods",
+            instance.id,
+            instance.name,
+            instance.mc_version,
+            effective_loader(instance),
+            instance_mod_count(instance)
+        );
+    }
+    ExitCode::SUCCESS
+}
+
+/// Report the local environment: paths, Java, and instance inventory size.
+fn status(json: bool) -> ExitCode {
+    let instances_dir = Instance::instances_dir();
+    let data_dir = instances_dir
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| instances_dir.clone());
+    let instances = Instance::load_all().unwrap_or_default();
+    let java = kaelis_api::runtime::java_on_path()
+        .or_else(kaelis_api::runtime::system_java)
+        .map(|path| path.display().to_string());
+    let settings = load_settings();
+    let accounts = migrated_accounts(&settings);
+    let active = active_account(&settings, &accounts);
+    if json {
+        print_json(serde_json::json!({
+            "name": kaelis_core::brand::LAUNCHER_NAME,
+            "version": env!("CARGO_PKG_VERSION"),
+            "platform": kaelis_core::brand::build_platform(),
+            "profile": if cfg!(debug_assertions) { "debug" } else { "release" },
+            "data_dir": data_dir.display().to_string(),
+            "instances_dir": instances_dir.display().to_string(),
+            "instances": instances.len(),
+            "accounts": accounts.len(),
+            "active_account": active.map(|account| serde_json::json!({
+                "kind": account.kind.as_str(),
+                "name": account.name,
+                "uuid": account.uuid,
+            })),
+            "java": java,
+            "website": kaelis_core::brand::WEBSITE,
+        }));
+        return ExitCode::SUCCESS;
+    }
+    println!(
+        "{} {}",
+        kaelis_core::brand::LAUNCHER_NAME,
+        env!("CARGO_PKG_VERSION")
+    );
+    println!("platform: {}", kaelis_core::brand::build_platform());
+    println!("data: {}", data_dir.display());
+    println!("instances: {}", instances.len());
+    println!(
+        "accounts: {}{}",
+        accounts.len(),
+        active.map_or_else(String::new, |account| format!(
+            " · active {} ({})",
+            account.name,
+            account.kind.label().to_ascii_lowercase()
+        ))
+    );
+    println!("java: {}", java.as_deref().unwrap_or("not found yet"));
+    ExitCode::SUCCESS
 }
 
 fn runtime() -> Result<tokio::runtime::Runtime, String> {
@@ -515,7 +1318,7 @@ fn https_redirects_only() -> reqwest::redirect::Policy {
     })
 }
 
-fn list_versions(show_alpha: bool, show_beta: bool, show_snapshots: bool) -> ExitCode {
+fn list_versions(show_alpha: bool, show_beta: bool, show_snapshots: bool, json: bool) -> ExitCode {
     let runtime = match runtime() {
         Ok(runtime) => runtime,
         Err(error) => return fail(error),
@@ -528,17 +1331,62 @@ fn list_versions(show_alpha: bool, show_beta: bool, show_snapshots: bool) -> Exi
         Ok(manifest) => manifest,
         Err(error) => return fail(format!("could not load Mojang version manifest: {error}")),
     };
-    for version in
+    let versions =
         kaelis_api::versions::filter_versions(&manifest, show_alpha, show_beta, show_snapshots)
             .into_iter()
             .take(30)
-    {
+            .collect::<Vec<_>>();
+    if json {
+        print_json(serde_json::json!({
+            "latest": {
+                "release": manifest.latest.release,
+                "snapshot": manifest.latest.snapshot,
+            },
+            "count": versions.len(),
+            "versions": versions
+                .iter()
+                .map(|version| serde_json::json!({
+                    "id": version.id,
+                    "type": version.kind,
+                    "released": version.release_time,
+                }))
+                .collect::<Vec<_>>(),
+        }));
+        return ExitCode::SUCCESS;
+    }
+    for version in versions {
         println!("{}  [{}]", version.id, version.kind);
     }
     ExitCode::SUCCESS
 }
 
-fn play_instance(instance_id: &str, username: &str) -> ExitCode {
+/// Resolve the offline identity for a headless launch.
+///
+/// The GUI and CLI share one saved account list, so a player who picked an
+/// offline profile in the window should not silently launch as `Player` from a
+/// script. A Microsoft identity cannot be used here because its access token
+/// is minted inside the GUI, and that is stated rather than guessed at.
+fn headless_identity(requested: Option<&str>) -> Result<String, String> {
+    if let Some(name) = requested {
+        return Ok(name.to_owned());
+    }
+    let settings = load_settings();
+    let accounts = migrated_accounts(&settings);
+    match active_account(&settings, &accounts) {
+        Some(account) if account.kind == AccountKind::Offline => Ok(account.name.clone()),
+        Some(account) => Err(format!(
+            "the active account is Microsoft ({}) and command-line launches are offline-only; pass --offline <username> to choose an identity",
+            account.name
+        )),
+        None => Ok("Player".to_owned()),
+    }
+}
+
+fn play_instance(instance_id: &str, username: Option<&str>) -> ExitCode {
+    let username = match headless_identity(username) {
+        Ok(username) => username,
+        Err(error) => return fail(error),
+    };
     let runtime = match runtime() {
         Ok(runtime) => runtime,
         Err(error) => return fail(error),
@@ -547,7 +1395,7 @@ fn play_instance(instance_id: &str, username: &str) -> ExitCode {
         Ok(instance) => instance,
         Err(error) => return fail(format!("could not load instance: {error}")),
     };
-    let profile = offline_profile(username);
+    let profile = offline_profile(&username);
     let identity = LaunchIdentity::offline(profile.name, profile.uuid);
     let log = EphemeralLog::new(20_000);
     match runtime.block_on(run_instance(instance, identity, log.clone(), || {})) {
@@ -578,13 +1426,33 @@ fn run_gui(handoff: Option<HandoffServer>) -> ExitCode {
     let _ = kaelis_core::sweeper::sweep_stale(3600);
     let sweeper = kaelis_core::sweeper::spawn_background_sweeper(runtime.handle(), 300, 3600);
     let handle = runtime.handle().clone();
+    // Capture runs may ask for a larger stage so the marketing stills stay
+    // crisp; the shipping default still fits a 1366×768 laptop.
+    let window_size = if std::env::var_os("KAELIS_SCREENSHOT").is_some() {
+        match (
+            std::env::var("KAELIS_SCREENSHOT_WIDTH")
+                .ok()
+                .and_then(|value| value.parse::<f32>().ok()),
+            std::env::var("KAELIS_SCREENSHOT_HEIGHT")
+                .ok()
+                .and_then(|value| value.parse::<f32>().ok()),
+        ) {
+            (Some(width), Some(height)) => [width, height],
+            _ => [1080.0, 700.0],
+        }
+    } else {
+        [1080.0, 700.0]
+    };
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             // Fits a 1366×768 laptop with the taskbar visible; eframe restores
             // the last size and position once the window has been moved.
-            .with_inner_size([1080.0, 700.0])
+            .with_inner_size(window_size)
             .with_min_inner_size([760.0, 520.0])
             .with_icon(kaelis_gui::window_icon())
+            // Wayland/X11 use the app id to match the window to its desktop
+            // entry, so the icon and name are right in the taskbar.
+            .with_app_id("kaelis")
             .with_transparent(true),
         ..Default::default()
     };
@@ -609,8 +1477,105 @@ fn fail(message: String) -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_REDIRECTS, redirect_chain_is_allowed};
+    use super::{Action, MAX_REDIRECTS, parse_args, redirect_chain_is_allowed};
     use reqwest::Url;
+
+    fn parse(arguments: &[&str]) -> Result<Action, String> {
+        parse_args(arguments.iter().map(|value| (*value).to_owned()))
+    }
+
+    #[test]
+    fn json_marks_only_machine_readable_reports() {
+        assert!(matches!(
+            parse(&["--list-instances", "--json"]),
+            Ok(Action::ListInstances { json: true })
+        ));
+        assert!(matches!(
+            parse(&["--status", "--json"]),
+            Ok(Action::Status { json: true })
+        ));
+        // `--json` alone has nothing to describe and must not open the GUI by
+        // accident, which would look like a working command to a script.
+        assert!(parse(&["--json"]).is_err());
+    }
+
+    #[test]
+    fn reports_refuse_to_mix_with_launching() {
+        assert!(parse(&["--status", "--play", "fabric-1-21"]).is_err());
+        assert!(parse(&["--list-instances", "--status"]).is_err());
+    }
+
+    #[test]
+    fn account_commands_parse_and_stay_standalone() {
+        assert!(matches!(
+            parse(&["--accounts", "--json"]),
+            Ok(Action::Accounts { json: true })
+        ));
+        assert!(matches!(
+            parse(&["--use-account", "Builder"]),
+            Ok(Action::UseAccount { name, json: false }) if name == "Builder"
+        ));
+        assert!(parse(&["--accounts", "--use-account", "Builder"]).is_err());
+        assert!(parse(&["--accounts", "--list-instances"]).is_err());
+        assert!(parse(&["--use-account", "Builder", "--play", "x"]).is_err());
+    }
+
+    #[test]
+    fn play_without_an_explicit_name_defers_to_the_saved_account() {
+        assert!(matches!(
+            parse(&["--play", "fabric-1-21"]),
+            Ok(Action::Play { username: None, .. })
+        ));
+        assert!(matches!(
+            parse(&["--play", "fabric-1-21", "--offline", "Builder"]),
+            Ok(Action::Play { username: Some(name), .. }) if name == "Builder"
+        ));
+    }
+
+    #[test]
+    fn update_checks_are_standalone_and_accept_json() {
+        assert!(matches!(
+            parse(&["--check-updates", "sodium", "--json"]),
+            Ok(Action::CheckUpdates { json: true, .. })
+        ));
+        assert!(matches!(
+            parse(&["--update-mods", "sodium"]),
+            Ok(Action::UpdateMods { json: false, .. })
+        ));
+        assert!(parse(&["--check-updates", "sodium", "--play", "x"]).is_err());
+        assert!(parse(&["--check-updates", "x", "--update-mods", "y"]).is_err());
+    }
+
+    #[test]
+    fn duplicate_is_standalone_and_worlds_is_opt_in() {
+        assert!(matches!(
+            parse(&["--duplicate", "fabric-1-21"]),
+            Ok(Action::Duplicate {
+                saves: false,
+                json: false,
+                ..
+            })
+        ));
+        assert!(matches!(
+            parse(&["--duplicate", "fabric-1-21", "--with-worlds", "--json"]),
+            Ok(Action::Duplicate {
+                saves: true,
+                json: true,
+                ..
+            })
+        ));
+        assert!(parse(&["--with-worlds"]).is_err());
+        assert!(parse(&["--duplicate", "a", "--play", "b"]).is_err());
+        assert!(parse(&["--duplicate", "a", "--list-instances"]).is_err());
+    }
+
+    #[test]
+    fn list_versions_accepts_the_json_contract() {
+        assert!(matches!(
+            parse(&["--list-versions", "--json"]),
+            Ok(Action::ListVersions { json: true, .. })
+        ));
+    }
 
     #[test]
     fn allows_https_redirects_to_download_cdn_hosts() {

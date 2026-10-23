@@ -7,8 +7,8 @@ edition = "2024"
 rust-version = "1.85"
 license = "MIT"
 description = "Kaelis — a native Rust Minecraft launcher"
-homepage = "https://github.com/epufk/kaelis"
-repository = "https://github.com/epufk/kaelis"
+homepage = "https://github.com/fuvji/kaelis"
+repository = "https://github.com/fuvji/kaelis"
 
 [profile.release]
 opt-level = 3

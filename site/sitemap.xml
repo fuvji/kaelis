@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
+        xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
+  <url>
+    <loc>https://fuvji.github.io/kaelis/</loc>
+    <lastmod>2026-10-22</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://fuvji.github.io/kaelis/assets/app-overview.png</image:loc>
+      <image:title>Kaelis overview</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://fuvji.github.io/kaelis/assets/app-content.png</image:loc>
+      <image:title>Kaelis content browser</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://fuvji.github.io/kaelis/assets/app-accounts.png</image:loc>
+      <image:title>Kaelis account manager</image:title>
+    </image:image>
+    <video:video>
+      <video:thumbnail_loc>https://fuvji.github.io/kaelis/media/kaelis-intro-poster.jpg</video:thumbnail_loc>
+      <video:title>Kaelis in 26 seconds</video:title>
+      <video:description>A short tour of the library, the install channel, and the launch flow.</video:description>
+      <video:content_loc>https://fuvji.github.io/kaelis/media/kaelis-intro.mp4</video:content_loc>
+      <video:duration>26</video:duration>
+      <video:family_friendly>yes</video:family_friendly>
+      <video:live>no</video:live>
+    </video:video>
+  </url>
+</urlset>

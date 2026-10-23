@@ -5,21 +5,44 @@ ManifestDPIAware true
 !include "FileFunc.nsh"
 
 !define APP_NAME "Kaelis"
-!define APP_VERSION "0.1.0"
+!ifndef APP_VERSION
+  !define APP_VERSION "0.1.0"
+!endif
+!ifndef APP_VERSION4
+  !define APP_VERSION4 "0.1.0.0"
+!endif
 !define APP_PUBLISHER "Kaelis Labs"
-!define APP_URL "https://github.com/epufk/kaelis"
+!define APP_URL "https://github.com/fuvji/kaelis"
 !define APP_EXE "kaelis.exe"
 !define REG_UNINSTALL "Software\Microsoft\Windows\CurrentVersion\Uninstall\Kaelis"
 
+# release.ps1 stages the payload in target/installer and overrides every path,
+# so a running dist/Kaelis.exe can never be packaged by mistake.
+!ifndef KAELIS_EXE
+  !define KAELIS_EXE "..\dist\Kaelis.exe"
+!endif
+!ifndef KAELIS_LICENSE
+  !define KAELIS_LICENSE "..\LICENSE"
+!endif
+!ifndef KAELIS_README
+  !define KAELIS_README "..\README.md"
+!endif
+!ifndef KAELIS_ICON
+  !define KAELIS_ICON "..\assets\kaelis.ico"
+!endif
+!ifndef KAELIS_OUT
+  !define KAELIS_OUT "..\dist\Kaelis-Setup.exe"
+!endif
+
 Name "${APP_NAME}"
-OutFile "..\dist\Kaelis-Setup.exe"
+OutFile "${KAELIS_OUT}"
 InstallDir "$LOCALAPPDATA\Programs\Kaelis"
 InstallDirRegKey HKCU "Software\Kaelis" "InstallDir"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 SetCompressorDictSize 64
 
-VIProductVersion "0.1.0.0"
+VIProductVersion "${APP_VERSION4}"
 VIAddVersionKey /LANG=1033 "ProductName" "${APP_NAME}"
 VIAddVersionKey /LANG=1033 "ProductVersion" "${APP_VERSION}"
 VIAddVersionKey /LANG=1033 "CompanyName" "${APP_PUBLISHER}"
@@ -29,8 +52,8 @@ VIAddVersionKey /LANG=1033 "LegalCopyright" "Copyright (c) 2026 Kaelis Labs"
 VIAddVersionKey /LANG=1033 "OriginalFilename" "Kaelis-Setup.exe"
 
 !define MUI_ABORTWARNING
-!define MUI_ICON "..\assets\kaelis.ico"
-!define MUI_UNICON "..\assets\kaelis.ico"
+!define MUI_ICON "${KAELIS_ICON}"
+!define MUI_UNICON "${KAELIS_ICON}"
 !define MUI_WELCOMEPAGE_TITLE "Install Kaelis"
 !define MUI_WELCOMEPAGE_TEXT "A native Rust workspace for Minecraft instances, mods, resource packs, shaders, and worlds.$\r$\n$\r$\nThis per-user install needs no administrator rights. Your instances and accounts stay in your own Windows profile."
 !define MUI_FINISHPAGE_RUN "$INSTDIR\${APP_EXE}"
@@ -51,9 +74,9 @@ VIAddVersionKey /LANG=1033 "OriginalFilename" "Kaelis-Setup.exe"
 Section "Kaelis" SecMain
   SetOutPath "$INSTDIR"
   SetOverwrite on
-  File "..\dist\Kaelis.exe"
-  File "..\LICENSE"
-  File "..\README.md"
+  File "${KAELIS_EXE}"
+  File "${KAELIS_LICENSE}"
+  File "${KAELIS_README}"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
   CreateDirectory "$SMPROGRAMS\Kaelis"
