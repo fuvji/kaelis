@@ -1443,7 +1443,74 @@ fn run_gui(handoff: Option<HandoffServer>) -> ExitCode {
     } else {
         [1080.0, 700.0]
     };
-    let options = eframe::NativeOptions {
+    // The app creator is consumed by a backend that fails before the window
+    // exists, so the handoff server and sweeper wait in slots that only the
+    // attempt that really starts the event loop takes from.
+    let handoff = std::sync::Arc::new(std::sync::Mutex::new(handoff));
+    let sweeper = std::sync::Arc::new(std::sync::Mutex::new(Some(sweeper)));
+    // A remote-desktop or virtual-machine session can expose only OpenGL 1.1,
+    // which the glow renderer refuses; Direct3D 12 (and its WARP software
+    // adapter) still works there, so wgpu is the fallback rather than a crash.
+    let requested = std::env::var("KAELIS_RENDERER").ok();
+    let mut failures = Vec::new();
+    for (renderer, label) in renderer_attempts(requested.as_deref()) {
+        let options = native_options(renderer, window_size);
+        let handoff = std::sync::Arc::clone(&handoff);
+        let sweeper = std::sync::Arc::clone(&sweeper);
+        let client = client.clone();
+        let handle = handle.clone();
+        match eframe::run_native(
+            kaelis_core::brand::LAUNCHER_NAME,
+            options,
+            Box::new(move |creation| {
+                let handoff = handoff.lock().ok().and_then(|mut slot| slot.take());
+                let sweeper = match sweeper.lock().ok().and_then(|mut slot| slot.take()) {
+                    Some(sweeper) => sweeper,
+                    // Only a retry reaches this: keep the same app shape with
+                    // a finished task instead of a second sweeper.
+                    None => handle.spawn(async {}),
+                };
+                Ok(Box::new(kaelis_gui::KaelisApp::new(
+                    creation, client, handle, sweeper, handoff,
+                )))
+            }),
+        ) {
+            Ok(()) => return ExitCode::SUCCESS,
+            Err(error) => {
+                // A terminal launch and the packaged build both deserve the
+                // reason: the fallback hides it otherwise.
+                eprintln!(
+                    "[{}] {label} renderer unavailable: {error}",
+                    kaelis_core::brand::LAUNCHER_NAME
+                );
+                failures.push(format!("{label}: {error}"));
+            }
+        }
+    }
+    report_startup_error(&failures.join("\n"));
+    ExitCode::FAILURE
+}
+
+/// Which backends to try, in order. `KAELIS_RENDERER=glow|wgpu` pins one for
+/// diagnostics; otherwise OpenGL runs first because it starts fastest, and wgpu
+/// catches the drivers where a remote session only offers OpenGL 1.1.
+fn renderer_attempts(requested: Option<&str>) -> Vec<(eframe::Renderer, &'static str)> {
+    match requested
+        .map(|value| value.trim().to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("glow" | "opengl") => vec![(eframe::Renderer::Glow, "OpenGL")],
+        Some("wgpu") => vec![(eframe::Renderer::Wgpu, "wgpu")],
+        _ => vec![
+            (eframe::Renderer::Glow, "OpenGL"),
+            (eframe::Renderer::Wgpu, "wgpu"),
+        ],
+    }
+}
+
+fn native_options(renderer: eframe::Renderer, window_size: [f32; 2]) -> eframe::NativeOptions {
+    eframe::NativeOptions {
+        renderer,
         viewport: eframe::egui::ViewportBuilder::default()
             // Fits a 1366×768 laptop with the taskbar visible; eframe restores
             // the last size and position once the window has been moved.
@@ -1455,19 +1522,40 @@ fn run_gui(handoff: Option<HandoffServer>) -> ExitCode {
             .with_app_id("kaelis")
             .with_transparent(true),
         ..Default::default()
-    };
-    match eframe::run_native(
-        kaelis_core::brand::LAUNCHER_NAME,
-        options,
-        Box::new(move |creation| {
-            Ok(Box::new(kaelis_gui::KaelisApp::new(
-                creation, client, handle, sweeper, handoff,
-            )))
-        }),
-    ) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => fail(format!("could not run Kaelis UI: {error}")),
     }
+}
+
+/// A GUI build has no console, so a launch that cannot open a window has to say
+/// why in a dialog; otherwise it looks like the app silently did nothing.
+fn report_startup_error(details: &str) {
+    eprintln!(
+        "[{}] could not run Kaelis UI: {details}",
+        kaelis_core::brand::LAUNCHER_NAME
+    );
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
+        let message = format!(
+            "Kaelis could not open its window.\n\n{details}\n\n\
+             Update the graphics driver, or run Kaelis outside a remote desktop session."
+        );
+        let title = wide(kaelis_core::brand::LAUNCHER_NAME);
+        let text = wide(&message);
+        // SAFETY: both buffers are NUL-terminated and live for the call.
+        unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                text.as_ptr(),
+                title.as_ptr(),
+                MB_OK | MB_ICONERROR,
+            );
+        }
+    }
+}
+
+#[cfg(windows)]
+fn wide(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 fn fail(message: String) -> ExitCode {
@@ -1477,11 +1565,28 @@ fn fail(message: String) -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{Action, MAX_REDIRECTS, parse_args, redirect_chain_is_allowed};
+    use super::{Action, MAX_REDIRECTS, parse_args, redirect_chain_is_allowed, renderer_attempts};
     use reqwest::Url;
 
     fn parse(arguments: &[&str]) -> Result<Action, String> {
         parse_args(arguments.iter().map(|value| (*value).to_owned()))
+    }
+
+    #[test]
+    fn renderer_attempts_prefer_opengl_and_allow_pinning() {
+        let fallback = renderer_attempts(None);
+        assert_eq!(fallback.len(), 2);
+        assert!(matches!(fallback[0].0, eframe::Renderer::Glow));
+        assert!(matches!(fallback[1].0, eframe::Renderer::Wgpu));
+        let pinned = renderer_attempts(Some(" WGPU "));
+        assert_eq!(pinned.len(), 1);
+        assert!(matches!(pinned[0].0, eframe::Renderer::Wgpu));
+        assert!(matches!(
+            renderer_attempts(Some("opengl"))[0].0,
+            eframe::Renderer::Glow
+        ));
+        // An unknown pin keeps the default order instead of failing to start.
+        assert_eq!(renderer_attempts(Some("software")).len(), 2);
     }
 
     #[test]

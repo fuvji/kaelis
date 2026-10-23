@@ -14,7 +14,7 @@ path = "src/main.rs"
 kaelis-core = { path = "../kaelis-core" }
 kaelis-api = { path = "../kaelis-api" }
 kaelis-gui = { path = "../kaelis-gui" }
-eframe = { version = "0.28", features = ["default_fonts", "glow"] }
+eframe = { version = "0.28", features = ["default_fonts", "glow", "wgpu"] }
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
 serde_json = "1"

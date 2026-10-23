@@ -11,7 +11,10 @@ kaelis-core = { path = "../kaelis-core" }
 kaelis-api = { path = "../kaelis-api" }
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
-eframe = { version = "0.28", features = ["default_fonts", "glow"] }
+# Both renderers are compiled so a remote-desktop or virtual-machine session,
+# which often exposes only OpenGL 1.1, can still start: glow is the fast path
+# and wgpu reaches Direct3D 12 (including the WARP software adapter) and Vulkan.
+eframe = { version = "0.28", features = ["default_fonts", "glow", "wgpu"] }
 egui = "0.28"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "ico", "bmp"] }
 base64 = "0.22"
