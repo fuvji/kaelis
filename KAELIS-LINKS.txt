@@ -1,6 +1,6 @@
 KAELIS - URL, INSTALLATION, AND LINK INDEX
 ==========================================
-Launcher      Kaelis 0.1.2
+Launcher      Kaelis 0.1.3
 Platform      windows-x86_64
 Packaged      2026-10-23T12:31:54Z
 Generator     tools/links.ps1 (run again after any endpoint or release change)
