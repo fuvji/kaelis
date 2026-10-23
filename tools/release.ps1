@@ -92,8 +92,10 @@ $setupPath = Join-Path $downloads "Kaelis-Setup.exe"
 if (-not $SkipInstaller) {
     $makensis = Join-Path $root "tools/nsis/nsis-3.11/makensis.exe"
     if (-not (Test-Path $makensis)) {
+        # CI installs NSIS through choco, so the vendored copy is only a local
+        # shortcut; fall through to PATH and then fail clearly.
         $command = Get-Command makensis -ErrorAction SilentlyContinue
-        if ($command) { $makensis = $command.Source }
+        $makensis = if ($command) { $command.Source } else { $null }
     }
     if (-not $makensis) {
         throw "makensis was not found. Install NSIS (choco install nsis) or pass -SkipInstaller."
