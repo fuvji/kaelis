@@ -2,10 +2,10 @@ KAELIS - URL, INSTALLATION, AND LINK INDEX
 ==========================================
 Launcher      Kaelis 0.1.0
 Platform      windows-x86_64
-Packaged      2026-10-22T15:49:34Z
+Packaged      2026-10-23T12:31:54Z
 Generator     tools/links.ps1 (run again after any endpoint or release change)
-Repository    https://github.com/epufk/kaelis
-Website       https://epufk.github.io/kaelis/
+Repository    https://github.com/fuvji/kaelis
+Website       https://fuvji.github.io/kaelis/
 
 This file is generated, not hand-edited. Every URL the launcher uses, every
 download and installation method, and every project/community link is
@@ -16,45 +16,45 @@ link files, and refreshes the hashes after the build.
 1. OFFICIAL DOWNLOADS
 ==============================================================================
   Project website
-    https://epufk.github.io/kaelis/
+    https://fuvji.github.io/kaelis/
   Download section
-    https://epufk.github.io/kaelis/#downloads
+    https://fuvji.github.io/kaelis/#downloads
   Windows portable EXE
-    https://epufk.github.io/kaelis/downloads/Kaelis.exe
+    https://fuvji.github.io/kaelis/downloads/Kaelis.exe
     Single executable, no installer, no runtime prerequisite.
   Windows portable ZIP
-    https://epufk.github.io/kaelis/downloads/Kaelis-Portable.zip
+    https://fuvji.github.io/kaelis/downloads/Kaelis-Portable.zip
     EXE + LICENSE + portable README.
   Windows installer
-    https://epufk.github.io/kaelis/downloads/Kaelis-Setup.exe
+    https://fuvji.github.io/kaelis/downloads/Kaelis-Setup.exe
     Per-user install under %LOCALAPPDATA%\Programs\Kaelis; no admin rights.
   Checksums (SHA-256)
-    https://epufk.github.io/kaelis/downloads/SHA256SUMS.txt
+    https://fuvji.github.io/kaelis/downloads/SHA256SUMS.txt
     Verify every download with certutil or sha256sum.
   Download README
-    https://epufk.github.io/kaelis/downloads/README.md
+    https://fuvji.github.io/kaelis/downloads/README.md
     Portable usage, scripting, and verification.
   This index, published
-    https://epufk.github.io/kaelis/downloads/KAELIS-LINKS.txt
+    https://fuvji.github.io/kaelis/downloads/KAELIS-LINKS.txt
     Same generated content as dist/KAELIS-LINKS.txt.
   macOS universal build
-    https://github.com/epufk/kaelis/releases/latest/download/Kaelis-macos-universal.zip
+    https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.zip
     Built and signed ad hoc by packaging/macos/bundle.sh.
   Linux x64 build
-    https://github.com/epufk/kaelis/releases/latest/download/Kaelis-linux-x64.tar.gz
+    https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.tar.gz
     Binary, desktop entry, icon, LICENSE, README.
   Every release
-    https://github.com/epufk/kaelis/releases
+    https://github.com/fuvji/kaelis/releases
     All tagged builds and assets.
   Latest release
-    https://github.com/epufk/kaelis/releases/latest
+    https://github.com/fuvji/kaelis/releases/latest
     Newest tagged release.
   Latest Windows EXE
-    https://github.com/epufk/kaelis/releases/latest/download/Kaelis.exe
+    https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe
   Latest Windows ZIP
-    https://github.com/epufk/kaelis/releases/latest/download/Kaelis-Portable.zip
+    https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Portable.zip
   Latest Windows installer
-    https://github.com/epufk/kaelis/releases/latest/download/Kaelis-Setup.exe
+    https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Setup.exe
 
 ==============================================================================
 2. INSTALLATION METHODS
@@ -99,7 +99,7 @@ link files, and refreshes the hashes after the build.
     macOS:   stable-aarch64-apple-darwin or stable-x86_64-apple-darwin
     Linux:   stable-x86_64-unknown-linux-gnu
     Commands:
-      git clone https://github.com/epufk/kaelis.git
+      git clone https://github.com/fuvji/kaelis.git
       cd kaelis
       cargo build --release -p kaelis-launcher
       target/release/kaelis --version
@@ -305,25 +305,25 @@ link files, and refreshes the hashes after the build.
 5. PROJECT, COMMUNITY, AND SECURITY
 ==============================================================================
   Source repository
-    https://github.com/epufk/kaelis
+    https://github.com/fuvji/kaelis
   Clone URL
-    https://github.com/epufk/kaelis.git
+    https://github.com/fuvji/kaelis.git
   Issues
-    https://github.com/epufk/kaelis/issues
+    https://github.com/fuvji/kaelis/issues
   Security advisory
-    https://github.com/epufk/kaelis/security/advisories/new
+    https://github.com/fuvji/kaelis/security/advisories/new
   Release workflow
-    https://github.com/epufk/kaelis/actions/workflows/release.yml
+    https://github.com/fuvji/kaelis/actions/workflows/release.yml
   CI workflow
-    https://github.com/epufk/kaelis/actions/workflows/ci.yml
+    https://github.com/fuvji/kaelis/actions/workflows/ci.yml
   Build and CLI guide
-    https://github.com/epufk/kaelis#quick-start
+    https://github.com/fuvji/kaelis#quick-start
   Command reference
-    https://github.com/epufk/kaelis#command-line
+    https://github.com/fuvji/kaelis#command-line
   Discord community
     https://discord.gg/fvrdYzrQjq
   Founder
-    https://github.com/epufk
+    https://github.com/fuvji
   MIT license
     https://opensource.org/licenses/MIT
 
@@ -333,16 +333,16 @@ link files, and refreshes the hashes after the build.
   Paths are relative to the repository root. Hashes are SHA-256.
 
   site/downloads/Kaelis.exe
-    14398976 bytes (13.7 MB)
-    504949f41ce0abc3fb2772daed95b575ceb026b442a2b1146e9b2b0c558a8fe1
+    14405120 bytes (13.7 MB)
+    f78df36e89b1578a0b24c179187a5a00e7b6d357aed6873297887b051c25aaca
 
   site/downloads/Kaelis-Portable.zip
-    6975535 bytes (6.7 MB)
-    d686c9d6811ad115305a623082ee906d0f6dd1e162ddad72e07fb2afbe8c07fc
+    6978736 bytes (6.7 MB)
+    830d4d8f22fb6bc84b47126ff61e11585d22d3f5184f394d006be7649d9312c5
 
   site/downloads/Kaelis-Setup.exe
-    5283173 bytes (5.0 MB)
-    31c962012ea6def5816ac19cba0e40890a16acc004ffde991b03b001909e446f
+    5285013 bytes (5.0 MB)
+    5d916bab9f4dc0f5a1b4d017edce85b205dece71f6e1890dd15d45b00937913e
 
   dist/Kaelis.exe and dist/Kaelis-Setup.exe are local scratch copies;
   site/downloads is the published set. The portable ZIP contains the same
@@ -355,7 +355,7 @@ link files, and refreshes the hashes after the build.
     certutil -hashfile Kaelis.exe SHA256
   macOS / Linux:
     shasum -a 256 -c SHA256SUMS.txt
-  Compare against https://epufk.github.io/kaelis/downloads/SHA256SUMS.txt.
+  Compare against https://fuvji.github.io/kaelis/downloads/SHA256SUMS.txt.
   A mismatched file is not a Kaelis release.
 
 ==============================================================================
