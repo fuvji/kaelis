@@ -330,6 +330,26 @@ mod platform {
     use std::sync::mpsc;
     use std::time::Duration;
 
+    /// A Unix socket address is capped near 104 bytes (`sun_path`), so a deep
+    /// data root fails to bind with `SUN_LEN`. Such a path falls back to the
+    /// short temp directory under a hash of itself: one data root still maps to
+    /// one socket, and `bind` keeps the file at mode 0600 there as well.
+    const SOCKET_PATH_LIMIT: usize = 96;
+
+    pub(super) fn socket_path_in(dir: &std::path::Path, name: &str) -> PathBuf {
+        let path = dir.join(format!("{name}.sock"));
+        let encoded = path.as_os_str().as_encoded_bytes();
+        if encoded.len() <= SOCKET_PATH_LIMIT {
+            return path;
+        }
+        let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+        for byte in encoded {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        std::env::temp_dir().join(format!("kaelis-{hash:016x}.sock"))
+    }
+
     fn socket_path(name: &str) -> PathBuf {
         let dir = std::env::var_os("KAELIS_DATA_DIR")
             .map(PathBuf::from)
@@ -338,7 +358,7 @@ mod platform {
                     .map(|dirs| dirs.data_dir().to_path_buf())
             })
             .unwrap_or_else(std::env::temp_dir);
-        dir.join(format!("{name}.sock"))
+        socket_path_in(&dir, name)
     }
 
     pub(super) fn bind(name: &str) -> Result<super::HandoffServer, HandoffError> {
@@ -471,6 +491,29 @@ mod tests {
         assert_eq!(
             server.recv_timeout(Duration::from_secs(2)),
             Some(Vec::new())
+        );
+    }
+
+    /// macOS homes and temp roots are long enough that a nested data root blows
+    /// past `sun_path`; the fallback must stay short and stay per-root.
+    #[cfg(unix)]
+    #[test]
+    fn keeps_the_unix_socket_under_the_address_limit() {
+        let deep = std::path::PathBuf::from("/tmp").join("data-root-".repeat(20));
+        let fallback = super::platform::socket_path_in(&deep, "kaelis");
+        assert!(fallback.as_os_str().as_encoded_bytes().len() <= 96);
+        assert_ne!(
+            super::platform::socket_path_in(&deep, "a"),
+            super::platform::socket_path_in(&deep, "b")
+        );
+        assert_ne!(
+            super::platform::socket_path_in(&deep, "kaelis"),
+            super::platform::socket_path_in(&std::path::PathBuf::from("/tmp/other"), "kaelis")
+        );
+        let short = std::path::PathBuf::from("/tmp/kaelis");
+        assert_eq!(
+            super::platform::socket_path_in(&short, "kaelis"),
+            short.join("kaelis.sock")
         );
     }
 
