@@ -4,6 +4,8 @@ A lightweight Minecraft launcher for Windows, macOS, and Linux.
 
 [Website](https://fuvji.github.io/kaelis/) · [Download](https://github.com/fuvji/kaelis/releases/latest) · [Report an issue](https://github.com/fuvji/kaelis/issues) · [Discord](https://discord.gg/fvrdYzrQjq)
 
+[![CI](https://github.com/fuvji/kaelis/actions/workflows/ci.yml/badge.svg)](https://github.com/fuvji/kaelis/actions/workflows/ci.yml)
+
 ## Features
 
 - Create and manage Minecraft instances.
