@@ -962,7 +962,7 @@ mod tests {
             std::process::id(),
             TEST_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
-        std::fs::write(&path, b"test executable path").unwrap();
+        crate::runtime::write_java_stub(&path).unwrap();
         let mut instance = test_instance();
         instance.java_path = Some(path.clone());
         let result = resolve_java_executable(&instance);
@@ -980,7 +980,7 @@ mod tests {
         let bin = home.join("bin");
         std::fs::create_dir_all(&bin).unwrap();
         let java = bin.join(crate::runtime::java_binary_name());
-        std::fs::write(&java, b"test executable path").unwrap();
+        crate::runtime::write_java_stub(&java).unwrap();
         let mut instance = test_instance();
         instance.java_path = Some(home.clone());
 
@@ -1004,7 +1004,7 @@ mod tests {
             .join("bin");
         std::fs::create_dir_all(&bin).unwrap();
         let java = bin.join(crate::runtime::java_binary_name());
-        std::fs::write(&java, b"test executable path").unwrap();
+        crate::runtime::write_java_stub(&java).unwrap();
         let mut instance = test_instance();
         instance.root = root.clone();
 

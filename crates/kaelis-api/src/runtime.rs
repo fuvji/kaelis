@@ -529,6 +529,19 @@ where
     Ok(java)
 }
 
+/// Write a stub java executable for tests. A Unix launch requires the execute
+/// bit on the file, so the stub carries one; Windows only needs it to exist.
+#[cfg(test)]
+pub(crate) fn write_java_stub(path: &Path) -> std::io::Result<()> {
+    std::fs::write(path, b"stub")?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -575,7 +588,7 @@ mod tests {
                 .join("bin");
             std::fs::create_dir_all(&bin).unwrap();
             if complete {
-                std::fs::write(bin.join(java_binary_name()), b"stub").unwrap();
+                write_java_stub(&bin.join(java_binary_name())).unwrap();
             }
         }
 
@@ -601,7 +614,7 @@ mod tests {
         ));
         std::fs::create_dir_all(home.join("bin")).unwrap();
         let java = home.join("bin").join(java_binary_name());
-        std::fs::write(&java, b"stub").unwrap();
+        write_java_stub(&java).unwrap();
 
         assert_eq!(java_from_setting(&home), Some(java.clone()));
         assert_eq!(java_from_setting(&java), Some(java.clone()));
