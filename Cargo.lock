@@ -2697,7 +2697,7 @@ dependencies = [
 
 [[package]]
 name = "kaelis-api"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "futures",
@@ -2720,7 +2720,7 @@ dependencies = [
 
 [[package]]
 name = "kaelis-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "directories",
  "libc",
@@ -2733,7 +2733,7 @@ dependencies = [
 
 [[package]]
 name = "kaelis-gui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arboard",
  "base64 0.22.1",
@@ -2757,7 +2757,7 @@ dependencies = [
 
 [[package]]
 name = "kaelis-launcher"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "eframe",
  "embed-resource",
