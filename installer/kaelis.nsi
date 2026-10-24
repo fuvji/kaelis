@@ -6,10 +6,10 @@ ManifestDPIAware true
 
 !define APP_NAME "Kaelis"
 !ifndef APP_VERSION
-  !define APP_VERSION "0.1.3"
+  !define APP_VERSION "0.1.4"
 !endif
 !ifndef APP_VERSION4
-  !define APP_VERSION4 "0.1.3.0"
+  !define APP_VERSION4 "0.1.4.0"
 !endif
 !define APP_PUBLISHER "Kaelis Labs"
 !define APP_URL "https://github.com/fuvji/kaelis"
@@ -74,6 +74,15 @@ VIAddVersionKey /LANG=1033 "OriginalFilename" "Kaelis-Setup.exe"
 Section "Kaelis" SecMain
   SetOutPath "$INSTDIR"
   SetOverwrite on
+  # An upgrade replaces the previous build in place. Delete its payload first
+  # so no stale binary, uninstaller, or document survives the install; the
+  # running executable is never overwritten while it is open, so Windows would
+  # otherwise keep the old file alive under a different name.
+  Delete "$INSTDIR\${APP_EXE}"
+  Delete "$INSTDIR\LICENSE"
+  Delete "$INSTDIR\README.md"
+  Delete "$INSTDIR\Uninstall.exe"
+  Delete "$INSTDIR\${APP_EXE}.old"
   File "${KAELIS_EXE}"
   File "${KAELIS_LICENSE}"
   File "${KAELIS_README}"

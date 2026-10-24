@@ -1,6 +1,6 @@
 [package]
 name = "kaelis-api"
-version = "0.1.3"
+version = "0.1.4"
 edition.workspace = true
 description = "Kaelis API: Mojang versions, Modrinth, CurseForge, auth, and launch"
 homepage = "https://github.com/fuvji/kaelis"
@@ -15,12 +15,9 @@ serde_json = "1"
 thiserror = "2"
 futures = "0.3"
 sha1 = "0.10"
-sha2 = "0.10"
-rand = "0.8"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 zip = "2"
 url = "2"
-base64 = "0.22"
 md-5 = "0.10"
 zeroize = "1"
 

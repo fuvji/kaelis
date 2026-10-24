@@ -45,10 +45,6 @@ use tokio::sync::{Semaphore, mpsc, watch};
 /// that is not derived from it: the brand mark's second facet keeps its own
 /// identity instead of turning muddy at some hues.
 const VIOLET: egui::Color32 = egui::Color32::from_rgb(158, 146, 240);
-const AZURE_DEVICE_CODE_DOC: &str =
-    "https://learn.microsoft.com/entra/identity-platform/v2-oauth2-device-code";
-const AZURE_APP_REGISTRATION: &str =
-    "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade";
 const CURSEFORGE_CONSOLE: &str = "https://console.curseforge.com/";
 /// OLED palette. Panels sit at or near true black so a pixel that draws no
 /// content is off, and the few in-between tones stay within a narrow band:
@@ -68,9 +64,15 @@ const DANGER: egui::Color32 = egui::Color32::from_rgb(255, 107, 112);
 const DANGER_TINT: (u8, u8, u8) = (255, 99, 105);
 /// Soft geometry throughout: controls are capsules, cards are gently rounded
 /// and nothing in the shell presents a hard 90° corner.
-const CORNER_SM: f32 = 9.0;
-const CORNER_MD: f32 = 12.0;
-const CORNER_LG: f32 = 14.0;
+const CORNER_SM: f32 = 10.0;
+const CORNER_MD: f32 = 13.0;
+const CORNER_LG: f32 = 15.0;
+/// Every button, field, and icon action shares these two numbers, so a row of
+/// mixed controls sits on one baseline and reads as the same material. A
+/// single geometry is also why the UI cannot drift back into mismatched
+/// heights as new controls are added.
+const CONTROL_HEIGHT: f32 = 26.0;
+const CONTROL_RADIUS: f32 = 11.0;
 const CORNER_XL: f32 = 16.0;
 /// The shell adapts to the window instead of assuming a desktop-sized canvas.
 /// Below this width the navigation rail collapses to glyphs and stacked
@@ -1075,7 +1077,6 @@ pub struct KaelisApp {
     /// Zoom last pushed into egui, so a Ctrl +/- change can be persisted
     /// without rewriting settings on every idle frame.
     applied_zoom: f32,
-    ms_client_id: String,
     cf_api_key: String,
     integrations_status: String,
     screenshot_path: Option<PathBuf>,
@@ -1168,7 +1169,7 @@ fn install_style(context: &egui::Context) {
     visuals.faint_bg_color = egui::Color32::from_rgb(8, 9, 12);
     // One radius for every control, one step tighter than the cards: inputs
     // and buttons read as the same material without looking pill-shaped.
-    let control_rounding = egui::Rounding::same(CORNER_SM);
+    let control_rounding = egui::Rounding::same(CONTROL_RADIUS);
     visuals.widgets.inactive.rounding = control_rounding;
     visuals.widgets.hovered.rounding = control_rounding;
     visuals.widgets.active.rounding = control_rounding;
@@ -1181,8 +1182,8 @@ fn install_style(context: &egui::Context) {
     // Two pixels tighter on both axes than the old shell. Sixty rows of
     // settings, mods, or instances fit without changing a single label.
     style.spacing.item_spacing = egui::vec2(7.0, 5.0);
-    style.spacing.button_padding = egui::vec2(10.0, 4.0);
-    style.spacing.interact_size.y = 24.0;
+    style.spacing.button_padding = egui::vec2(12.0, 4.0);
+    style.spacing.interact_size.y = CONTROL_HEIGHT;
     style.spacing.slider_width = 190.0;
     style.spacing.scroll.bar_width = 4.0;
     style.spacing.scroll.floating = true;
@@ -1296,16 +1297,10 @@ impl KaelisApp {
         // account signed out; the Account tab still offers a fresh sign-in.
         if account_mode == AccountMode::Microsoft && !launcher_settings.last_account.is_empty() {
             let restore_name = launcher_settings.last_account.clone();
-            let restore_client_id = launcher_settings.ms_client_id.clone();
             let sender = sender.clone();
             let repaint = creation.egui_ctx.clone();
             runtime.spawn(async move {
-                // A configured application keeps its own refresh tokens; an
-                // install that never added one refreshes through the bundled
-                // public client it signed in with.
-                let result = match MicrosoftAuth::with_client_id(restore_client_id)
-                    .or_else(|_| MicrosoftAuth::new())
-                {
+                let result = match MicrosoftAuth::new() {
                     Ok(auth) => auth
                         .login_with_refresh_token(&restore_name)
                         .await
@@ -1478,7 +1473,6 @@ impl KaelisApp {
             auto_basis: 0.0,
             keyboard_nav: false,
             applied_zoom: if saved_scale > 0.0 { saved_scale } else { 1.0 },
-            ms_client_id: launcher_settings.ms_client_id,
             cf_api_key: saved_cf_key,
             integrations_status,
             screenshot_path,
@@ -1554,22 +1548,8 @@ impl KaelisApp {
         self.auth_status = "Requesting a Microsoft device code…".to_owned();
         let sender = self.sender.clone();
         let repaint = context;
-        let configured_client_id = self.ms_client_id.trim().to_owned();
-        if !configured_client_id.is_empty() {
-            let settings = self.settings_snapshot();
-            if let Err(error) = save_settings(&settings) {
-                self.auth_status = format!("Could not save the Microsoft client ID: {error}");
-                self.auth_busy = false;
-                self.auth_cancel = None;
-                return;
-            }
-        }
         self.runtime.spawn(async move {
-            let auth = match if configured_client_id.is_empty() {
-                MicrosoftAuth::new()
-            } else {
-                MicrosoftAuth::with_client_id(configured_client_id)
-            } {
+            let auth = match MicrosoftAuth::new() {
                 Ok(auth) => auth,
                 Err(error) => {
                     send_event(
@@ -1594,65 +1574,6 @@ impl KaelisApp {
             send_event(&sender, &repaint, GuiEvent::DeviceCode(Ok(device.clone())));
             let result = auth
                 .login_with_device_code_cancellable(&device, cancel_receiver)
-                .await
-                .map_err(|error| error.to_string());
-            send_event(&sender, &repaint, GuiEvent::SignedIn(result));
-        });
-    }
-
-    /// Authorization-code + PKCE is the preferred path: it uses a loopback
-    /// redirect, works when a tenant blocks device-code authorization, and
-    /// never asks the player to copy a code. Device code remains the fallback.
-    fn start_browser_sign_in(&mut self, context: egui::Context) {
-        if self.auth_busy {
-            return;
-        }
-        let configured_client_id = self.ms_client_id.trim().to_owned();
-        if !configured_client_id.is_empty() {
-            let settings = self.settings_snapshot();
-            if let Err(error) = save_settings(&settings) {
-                self.auth_status = format!("Could not save the Microsoft client ID: {error}");
-                return;
-            }
-        }
-        let (cancel, cancel_receiver) = watch::channel(false);
-        self.auth_cancel = Some(cancel);
-        self.auth_busy = true;
-        self.auth_status =
-            "Opening Microsoft sign-in. Finish in the browser; this window updates automatically."
-                .to_owned();
-        let sender = self.sender.clone();
-        let repaint = context;
-        self.runtime.spawn(async move {
-            let auth = match if configured_client_id.is_empty() {
-                MicrosoftAuth::new()
-            } else {
-                MicrosoftAuth::with_client_id(configured_client_id)
-            } {
-                Ok(auth) => auth,
-                Err(error) => {
-                    send_event(
-                        &sender,
-                        &repaint,
-                        GuiEvent::SignedIn(Err(error.to_string())),
-                    );
-                    return;
-                }
-            };
-            let flow = match auth.begin_browser_login().await {
-                Ok(flow) => flow,
-                Err(error) => {
-                    send_event(
-                        &sender,
-                        &repaint,
-                        GuiEvent::SignedIn(Err(error.to_string())),
-                    );
-                    return;
-                }
-            };
-            repaint.open_url(egui::OpenUrl::new_tab(flow.authorize_url().to_owned()));
-            let result = flow
-                .finish(&auth, cancel_receiver)
                 .await
                 .map_err(|error| error.to_string());
             send_event(&sender, &repaint, GuiEvent::SignedIn(result));
@@ -3679,7 +3600,6 @@ impl KaelisApp {
     /// new field can never be dropped by one of the six save paths.
     fn settings_snapshot(&self) -> LauncherSettings {
         LauncherSettings {
-            ms_client_id: self.ms_client_id.trim().to_owned(),
             last_account: self.last_account.clone(),
             account_mode: Some(self.account_mode),
             auto_repair: self.auto_repair_before_launch,
@@ -3791,7 +3711,6 @@ impl KaelisApp {
     }
 
     fn save_integrations(&mut self) {
-        let ms_client_id = self.ms_client_id.trim().to_owned();
         let settings = self.settings_snapshot();
         if let Err(error) = save_settings(&settings) {
             self.set_status(
@@ -3800,7 +3719,6 @@ impl KaelisApp {
             );
             return;
         }
-        self.ms_client_id = ms_client_id;
         let key = self.cf_api_key.trim().to_owned();
         let key_result = if key.is_empty() {
             kaelis_api::secrets::delete_secret(kaelis_api::secrets::CURSEFORGE_KEY_ACCOUNT)
@@ -3819,11 +3737,7 @@ impl KaelisApp {
             self.http.clone(),
             (!key.is_empty()).then_some(key),
         );
-        self.integrations_status = if self.ms_client_id.is_empty() {
-            "Saved. Microsoft sign-in uses the built-in client until you add your own.".to_owned()
-        } else {
-            "Integration settings saved.".to_owned()
-        };
+        self.integrations_status = "Integration settings saved.".to_owned();
         self.set_status(StatusKind::Success, self.integrations_status.clone());
     }
 
@@ -4130,16 +4044,6 @@ impl KaelisApp {
         (added, refreshed)
     }
 
-    /// Public Microsoft client id, falling back to the environment variable.
-    fn microsoft_client_id(&self) -> String {
-        let configured = self.ms_client_id.trim();
-        if configured.is_empty() {
-            std::env::var("KAELIS_MS_CLIENT_ID").unwrap_or_default()
-        } else {
-            configured.to_owned()
-        }
-    }
-
     fn active_identity_matches(&self, account: &SavedAccount) -> bool {
         match account.kind {
             AccountKind::Microsoft => self
@@ -4202,13 +4106,6 @@ impl KaelisApp {
                 self.upsert_account(AccountKind::Offline, &profile.name, &profile.uuid);
             }
             AccountKind::Microsoft => {
-                let client_id = self.microsoft_client_id();
-                if client_id.is_empty() {
-                    self.auth_status =
-                        "Microsoft sign-in needs a public client ID in Settings > Integrations."
-                            .to_owned();
-                    return;
-                }
                 self.account_mode = AccountMode::Microsoft;
                 self.offline_account = None;
                 self.avatar = None;
@@ -4224,7 +4121,7 @@ impl KaelisApp {
                     })
                     .await;
                     let result = match token {
-                        Ok(Ok(_)) => match MicrosoftAuth::with_client_id(client_id) {
+                        Ok(Ok(_)) => match MicrosoftAuth::new() {
                             Ok(auth) => auth
                                 .login_with_refresh_token(&name)
                                 .await
@@ -4719,14 +4616,8 @@ impl KaelisApp {
                 self.avatar = None;
                 self.account_mode = AccountMode::Microsoft;
                 self.last_account = session.profile.name.clone();
-                let client_id = if self.ms_client_id.trim().is_empty() {
-                    std::env::var("KAELIS_MS_CLIENT_ID").unwrap_or_default()
-                } else {
-                    self.ms_client_id.trim().to_owned()
-                };
-                let mut settings = self.settings_snapshot();
-                settings.ms_client_id = client_id;
-                let saved = save_settings(&settings).map_err(|error| error.to_string());
+                let saved =
+                    save_settings(&self.settings_snapshot()).map_err(|error| error.to_string());
                 if let Err(error) = saved {
                     self.auth_status =
                         format!("Signed in, but the account preference was not saved: {error}");
@@ -10062,27 +9953,14 @@ impl KaelisApp {
                     self.sign_in_offline(context.clone());
                 }
                 ui.separator();
-                if ui
-                    .add_enabled(!self.auth_busy, egui::Button::new("Sign in with Microsoft"))
+                // The marquee action: accent fill, same height and radius as
+                // every other control in the row.
+                let sign_in = primary_button(ui, "Sign in with Microsoft")
                     .on_hover_text(
                         "Shows a short code, opens the Microsoft page, and finishes by itself once you approve. No setup.",
-                    )
-                    .clicked()
-                {
+                    );
+                if sign_in.clicked() && !self.auth_busy {
                     self.start_sign_in(context.clone());
-                }
-                // Only a registered v2.0 application has a loopback redirect;
-                // showing the button on the bundled client would fail at the
-                // authorize endpoint with unauthorized_client.
-                if !self.microsoft_client_id().is_empty()
-                    && ui
-                        .add_enabled(!self.auth_busy, egui::Button::new("Browser sign-in"))
-                        .on_hover_text(
-                            "Authorization code + PKCE with your registered client; no code to type.",
-                        )
-                        .clicked()
-                {
-                    self.start_browser_sign_in(context.clone());
                 }
                 if self.auth_busy && ui.button("Cancel").clicked() {
                     if let Some(cancel) = self.auth_cancel.take() {
@@ -10158,7 +10036,7 @@ impl KaelisApp {
                                     .unwrap_or_else(|| device.verification_uri.clone());
                                 ui.horizontal(|ui| {
                                     ui.spacing_mut().item_spacing.x = 6.0;
-                                    if ui.small_button("Open Microsoft page").clicked() {
+                                    if primary_button(ui, "Open Microsoft page").clicked() {
                                         context.open_url(egui::OpenUrl::new_tab(uri.clone()));
                                     }
                                     let copy = if self.auth_code_copied {
@@ -10166,7 +10044,7 @@ impl KaelisApp {
                                     } else {
                                         "Copy code"
                                     };
-                                    if ui.small_button(copy).clicked() {
+                                    if outline_button(ui, copy).clicked() {
                                         context.copy_text(device.user_code.clone());
                                         self.auth_code_copied = true;
                                     }
@@ -10220,45 +10098,9 @@ impl KaelisApp {
                 // A visible countdown only needs one repaint per second.
                 context.request_repaint_after(std::time::Duration::from_secs(1));
             }
-            egui::CollapsingHeader::new("Use your own Microsoft application (optional)")
-                .default_open(false)
-                .show(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new(
-                            "Sign-in already works with the built-in Xbox Live client, so this is only for a launcher fork or an admin-managed deployment that must own its app.\n1. Entra > App registrations > New registration; pick “Personal Microsoft accounts only”.\n2. Authentication > Add platform > Mobile and desktop applications. Redirect URI: http://localhost\n3. Advanced settings > Allow public client flows > Yes. Save.\n4. Paste the Application (client) ID into Settings > Integrations.",
-                        )
-                        .size(9.5)
-                        .color(MUTED),
-                    );
-                    ui.hyperlink_to(
-                        egui::RichText::new("Open Entra app registrations ↗").size(9.5),
-                        AZURE_APP_REGISTRATION,
-                    );
-                    ui.label(
-                        egui::RichText::new(
-                            "No client secret. PKCE and device code are public-client flows; only XboxLive.signin is requested.",
-                        )
-                        .size(9.0)
-                        .color(MUTED),
-                    );
-                });
-        });
-
-        ui.add_space(2.0);
-        ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new("Tokens stay in the OS credential store.")
-                    .size(8.5)
-                    .color(MUTED),
-            );
-            ui.hyperlink_to(
-                egui::RichText::new("Device-code docs ↗")
-                    .size(8.5)
-                    .color(accent()),
-                AZURE_DEVICE_CODE_DOC,
-            );
         });
     }
+
     /// The command list. Every rule is one visible line: what it is called,
     /// when it runs, and the exact shell string. Nothing is hidden behind a
     /// second window, so the whole automation is readable at a glance.
@@ -10754,28 +10596,11 @@ impl KaelisApp {
             section_label(ui, "INTEGRATIONS");
             ui.label(
                 egui::RichText::new(
-                    "Microsoft sign-in needs nothing here: one click shows a short code, opens the Microsoft page, and keeps you signed in across restarts through the OS credential store. Add a client ID only to use your own Azure application.",
+                    "Nothing to configure for Microsoft: one click shows a short code, opens the Microsoft page, and keeps you signed in across restarts through the OS credential store. Only the CurseForge key below lives here.",
                 )
                 .small()
                 .weak(),
             );
-            ui.hyperlink_to(
-                egui::RichText::new("Device-code setup guide ↗").size(10.5),
-                AZURE_DEVICE_CODE_DOC,
-            );
-            ui.horizontal(|ui| {
-                ui.label("Microsoft client ID");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.ms_client_id)
-                        .hint_text("Optional — built-in client is used when empty")
-                        .desired_width(330.0),
-                );
-                if !self.ms_client_id.trim().is_empty() {
-                    dot_label(ui, "your app", StatusKind::Success.color());
-                } else {
-                    dot_label(ui, "built in", StatusKind::Info.color());
-                }
-            });
             ui.horizontal(|ui| {
                 ui.label("CurseForge API key");
                 ui.add(
@@ -12268,7 +12093,7 @@ fn discord_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
                 .size(11.0)
                 .color(egui::Color32::WHITE),
         )
-        .rounding(egui::Rounding::same(CORNER_MD)),
+        .rounding(egui::Rounding::same(CONTROL_RADIUS)),
     );
     ui.style_mut().visuals.widgets = previous;
     response
@@ -12325,7 +12150,8 @@ fn danger_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
     }
     let response = ui.add(
         egui::Button::new(egui::RichText::new(label).size(11.0).color(DANGER))
-            .rounding(egui::Rounding::same(CORNER_MD)),
+            .min_size(egui::vec2(0.0, CONTROL_HEIGHT))
+            .rounding(egui::Rounding::same(CONTROL_RADIUS)),
     );
     ui.style_mut().visuals.widgets = previous;
     response
@@ -12494,8 +12320,8 @@ fn ghost_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
     let response = ui
         .add(
             egui::Button::new(egui::RichText::new(text).size(10.5))
-                .small()
-                .rounding(egui::Rounding::same(CORNER_SM)),
+                .min_size(egui::vec2(0.0, CONTROL_HEIGHT))
+                .rounding(egui::Rounding::same(CONTROL_RADIUS)),
         )
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     ui.style_mut().visuals.widgets = previous;
@@ -12608,8 +12434,12 @@ fn glyph_button(
             widgets.inactive
         };
         let painter = ui.painter();
-        painter.rect_filled(rect, egui::Rounding::same(CORNER_MD), widget.weak_bg_fill);
-        painter.rect_stroke(rect, egui::Rounding::same(CORNER_MD), widget.bg_stroke);
+        painter.rect_filled(
+            rect,
+            egui::Rounding::same(CONTROL_RADIUS),
+            widget.weak_bg_fill,
+        );
+        painter.rect_stroke(rect, egui::Rounding::same(CONTROL_RADIUS), widget.bg_stroke);
         let ink = if !enabled {
             MUTED.gamma_multiply(0.55)
         } else if response.hovered() {
@@ -12675,8 +12505,34 @@ fn primary_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
                 .strong()
                 .color(accent_on()),
         )
-        .rounding(egui::Rounding::same(CORNER_MD))
-        .min_size(egui::vec2(98.0, 24.0)),
+        .rounding(egui::Rounding::same(CONTROL_RADIUS))
+        .min_size(egui::vec2(98.0, CONTROL_HEIGHT)),
+    );
+    ui.style_mut().visuals.widgets = previous;
+    response
+}
+
+/// Secondary outlined action: visible at rest, brighter on hover. Same
+/// geometry as [`primary_button`], so a pair of actions lines up exactly.
+fn outline_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    let previous = ui.style().visuals.widgets.clone();
+    {
+        let widgets = &mut ui.style_mut().visuals.widgets;
+        for (widget, fill_alpha) in [
+            (&mut widgets.inactive, 10),
+            (&mut widgets.hovered, 24),
+            (&mut widgets.active, 34),
+        ] {
+            let fill = egui::Color32::from_rgba_unmultiplied(255, 255, 255, fill_alpha);
+            widget.weak_bg_fill = fill;
+            widget.bg_fill = fill;
+            widget.bg_stroke = egui::Stroke::new(1.0_f32, BORDER_BRIGHT);
+        }
+    }
+    let response = ui.add(
+        egui::Button::new(egui::RichText::new(text).size(11.0).color(TEXT))
+            .min_size(egui::vec2(0.0, CONTROL_HEIGHT))
+            .rounding(egui::Rounding::same(CONTROL_RADIUS)),
     );
     ui.style_mut().visuals.widgets = previous;
     response

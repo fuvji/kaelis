@@ -1427,6 +1427,9 @@ fn run_gui(handoff: Option<HandoffServer>) -> ExitCode {
     // startup sweep on the runtime instead of walking the temp folder on the
     // thread that is about to create the window.
     let sweeper = kaelis_core::sweeper::spawn_background_sweeper(runtime.handle(), 300, 3600);
+    // A newer build retires the copies a portable folder or a manual download
+    // left behind, so only one launcher remains next to the running one.
+    kaelis_core::sweeper::retire_older_builds(env!("CARGO_PKG_VERSION"));
     let handle = runtime.handle().clone();
     // Capture runs may ask for a larger stage so the marketing stills stay
     // crisp; the shipping default still fits a 1366×768 laptop.

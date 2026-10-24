@@ -9,19 +9,19 @@ shaders.
 
 ## Performance
 
-Measured on the shipped Windows build with `tools/bench.ps1` (7 runs, warm disk
-cache, window detected through UI Automation) on 2026-10-23:
+Measured on the shipped Windows build with `tools/bench.ps1` (3 runs, warm disk
+cache, window detected through UI Automation) on 2026-10-24:
 
 | Metric | Result |
 | --- | --- |
-| `kaelis --version` | 78 ms median, 92 ms p95 |
-| Window, empty data root | 362 ms median |
-| Window, 200-jar instance | 356 ms median |
-| Working set (idle) | 80 MB empty, 81 MB with 200 jars |
+| `kaelis --version` | 70 ms median, 89 ms p95 |
+| Window, empty data root | 162 ms median |
+| Window, 200-jar instance | 160 ms median |
+| Working set (idle) | 80.0 MB empty, 80.6 MB with 200 jars |
 | Private bytes (idle) | 90 MB |
 | Idle CPU | 0.00% (event-driven, no repaint loop) |
 | Handles | 553 |
-| Release binary | 16,890,368 B |
+| Release binary | 17,862,656 B |
 
 The window does not wait for mod metadata: jar scanning and artwork decoding
 run on workers, so a 200-mod instance opens in the same time as an empty one.
@@ -32,10 +32,10 @@ both renderers, so a session without OpenGL 2.0 still opens a window through
 Direct3D 12; that fallback is the largest part of the size above. Run the same benchmark after a change with
 `powershell -NoProfile -ExecutionPolicy Bypass -File tools/bench.ps1`; it writes
 `target/bench-report.json`. These are single-machine numbers, not a ranking
-against other launchers, and the absolute window time moves with the host:
-re-measuring 0.1.2 and 0.1.3 back to back on this machine lands within a few
-milliseconds of each other, so a number that looks slower here is the machine,
-not the launcher.
+against other launchers, and the absolute window time moves with the host: the
+same machine recorded 362 ms for 0.1.3 on a different day without any change to
+the window path, so a number that looks slower here is the machine, not the
+launcher. The working set and handle count are the figures that stay stable.
 
 ## Quick start
 
@@ -102,9 +102,8 @@ within each site's terms.
 Offline profiles need only a name. Microsoft sign-in needs no setup: **Account →
 Sign in with Microsoft** shows a short code, copies it, opens the Microsoft page,
 and finishes by itself once the page is approved. That is the public Xbox Live
-client the Xbox app signs in with, so there is no Azure registration and no
-client secret; a fork that wants its own application can still paste an Azure
-public client ID in **Settings → Integrations**, which adds a PKCE browser flow.
+client the Xbox app signs in with, so there is no Azure registration, no client
+ID to paste, and no client secret anywhere in the app.
 
 Every sign-in is exchanged through Xbox Live → XSTS → Minecraft Services, so an
 account without Java Edition is refused instead of failing later at launch. The

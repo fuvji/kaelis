@@ -108,8 +108,6 @@ pub fn unix_now() -> i64 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LauncherSettings {
     #[serde(default)]
-    pub ms_client_id: String,
-    #[serde(default)]
     pub last_account: String,
     /// Install missing required mods automatically before the next launch.
     #[serde(default = "default_auto_repair")]
@@ -154,7 +152,6 @@ fn default_auto_repair() -> bool {
 impl Default for LauncherSettings {
     fn default() -> Self {
         Self {
-            ms_client_id: String::new(),
             last_account: String::new(),
             auto_repair: default_auto_repair(),
             auto_resolve_duplicates: default_auto_repair(),
