@@ -164,4 +164,6 @@ jobs:
       - name: Deploy the site with the new downloads
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run pages.yml --ref main
+          # This job checks nothing out, so `gh` has no repository to infer from.
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run pages.yml --ref "$GITHUB_REF_NAME"
