@@ -45,7 +45,6 @@ use tokio::sync::{Semaphore, mpsc, watch};
 /// that is not derived from it: the brand mark's second facet keeps its own
 /// identity instead of turning muddy at some hues.
 const VIOLET: egui::Color32 = egui::Color32::from_rgb(158, 146, 240);
-const CURSEFORGE_CONSOLE: &str = "https://console.curseforge.com/";
 /// OLED palette. Panels sit at or near true black so a pixel that draws no
 /// content is off, and the few in-between tones stay within a narrow band:
 /// on an OLED panel a mid-grey card glows like a lamp in a dark room.
@@ -1077,8 +1076,6 @@ pub struct KaelisApp {
     /// Zoom last pushed into egui, so a Ctrl +/- change can be persisted
     /// without rewriting settings on every idle frame.
     applied_zoom: f32,
-    cf_api_key: String,
-    integrations_status: String,
     screenshot_path: Option<PathBuf>,
     screenshot_frame: u32,
     screenshot_at: u32,
@@ -1277,16 +1274,8 @@ impl KaelisApp {
             Some(profile) => format!("Offline profile ready: {}", profile.name),
             None => "Choose Microsoft sign-in or an offline profile.".to_owned(),
         };
-        let saved_cf_key =
-            kaelis_api::secrets::load_secret(kaelis_api::secrets::CURSEFORGE_KEY_ACCOUNT)
-                .ok()
-                .flatten()
-                .unwrap_or_default();
-        let integrations_status = if saved_cf_key.is_empty() {
-            "CurseForge needs an API key; Microsoft sign-in works without any setup.".to_owned()
-        } else {
-            "CurseForge key loaded from the OS credential store.".to_owned()
-        };
+        // Both integrations are zero-setup now: Microsoft uses a one-click code
+        // and CurseForge answers through its public catalogue.
         let status = if tray.is_some() {
             "Ready".to_owned()
         } else {
@@ -1316,10 +1305,7 @@ impl KaelisApp {
         let (automation_store, automation_warning) = Automation::load();
         let automation_log = automation_warning.into_iter().collect::<Vec<_>>();
         let mut app = Self {
-            platforms: ModPlatformClient::with_curseforge_key(
-                http.clone(),
-                (!saved_cf_key.is_empty()).then(|| saved_cf_key.clone()),
-            ),
+            platforms: ModPlatformClient::new(http.clone()),
             http,
             runtime,
             sender,
@@ -1473,8 +1459,6 @@ impl KaelisApp {
             auto_basis: 0.0,
             keyboard_nav: false,
             applied_zoom: if saved_scale > 0.0 { saved_scale } else { 1.0 },
-            cf_api_key: saved_cf_key,
-            integrations_status,
             screenshot_path,
             screenshot_frame: 0,
             // Async work (a live mod search, an install) needs more than the
@@ -3708,37 +3692,6 @@ impl KaelisApp {
         self.ui_scale = scale;
         self.auto_scale_pending = false;
         self.persist_settings();
-    }
-
-    fn save_integrations(&mut self) {
-        let settings = self.settings_snapshot();
-        if let Err(error) = save_settings(&settings) {
-            self.set_status(
-                StatusKind::Error,
-                format!("Could not save launcher settings: {error}"),
-            );
-            return;
-        }
-        let key = self.cf_api_key.trim().to_owned();
-        let key_result = if key.is_empty() {
-            kaelis_api::secrets::delete_secret(kaelis_api::secrets::CURSEFORGE_KEY_ACCOUNT)
-        } else {
-            kaelis_api::secrets::store_secret(kaelis_api::secrets::CURSEFORGE_KEY_ACCOUNT, &key)
-        };
-        if let Err(error) = key_result {
-            self.set_status(
-                StatusKind::Error,
-                format!("Could not save the CurseForge key: {error}"),
-            );
-            return;
-        }
-        self.cf_api_key = key.clone();
-        self.platforms = ModPlatformClient::with_curseforge_key(
-            self.http.clone(),
-            (!key.is_empty()).then_some(key),
-        );
-        self.integrations_status = "Integration settings saved.".to_owned();
-        self.set_status(StatusKind::Success, self.integrations_status.clone());
     }
 
     fn install_vanilla_instance(&mut self, context: egui::Context, instance: Instance) {
@@ -8245,18 +8198,16 @@ impl KaelisApp {
                     if self.content_kind == ContentKind::Modpack {
                         ui.add_enabled(false, egui::Checkbox::new(&mut false, "Search CurseForge"))
                             .on_disabled_hover_text(
-                                "CurseForge packs need per-file API resolution; Modrinth .mrpack is supported.",
+                                "CurseForge packs list their files by id only; Modrinth .mrpack installs directly.",
                             );
                     } else {
-                        ui.checkbox(&mut self.mod_show_curseforge, "Search CurseForge");
+                        ui.checkbox(&mut self.mod_show_curseforge, "Search CurseForge")
+                            .on_hover_text(
+                                "Resolves a CurseForge project name, link, or id without a key. No key is ever needed.",
+                            );
                     }
                     ui.checkbox(&mut self.mod_auto_search, "Search as I type");
                 });
-                if self.content_kind != ContentKind::Modpack && self.cf_api_key.trim().is_empty() {
-                    chip(ui, "CF key needed", StatusKind::Warning.color()).on_hover_text(
-                        "CurseForge results need a free API key from console.curseforge.com (Settings > Integrations).",
-                    );
-                }
                 if self.search_busy {
                     ui.add(egui::Spinner::new().size(13.0));
                 }
@@ -10640,54 +10591,17 @@ impl KaelisApp {
     }
 
     fn settings_lower(&mut self, ui: &mut egui::Ui) {
-        let mut save_integrations = false;
         Self::glass_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
-            section_label(ui, "INTEGRATIONS");
+            section_label(ui, "ZERO-SETUP SERVICES");
             ui.label(
                 egui::RichText::new(
-                    "Nothing to configure for Microsoft: one click shows a short code, opens the Microsoft page, and keeps you signed in across restarts through the OS credential store. Only the CurseForge key below lives here.",
-                )
-                .small()
-                .weak(),
-            );
-            ui.horizontal(|ui| {
-                ui.label("CurseForge API key");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.cf_api_key)
-                        .password(true)
-                        .hint_text("Stored in the OS credential store")
-                        .desired_width(280.0),
-                );
-                if !self.cf_api_key.trim().is_empty() {
-                    dot_label(ui, "configured", StatusKind::Success.color());
-                }
-                ui.hyperlink_to(
-                    egui::RichText::new("Get a key ↗").size(10.5),
-                    CURSEFORGE_CONSOLE,
-                );
-            });
-            ui.horizontal(|ui| {
-                if ui.button("Save integrations").clicked() {
-                    save_integrations = true;
-                }
-                ui.label(
-                    egui::RichText::new(&self.integrations_status)
-                        .small()
-                        .weak(),
-                );
-            });
-            ui.label(
-                egui::RichText::new(
-                    "The key stays in the OS credential store. Environment variables still work.",
+                    "Microsoft sign-in and CurseForge both work without a key. Microsoft shows a short code once and keeps you signed in through the OS credential store; CurseForge content comes from its public catalogue.",
                 )
                 .small()
                 .weak(),
             );
         });
-        if save_integrations {
-            self.save_integrations();
-        }
         ui.add_space(8.0);
         Self::glass_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());

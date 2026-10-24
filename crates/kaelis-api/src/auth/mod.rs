@@ -22,6 +22,12 @@ const PUBLIC_CLIENT_ID: &str = "00000000402b5328";
 const LIVE_DEVICE_CODE_URL: &str = "https://login.live.com/oauth20_connect.srf";
 const LIVE_TOKEN_URL: &str = "https://login.live.com/oauth20_token.srf";
 const LIVE_SCOPE: &str = "service::user.auth.xboxlive.com::MBI_SSL";
+/// The registered-application flow: a client ID the player owns, the documented
+/// consumer-tenant endpoints, and the `XboxLive.signin` scope.
+const ENTRA_DEVICE_CODE_URL: &str =
+    "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode";
+const ENTRA_TOKEN_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
+const ENTRA_SCOPE: &str = "XboxLive.signin offline_access";
 /// A poll that never answers must not spin forever: three failed polls in a
 /// row end the attempt instead of hammering the endpoint.
 const MAX_POLL_FAILURES: u32 = 3;
@@ -42,6 +48,52 @@ pub enum AuthError {
     Expired,
     #[error("device authorization was cancelled")]
     Cancelled,
+}
+
+/// Which Microsoft front door issued the access token.
+///
+/// The ticket handed to Xbox Live is not the same for both. A token from the
+/// legacy Live client is an `MBI_SSL` ticket and is sent verbatim, while a
+/// v2.0 (Entra) token is domain-prefixed with `d=`. Presenting the wrong form
+/// is answered with HTTP 401 at `user.auth.xboxlive.com`, so the flow and its
+/// encoding are decided together here instead of at the call site.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Flow {
+    Live,
+    Entra,
+}
+
+impl Flow {
+    fn device_code_url(self) -> &'static str {
+        match self {
+            Self::Live => LIVE_DEVICE_CODE_URL,
+            Self::Entra => ENTRA_DEVICE_CODE_URL,
+        }
+    }
+
+    fn token_url(self) -> &'static str {
+        match self {
+            Self::Live => LIVE_TOKEN_URL,
+            Self::Entra => ENTRA_TOKEN_URL,
+        }
+    }
+
+    fn scope(self) -> &'static str {
+        match self {
+            Self::Live => LIVE_SCOPE,
+            Self::Entra => ENTRA_SCOPE,
+        }
+    }
+
+    /// Candidate `RpsTicket` encodings, most likely first. Both are tried
+    /// because the accepted form follows the issuing client, and a refusal is a
+    /// single cheap request rather than a dead end for the player.
+    fn rps_tickets(self, access_token: &str) -> [String; 2] {
+        match self {
+            Self::Live => [access_token.to_owned(), format!("d={access_token}")],
+            Self::Entra => [format!("d={access_token}"), access_token.to_owned()],
+        }
+    }
 }
 
 #[derive(Clone, Deserialize)]
@@ -157,33 +209,78 @@ struct MinecraftLoginResponse {
 
 pub struct MicrosoftAuth {
     client: reqwest::Client,
+    client_id: String,
+    flow: Flow,
 }
 
 impl MicrosoftAuth {
-    /// The bundled public client: no Azure registration, no client ID to
-    /// paste, and the same Xbox → Minecraft token chain afterwards.
+    /// Sign in with the bundled public client unless `KAELIS_MS_CLIENT_ID`
+    /// names a registered application. The bundled client needs no setup: a
+    /// fresh install shows a code immediately.
     pub fn new() -> Result<Self, AuthError> {
+        match std::env::var("KAELIS_MS_CLIENT_ID")
+            .ok()
+            .map(|id| id.trim().to_owned())
+            .filter(|id| !id.is_empty())
+        {
+            Some(client_id) => Self::build(client_id, Flow::Entra),
+            None => Self::public_client(),
+        }
+    }
+
+    /// The bundled Live client: code entry on a Microsoft page, then the same
+    /// Xbox → Minecraft token chain.
+    pub fn public_client() -> Result<Self, AuthError> {
+        Self::build(PUBLIC_CLIENT_ID.to_owned(), Flow::Live)
+    }
+
+    /// Build around a client ID the player registered themselves.
+    pub fn with_client_id(client_id: impl Into<String>) -> Result<Self, AuthError> {
+        let client_id = client_id.into();
+        let client_id = client_id.trim();
+        let flow = if client_id == PUBLIC_CLIENT_ID {
+            Flow::Live
+        } else {
+            Flow::Entra
+        };
+        Self::build(client_id.to_owned(), flow)
+    }
+
+    fn build(client_id: String, flow: Flow) -> Result<Self, AuthError> {
         let client = reqwest::Client::builder()
             .user_agent(kaelis_core::brand::user_agent())
             .connect_timeout(std::time::Duration::from_secs(10))
             .timeout(std::time::Duration::from_secs(60))
             .redirect(reqwest::redirect::Policy::none())
             .build()?;
-        Ok(Self { client })
+        Ok(Self {
+            client,
+            client_id,
+            flow,
+        })
+    }
+
+    /// Whether this attempt uses the bundled client, which needs no setup.
+    pub fn uses_public_client(&self) -> bool {
+        self.flow == Flow::Live
     }
 
     /// Request a new device code. The GUI displays the user code and opens the
     /// verification URI; the device code itself is never presented to users.
     pub async fn request_device_code(&self) -> Result<DeviceCodeResponse, AuthError> {
+        let mut form: Vec<(&str, &str)> = vec![
+            ("client_id", self.client_id.as_str()),
+            ("scope", self.flow.scope()),
+        ];
+        if self.flow == Flow::Live {
+            // The Live endpoint selects the device flow with this field; the
+            // v2.0 endpoint infers it from the URL.
+            form.push(("response_type", "device_code"));
+        }
         let response = self
             .client
-            .post(LIVE_DEVICE_CODE_URL)
-            .form(&[
-                ("client_id", PUBLIC_CLIENT_ID),
-                ("scope", LIVE_SCOPE),
-                // The Live endpoint selects the device flow with this field.
-                ("response_type", "device_code"),
-            ])
+            .post(self.flow.device_code_url())
+            .form(&form)
             .send()
             .await?;
         if !response.status().is_success() {
@@ -241,12 +338,12 @@ impl MicrosoftAuth {
         let refresh = Zeroizing::new(load_refresh_token(user)?);
         let response = self
             .client
-            .post(LIVE_TOKEN_URL)
+            .post(self.flow.token_url())
             .form(&[
-                ("client_id", PUBLIC_CLIENT_ID),
+                ("client_id", self.client_id.as_str()),
                 ("grant_type", "refresh_token"),
                 ("refresh_token", refresh.as_str()),
-                ("scope", LIVE_SCOPE),
+                ("scope", self.flow.scope()),
             ])
             .send()
             .await?;
@@ -277,11 +374,12 @@ impl MicrosoftAuth {
             }
             let request = self
                 .client
-                .post(LIVE_TOKEN_URL)
+                .post(self.flow.token_url())
                 .form(&[
                     ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
-                    ("client_id", PUBLIC_CLIENT_ID),
+                    ("client_id", self.client_id.as_str()),
                     ("device_code", device.device_code.as_str()),
+                    ("scope", self.flow.scope()),
                 ])
                 .send();
             let response = if let Some(receiver) = cancel.as_mut() {
@@ -386,11 +484,38 @@ impl MicrosoftAuth {
     }
 
     async fn xbox_live(&self, microsoft_access: &str) -> Result<XboxToken, AuthError> {
+        // The accepted ticket form follows the issuing client, so both are
+        // offered in the order most likely to succeed. Only an outright 401 is
+        // retried: any other refusal would fail the same way twice.
+        let mut refused = None;
+        for ticket in self.flow.rps_tickets(microsoft_access) {
+            match self.authenticate_rps(&ticket).await? {
+                Ok(token) => return Ok(XboxToken { token }),
+                Err(failure) if failure.status == reqwest::StatusCode::UNAUTHORIZED => {
+                    refused = Some(failure.message);
+                }
+                Err(failure) => return Err(AuthError::Rejected(failure.message)),
+            }
+        }
+        Err(AuthError::Rejected(refused.unwrap_or_else(|| {
+            "Xbox Live rejected the Microsoft token".to_owned()
+        })))
+    }
+
+    /// One Xbox user-authentication attempt with a single ticket encoding.
+    ///
+    /// The outer error is a transport failure; the inner one is Xbox's own
+    /// refusal, which the caller may retry with the other encoding. Neither
+    /// the ticket nor the token is ever placed in a message.
+    async fn authenticate_rps(
+        &self,
+        rps_ticket: &str,
+    ) -> Result<Result<Zeroizing<String>, XboxRefusal>, AuthError> {
         let body = serde_json::json!({
             "Properties": {
                 "AuthMethod": "RPS",
                 "SiteName": "user.auth.xboxlive.com",
-                "RpsTicket": format!("d={microsoft_access}")
+                "RpsTicket": rps_ticket
             },
             "RelyingParty": "http://auth.xboxlive.com",
             "TokenType": "JWT"
@@ -399,26 +524,25 @@ impl MicrosoftAuth {
             .client
             .post(XBOX_AUTH_URL)
             .header("x-xbl-contract-version", "1")
+            .header(reqwest::header::ACCEPT, "application/json")
             .json(&body)
             .send()
             .await?;
-        let response = match response.error_for_status() {
-            Ok(response) => response,
-            Err(error) => {
-                return Err(AuthError::Rejected(format!(
-                    "Xbox Live rejected the Microsoft token: {error}"
-                )));
-            }
-        };
+        let status = response.status();
+        if !status.is_success() {
+            let details = response.json::<Value>().await.unwrap_or_default();
+            return Ok(Err(XboxRefusal {
+                status,
+                message: describe_xbox_refusal(status, &details),
+            }));
+        }
         let response = response.json::<XboxResponse>().await?;
         if response.token.is_empty() {
             return Err(AuthError::Rejected(
                 "Xbox returned an empty token".to_owned(),
             ));
         }
-        Ok(XboxToken {
-            token: Zeroizing::new(response.token),
-        })
+        Ok(Ok(Zeroizing::new(response.token)))
     }
 
     async fn xsts(&self, xbox_token: &str) -> Result<XstsToken, AuthError> {
@@ -532,6 +656,50 @@ struct XboxToken {
     token: Zeroizing<String>,
 }
 
+/// Xbox's own refusal of an RPS ticket, kept apart from a transport failure so
+/// the exchange can try the ticket's other encoding before giving up.
+struct XboxRefusal {
+    status: reqwest::StatusCode,
+    message: String,
+}
+
+/// Turn an Xbox error body into a message a player can act on. The ticket and
+/// the access token are never part of it.
+fn describe_xbox_refusal(status: reqwest::StatusCode, details: &Value) -> String {
+    let code = details.get("XErr").and_then(Value::as_u64);
+    let detail = details
+        .get("Message")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|message| !message.is_empty());
+    let diagnosis = match code {
+        Some(2_148_916_233) => {
+            "This Microsoft account has no Xbox profile yet; open xbox.com once, then retry."
+        }
+        Some(2_148_916_235) => "Xbox Live is not available in this account's country or region.",
+        Some(2_148_916_238) => {
+            "This is a child account; a Microsoft family adult has to approve Xbox Live."
+        }
+        Some(2_148_916_240) => "Xbox Live is unavailable for this account.",
+        Some(_) => "Xbox refused the Microsoft token for this account.",
+        None if status == reqwest::StatusCode::UNAUTHORIZED => {
+            "Xbox did not accept the Microsoft sign-in token. Sign out at \
+             account.microsoft.com, sign in again, and retry with a code from a \
+             fresh attempt."
+        }
+        None => "Xbox refused the sign-in request.",
+    };
+    let mut message = format!("Xbox Live sign-in failed (HTTP {status})");
+    if let Some(code) = code {
+        message.push_str(&format!(", XErr {code}"));
+    }
+    message.push_str(&format!(": {diagnosis}"));
+    if let Some(detail) = detail {
+        message.push_str(&format!(" ({detail})"));
+    }
+    message
+}
+
 struct XstsToken {
     token: Zeroizing<String>,
     user_hash: String,
@@ -608,7 +776,8 @@ pub fn delete_refresh_token(_user: &str) -> Result<(), AuthError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        LIVE_DEVICE_CODE_URL, LIVE_SCOPE, LIVE_TOKEN_URL, MicrosoftAuth, PUBLIC_CLIENT_ID,
+        ENTRA_DEVICE_CODE_URL, ENTRA_SCOPE, ENTRA_TOKEN_URL, Flow, LIVE_DEVICE_CODE_URL,
+        LIVE_SCOPE, LIVE_TOKEN_URL, MicrosoftAuth, PUBLIC_CLIENT_ID,
     };
 
     #[test]
@@ -619,6 +788,54 @@ mod tests {
         assert!(LIVE_DEVICE_CODE_URL.starts_with("https://login.live.com/"));
         assert!(LIVE_TOKEN_URL.starts_with("https://login.live.com/"));
         assert!(LIVE_SCOPE.contains("MBI_SSL"));
+    }
+
+    #[test]
+    fn each_flow_sends_the_ticket_form_its_client_issues() {
+        // MBI_SSL tickets are accepted verbatim; v2.0 tokens need `d=` first.
+        assert_eq!(
+            Flow::Live.rps_tickets("token"),
+            ["token".to_owned(), "d=token".to_owned()]
+        );
+        assert_eq!(
+            Flow::Entra.rps_tickets("token"),
+            ["d=token".to_owned(), "token".to_owned()]
+        );
+    }
+
+    #[test]
+    fn the_bundled_client_uses_the_live_front_door() {
+        let auth = MicrosoftAuth::public_client().expect("public client builds");
+        assert!(auth.uses_public_client());
+        assert_eq!(Flow::Live.device_code_url(), LIVE_DEVICE_CODE_URL);
+        assert_eq!(Flow::Live.token_url(), LIVE_TOKEN_URL);
+        assert_eq!(Flow::Live.scope(), LIVE_SCOPE);
+        assert_eq!(Flow::Entra.device_code_url(), ENTRA_DEVICE_CODE_URL);
+        assert_eq!(Flow::Entra.token_url(), ENTRA_TOKEN_URL);
+        assert_eq!(Flow::Entra.scope(), ENTRA_SCOPE);
+    }
+
+    #[test]
+    fn a_registered_client_switches_to_the_v2_flow() {
+        let auth = MicrosoftAuth::with_client_id("11111111-2222-3333-4444-555555555555")
+            .expect("registered client builds");
+        assert!(!auth.uses_public_client());
+        assert_eq!(auth.flow, Flow::Entra);
+    }
+
+    #[test]
+    fn a_refused_ticket_names_the_account_problem() {
+        let details = serde_json::json!({ "XErr": 2_148_916_233u64, "Message": "no profile" });
+        let message = super::describe_xbox_refusal(reqwest::StatusCode::UNAUTHORIZED, &details);
+        assert!(message.contains("XErr 2148916233"), "{message}");
+        assert!(message.contains("xbox.com"), "{message}");
+        assert!(!message.contains("d="), "{message}");
+
+        let bare = super::describe_xbox_refusal(
+            reqwest::StatusCode::UNAUTHORIZED,
+            &serde_json::Value::Null,
+        );
+        assert!(bare.contains("did not accept the Microsoft sign-in token"));
     }
 
     #[test]

@@ -21,7 +21,7 @@ cache, window detected through UI Automation) on 2026-10-24:
 | Private bytes (idle) | 90 MB |
 | Idle CPU | 0.00% (event-driven, no repaint loop) |
 | Handles | 553 |
-| Release binary | 17,862,656 B |
+| Release binary | 17,872,896 B |
 
 The window does not wait for mod metadata: jar scanning and artwork decoding
 run on workers, so a 200-mod instance opens in the same time as an empty one.
@@ -87,15 +87,20 @@ kaelis --import-instance ~/fabric-1-21.kaelis.zip
 ```
 <img width="1080" height="700" alt="modpacks" src="https://github.com/user-attachments/assets/161668d6-006e-41b5-951f-d4c98abb049c" />
 
-Both Modrinth and CurseForge are supported. CurseForge searches require an API
-key; add it in **Settings → Integrations**. It is stored in the operating-system
-credential store, never in instance JSON or the repository.
+Both Modrinth and CurseForge are supported, and neither needs a key or account.
+Type a CurseForge project name, paste its link, or give its project id and it
+resolves straight to the project, then installs from the official CDN. Nothing
+to configure, and nothing stored.
 
-Those two are the public catalogues with documented APIs for Minecraft mods,
-resource packs, and shaders. Sites without an API — SpigotMC, Planet
-Minecraft, 9Minecraft, GitHub release pages, private packs — are covered by the
-link and local-file paths instead of scrapers, so traffic stays predictable and
-within each site's terms.
+CurseForge's own catalogue search endpoint is key-only, so Kaelis never scrapes
+it: the keyless path resolves exact projects instead of pretending to browse a
+catalogue it cannot legally read. Modrinth remains the full-text catalogue. If
+you hold an approved CurseForge key, exporting `CF_API_KEY` upgrades search to
+the official API without changing anything else.
+
+Sites without an API — SpigotMC, Planet Minecraft, 9Minecraft, GitHub release
+pages, private packs — are covered by the link and local-file paths instead of
+scrapers, so traffic stays predictable and within each site's terms.
 
 ## Accounts
 

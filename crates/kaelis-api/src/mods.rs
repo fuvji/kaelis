@@ -489,7 +489,12 @@ enum InstallRequest {
     ModrinthProject(String),
     ModrinthVersion(String),
     FabricApi,
-    CurseForge(u32),
+    /// A dependency id carries no slug, so the public file index resolves it
+    /// by id; a project the user picked keeps its slug for a direct lookup.
+    CurseForge {
+        id: u32,
+        slug: String,
+    },
 }
 
 impl ModPlatformClient {
@@ -556,10 +561,10 @@ impl ModPlatformClient {
             .await
     }
 
-    /// Provider-scoped search. CurseForge is skipped entirely when no key is
-    /// configured, so an unconfigured install makes one request and does not
-    /// report a failure the UI already explains. Results that both platforms
-    /// list under the same slug/title are merged to a single card.
+    /// Provider-scoped search. CurseForge answers through its public catalogue
+    /// when no key is present, so no configuration is needed to browse it.
+    /// Results that both platforms list under the same slug/title are merged to
+    /// a single card.
     pub async fn search_scoped(
         &self,
         query: &str,
@@ -600,9 +605,7 @@ impl ModPlatformClient {
             include_modrinth,
             include_curseforge,
         } = options;
-        let curseforge_ready = include_curseforge
-            && kind.supports_curseforge()
-            && (self.curseforge_key.is_some() || super::curseforge::api_key_from_env().is_some());
+        let curseforge_ready = include_curseforge && kind.supports_curseforge();
         let modrinth_ready = include_modrinth && kind.modrinth_type().is_some();
         let (modrinth, curseforge) = tokio::join!(
             async {
@@ -773,7 +776,13 @@ impl ModPlatformClient {
                                     .map_err(|_| ModInstallError::InvalidCurseForgeId)?;
                                 installed.insert(format!("curseforge:{mod_id}"));
                                 let (path, dependencies) = self
-                                    .install_curseforge(mod_id, game_version, loader, mods_dir)
+                                    .install_curseforge(
+                                        mod_id,
+                                        &item.slug,
+                                        game_version,
+                                        loader,
+                                        mods_dir,
+                                    )
                                     .await?;
                                 report.installed.push(path);
                                 if include_dependencies {
@@ -909,15 +918,15 @@ impl ModPlatformClient {
                             }
                         }
                     }
-                    InstallRequest::CurseForge(mod_id) => {
-                        if !installed.insert(format!("curseforge:{mod_id}")) {
+                    InstallRequest::CurseForge { id, slug } => {
+                        if !installed.insert(format!("curseforge:{id}")) {
                             continue;
                         }
                         on_event(InstallEvent::Resolving {
-                            label: format!("CurseForge project {mod_id}"),
+                            label: format!("CurseForge project {id}"),
                         });
                         match self
-                            .install_curseforge(mod_id, game_version, loader, mods_dir)
+                            .install_curseforge(id, &slug, game_version, loader, mods_dir)
                             .await
                         {
                             Ok((path, dependencies)) => {
@@ -928,7 +937,7 @@ impl ModPlatformClient {
                                 }
                             }
                             Err(error) => warnings.push(format!(
-                                "could not install CurseForge dependency {mod_id}: {error}"
+                                "could not install CurseForge dependency {id}: {error}"
                             )),
                         }
                     }
@@ -1041,6 +1050,7 @@ impl ModPlatformClient {
                     .map_err(|_| ModInstallError::InvalidCurseForgeId)?;
                 self.install_curseforge_content(
                     mod_id,
+                    &item.slug,
                     game_version,
                     loader,
                     item.kind,
@@ -1081,14 +1091,16 @@ impl ModPlatformClient {
     async fn install_curseforge_content(
         &self,
         mod_id: u32,
+        slug: &str,
         game_version: &str,
         loader: &str,
         kind: ContentKind,
         instance_root: &Path,
     ) -> Result<PathBuf, ModInstallError> {
+        let reference = curseforge_reference(mod_id, slug);
         let files = super::curseforge::files_for_kind(
             &self.http,
-            mod_id,
+            &reference,
             game_version,
             loader,
             kind,
@@ -1113,7 +1125,7 @@ impl ModPlatformClient {
                 url,
                 filename: &file.file_name,
                 sha1,
-                size: None,
+                size: (file.file_size > 0).then_some(file.file_size),
             },
             kind,
             instance_root,
@@ -1409,15 +1421,18 @@ impl ModPlatformClient {
     async fn install_curseforge(
         &self,
         mod_id: u32,
+        slug: &str,
         game_version: &str,
         loader: &str,
         mods_dir: &Path,
     ) -> Result<(PathBuf, Vec<u32>), ModInstallError> {
-        let files = super::curseforge::mod_files(
+        let reference = curseforge_reference(mod_id, slug);
+        let files = super::curseforge::files_for_kind(
             &self.http,
-            mod_id,
+            &reference,
             game_version,
             loader,
+            ContentKind::Mod,
             self.curseforge_key.as_deref(),
         )
         .await?;
@@ -1435,7 +1450,10 @@ impl ModPlatformClient {
             .ok_or(ModInstallError::DistributionDisabled)?;
         let filename = safe_filename(&file.file_name)?;
         let sha1 = super::curseforge::file_sha1(file).unwrap_or_default();
-        let task = super::downloader::DownloadTask::new(url, mods_dir.join(filename), sha1);
+        let mut task = super::downloader::DownloadTask::new(url, mods_dir.join(filename), sha1);
+        if file.file_size > 0 {
+            task = task.with_size(file.file_size);
+        }
         let mut paths = super::downloader::download_all(&self.http, vec![task], 1).await?;
         let path = paths.pop().ok_or(ModInstallError::NoDownload)?;
         let dependencies = file
@@ -1505,8 +1523,9 @@ async fn finish_manual_import(
 }
 
 /// Merge results that both platforms expose under the same slug or title.
-/// Modrinth wins because its integration needs no API key; the CurseForge copy
-/// is redundant for the user and would otherwise show two identical cards.
+/// Modrinth wins because its copy is a full catalogue listing and the
+/// CurseForge one is an exact-match resolution of the same project, so showing
+/// both would only repeat one card.
 fn dedupe_cross_provider(items: Vec<ModSearchItem>) -> Vec<ModSearchItem> {
     let mut seen: HashMap<String, ()> = HashMap::new();
     let mut output = Vec::with_capacity(items.len());
@@ -1599,7 +1618,20 @@ fn enqueue_modrinth_dependencies(
 
 fn enqueue_curseforge_dependencies(queue: &mut VecDeque<InstallRequest>, dependencies: &[u32]) {
     for mod_id in dependencies {
-        queue.push_back(InstallRequest::CurseForge(*mod_id));
+        queue.push_back(InstallRequest::CurseForge {
+            id: *mod_id,
+            slug: String::new(),
+        });
+    }
+}
+
+/// The public file index accepts a slug, while a dependency only carries an id.
+fn curseforge_reference(mod_id: u32, slug: &str) -> String {
+    let slug = slug.trim();
+    if slug.is_empty() {
+        mod_id.to_string()
+    } else {
+        slug.to_owned()
     }
 }
 
