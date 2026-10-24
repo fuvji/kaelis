@@ -40,7 +40,7 @@
         "applicationSubCategory": "Minecraft launcher",
         "operatingSystem": "Windows 10, Windows 11, macOS 11, Linux",
         "processorRequirements": "x86_64 or arm64",
-        "softwareVersion": "0.2.3",
+        "softwareVersion": "0.2.5",
         "softwareRequirements": "Rust 1.85+ to build from source; Java is provisioned automatically",
         "downloadUrl": "https://fuvji.github.io/kaelis/downloads/Kaelis-Portable.zip",
         "installUrl": "https://fuvji.github.io/kaelis/#downloads",
@@ -424,7 +424,7 @@
     <div class="shell" id="top">
       <section class="hero" aria-labelledby="hero-title">
         <div>
-          <span class="eyebrow"><i></i>v0.2.3 · Windows · macOS · Linux</span>
+          <span class="eyebrow"><i></i>v0.2.5 · Windows · macOS · Linux</span>
           <h1 id="hero-title">Minecraft,<br><em>composed.</em></h1>
           <p class="lede">Instances, mods, packs, shaders, and accounts in one native workspace. Files stay local. Nothing runs in the background.</p>
           <div class="hero-actions">
@@ -488,7 +488,12 @@
           <article class="card">
             <span class="tag">Clean</span>
             <h3>Auto Erase Junk</h3>
-            <p>Logs, crash dumps, loader caches, extracted natives, stale server packs, crashed loader scratch, interrupted downloads, and stale official-launcher state vanish at launch and after every game. Saves, mods, and configs stay.</p>
+            <p>Logs, crash dumps, loader caches, mod download caches, typed command history, extracted natives, stale server packs, crashed loader scratch, interrupted downloads, and stale official-launcher state vanish at launch and after every game. Saves, mods, and configs stay.</p>
+          </article>
+          <article class="card">
+            <span class="tag">Sleep</span>
+            <h3>Always one click away</h3>
+            <p>Starting a game hides the launcher and hands its working set back to Windows; 90 s unfocused does the same. Show Kaelis lifts the window above the game and forces focus, every time. Background instances idle at low priority, and idle HTTP closes after 15 s.</p>
           </article>
         </div>
       </section>
@@ -593,7 +598,7 @@
         </div>
 
         <div class="downloads-foot">
-          <span><b style="color:var(--text)">New in 0.2.3</b> · Instances share one copy of the game: verified assets, libraries, the client jar, and the Java runtime are hard-linked from a content-addressed store, so a second instance of the same version costs a few MB instead of another 600+. Reopening Kaelis restores the running window in ~80 ms, and clicking the tray icon does the same. CurseForge remains fully browsable with no key.</span>
+          <span><b style="color:var(--text)">New in 0.2.5</b> · Show Kaelis always appears, even over a running game: the window is hidden with Win32 instead of the toolkit, and every restore lifts it above the game and forces focus. A power governor idles background instances while the foreground game runs, hibernation trims after 90 s unfocused, and Auto Erase Junk now clears mod download caches and typed command history too. Instances still share one copy of every game file.</span>
           <span>Every tag builds all three platforms in CI and publishes checksums.</span>
           <a href="downloads/KAELIS-LINKS.txt">URL &amp; install index ↗</a>
           <a href="https://github.com/fuvji/kaelis/releases/latest" rel="noreferrer">All releases ↗</a>
@@ -604,9 +609,9 @@
           <summary>Checksums and build provenance</summary>
           <div class="body">
             <p style="margin:0;color:var(--muted);font-size:13px">Every artifact is hashed at release time. Published files: <a href="downloads/SHA256SUMS.txt" style="color:var(--accent-soft)">SHA256SUMS.txt</a> and the generated <a href="downloads/KAELIS-LINKS.txt" style="color:var(--accent-soft)">URL &amp; installation index</a>.</p>
-            <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">963675075bb3563fe97be8c0d69494eced1d6b71bf29e351c3d3af44bf3981fe</code></div>
-            <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">507a30d3e5c14370e469a74a56be46f0dc5e52ba391b0d86ed6313b2f74aa4e2</code></div>
-            <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">d68b43d315c0b539c29230a7abdf62dcf3fbd5cfe4648e8de9c1ba33afb5a6c6</code></div>
+            <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">f0ed328f64f71d9a6791ec89513b83349555b1685ee575cfcfd92c417e933e73</code></div>
+            <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">c47c5be04a0d53a00d380d5b25f6b18be3161bef83c12aa12d6648ae992dfcff</code></div>
+            <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">248a1a8b058e357b8e3836945bb2da3e018d9aed31f60d264b57a8d93e2ae6fd</code></div>
             <div class="hash"><span>Verify on Linux / macOS</span><code>shasum -a 256 -c SHA256SUMS.txt</code></div>
           </div>
         </details>

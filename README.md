@@ -1,6 +1,6 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.2.3-70a5ff)
+![Version](https://img.shields.io/badge/version-0.2.5-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
@@ -19,7 +19,7 @@ keep that library clean, correct, and fast on their own.
 
 | Feature | What it does |
 | --- | --- |
-| **Auto Erase Junk** | Clears logs, crash dumps, loader caches, extracted natives, stale server packs, heap dumps, crashed-loader `tmp*` folders, interrupted downloads even when they keep their real name, and stale official-launcher state (including its saved Microsoft credential) at every start and after every game — capped so it can never stall startup |
+| **Auto Erase Junk** | Clears logs, crash dumps, loader caches, mod download caches, typed command history, extracted natives, stale server packs, heap dumps, crashed-loader `tmp*` folders, interrupted downloads even when they keep their real name, and stale official-launcher state (including its saved Microsoft credential) at every start and after every game — capped so it can never stall startup |
 | **One copy of the game** | Every verified download — libraries, assets, client jar, Java runtime — is hard-linked into a content-addressed store, so a second instance of the same version occupies a few extra MB instead of another 600 MB. Store entries no instance references are pruned automatically |
 | **Auto-repair before launch** | Scans the instance's mods and installs missing required mods (for example `ukulib` for uku's Armor HUD) before the JVM starts |
 | **Auto-disable duplicates** | Keeps the newest jar when two files provide the same mod id, so the older copy cannot crash the game first |
@@ -28,8 +28,9 @@ keep that library clean, correct, and fast on their own.
 | **Keyless catalogue** | Modrinth and the entire CurseForge catalogue — search, paging, resource packs, shaders — with no API key and no account |
 | **Managed Java** | Installs the Mojang runtime the version metadata names and launches through it, so no system JDK is required |
 | **Portable instances** | One `.kaelis.zip` round trip, plus Prism/MultiMC, CurseForge, `.mrpack`, and loose pack imports |
-| **Runs in parallel** | Per-instance OS guards let different instances launch together; the same instance is refused instead of doubled |
-| **Reopens, never doubles** | One process, one tray icon: a second launch, a Start-menu click, or the tray icon restores the running window in ~80 ms instead of starting another launcher |
+| **Runs in parallel, quietly** | Per-instance OS guards let different instances launch together; a smart power governor drops every unfocused game to idle priority within 1.5 s and restores it the moment it is focused, so the game being played owns the CPU |
+| **Reopens, never doubles** | One process, one tray icon: a second launch, a Start-menu click, or the tray icon restores the running window in ~120 ms instead of starting another launcher — including over a fullscreen game |
+| **Hibernates while you play** | Starting a game hides the window and empties its working set, and 90 s unfocused does the same while the window stays open; one tray click restores it, mid-game included |
 | **Private by default** | RAM-only instance logs, no telemetry, no analytics, no background daemon, nothing stored that the OS credential store can hold instead |
 
 **Auto Erase Junk never guesses.** It removes only what Minecraft or Kaelis
@@ -62,20 +63,21 @@ unreferenced cache.
 
 ## Performance
 
-Measured on the shipped Windows 0.2.3 build with `tools/bench.ps1` (3 runs, warm
+Measured on the shipped Windows 0.2.5 build with `tools/bench.ps1` (3 runs, warm
 disk cache, window detected through UI Automation) on 2026-10-24:
 
 | Metric | Result |
 | --- | --- |
-| `kaelis --version` | 87 ms median, 134 ms p95 |
-| Window, empty data root | 589 ms median |
-| Window, 200-jar instance | 335 ms median |
-| Working set (idle) | 98.0 MB empty, 99.1 MB with 200 jars |
-| Private bytes (idle) | 90.5 MB empty, 91.4 MB with 200 jars |
+| `kaelis --version` | 67 ms median, 299 ms p95 (one cold process start in three) |
+| Window, empty data root | 214 ms median |
+| Window, 200-jar instance | 172 ms median |
+| Working set (idle) | 98.5 MB empty, 99.6 MB with 200 jars |
+| Private bytes (idle) | 90.9 MB empty, 91.6 MB with 200 jars |
 | Idle CPU | 0.00% (event-driven, no repaint loop) |
-| Handles | 503 empty, 487 with 200 jars |
-| Release binary | 17,992,704 B, SHA-256 `96367507…` |
-| Second launch restore | 95 ms (handoff + native window wake) |
+| Handles | 492 empty, 493 with 200 jars |
+| Hibernated working set | 2.3 MB after 90 s unfocused (from 100.2 MB) |
+| Release binary | 18,003,968 B, SHA-256 `f0ed328f…` |
+| Second launch restore | 119 ms (handoff + native window wake) |
 
 The window does not wait for mod metadata: jar scanning and artwork decoding
 run on workers, so a 200-mod instance opens in the same time as an empty one.
@@ -91,7 +93,45 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.2.3
+## What's new in 0.2.5
+
+- **Show Kaelis always appears, even over a running game.** Hiding no longer
+  goes through egui's viewport at all: on Windows the real window is hidden with
+  Win32, so the toolkit's visible/minimised state can never go stale and leave a
+  blank frame behind. Every route — the tray menu, a left click on the tray
+  icon, **Launch last instance**, a second launcher, or a Start-menu click —
+  runs one native path that shows the window, restores it if minimised, lifts it
+  above the game with a topmost round trip, and forces foreground through the
+  game's input thread. Measured from a hidden window: back on screen in 119 ms.
+- **Smart multi-instance power.** Every JVM Kaelis starts is registered with a
+  governor. The game whose window owns the foreground runs at normal priority;
+  every other instance drops to the idle priority class within 1.5 s and returns
+  to normal the moment it is focused again. Nothing is suspended and no session
+  is disconnected — a background instance simply stops competing with the one
+  being played.
+- **Deeper hibernation, fewer wake-ups.** Starting a game hides the launcher and
+  empties its working set immediately; losing focus for 90 s does the same while
+  the window stays open. The timer is armed once per focus loss and never
+  re-armed, so an idle launcher truly schedules no frames. Restoring faults the
+  pages back in on demand. Idle HTTP now keeps at most two sockets for 15 s
+  instead of 90.
+- **Auto Erase Junk reaches the last traces.** Mod download caches
+  (`downloads/`), and the client's typed slash-command history are now removed
+  with logs, crash dumps, loader caches, natives, server packs, heap dumps, and
+  staging files — at every start, after every game, and from `--clean`.
+- **Cleaner control rows.** Create is the one accent action in its row at the
+  same height and width as Import/Export, Apply sits at control height, and the
+  Overview account and release cards share one bottom line.
+
+### From 0.2.4
+
+- Tray restore first ran from the tray thread, the icon became a left-click
+  target, and game-start hibernation used a working-set trim instead of only a
+  hidden window.
+- The HTTP pool was cut to two idle sockets with a 15 s timeout, and the create
+  and apply rows were aligned to one control height.
+
+### From 0.2.3
 
 - **One copy of every game file.** Verified downloads are hard-linked into a
   content-addressed store before the next instance asks for them, so a second

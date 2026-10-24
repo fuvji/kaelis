@@ -807,7 +807,8 @@ where
 }
 
 /// Launch a preinstalled Java instance. `on_spawn` runs after the JVM process
-/// is created, allowing the UI to freeze and move to its tray state.
+/// is created, allowing the UI to freeze and move to its tray state; it receives
+/// the new process id so the caller can report which game owns a window.
 pub async fn run_instance<F>(
     instance: Instance,
     identity: LaunchIdentity,
@@ -815,7 +816,7 @@ pub async fn run_instance<F>(
     on_spawn: F,
 ) -> Result<std::process::ExitStatus, LaunchError>
 where
-    F: FnOnce() + Send + 'static,
+    F: FnOnce(u32) + Send + 'static,
 {
     // One instance, one JVM. Different instances are independent, so the lock
     // is per instance rather than per launcher.
@@ -850,7 +851,12 @@ where
         _ => LaunchError::Io(error),
     })?;
     plan.native_dir.retain_for_child();
-    on_spawn();
+    // Hold the power registration for exactly the life of this JVM: when the
+    // game exits (or the launch future is cancelled) the guard drops and the
+    // monitor forgets the pid instead of polling a dead process forever.
+    let pid = child.id().unwrap_or_default();
+    let _power = (pid != 0).then(|| crate::power::track(pid));
+    on_spawn(pid);
 
     let stdout_task = child
         .stdout

@@ -44,9 +44,12 @@ impl JunkReport {
 
 /// Folders whose contents are disposable. Minecraft, mod loaders, and Java
 /// recreate every one of them on the next launch; none holds user work.
-const DISPOSABLE_DIRS: [&str; 11] = [
+const DISPOSABLE_DIRS: [&str; 12] = [
     "logs",
     "crash-reports",
+    // Mod download caches (`downloads/log.json` and similar). Every file is
+    // fetched again on demand; none is user content.
+    "downloads",
     ".cache",
     ".mixin.out",
     // Loader scratch: remap classpaths, connector caches, and transformed
@@ -63,11 +66,15 @@ const DISPOSABLE_DIRS: [&str; 11] = [
 ];
 
 /// Root-level files that only ever hold diagnostics, caches, or OS noise.
-const ROOT_JUNK: [&str; 10] = [
+const ROOT_JUNK: [&str; 11] = [
     ".DS_Store",
     "Thumbs.db",
     "desktop.ini",
     "launcher_log.txt",
+    // Chat and slash-command history written by the client or a mod. It is a
+    // local trace of what the player typed, not a setting, and the next launch
+    // starts a fresh one.
+    "command_history.txt",
     // Name-to-UUID cache. Minecraft rewrites it from the account database on
     // the next launch, so removing it loses nothing.
     "usercache.json",
@@ -436,6 +443,9 @@ mod tests {
         write(&root.join("launcher_ui_state.json"), b"{}");
         write(&root.join("launcher_msa_credentials.bin"), b"bin");
         write(&root.join("servers.dat_old"), b"old");
+        // Download cache and the client's typed-command history.
+        write(&root.join("downloads/log.json"), b"{}");
+        write(&root.join("command_history.txt"), b"/help");
         // User content that must survive every rule above.
         write(&root.join("saves/world/level.dat"), b"level");
         write(&root.join("mods/sodium.jar"), b"jar");
@@ -443,14 +453,17 @@ mod tests {
         write(&root.join("config/sodium.json"), b"{}");
 
         let report = clean_instance(&root).expect("clean");
-        // Three staging files, the scratch folder's one file, and three root
-        // files; the folder itself counts as a directory.
-        assert_eq!(report.files, 7);
+        // Three staging files, the scratch folder's one file, three launcher
+        // state files, the download log, and the command history; the scratch
+        // folder itself counts as a directory.
+        assert_eq!(report.files, 9);
         assert_eq!(report.dirs, 1);
         assert!(!root.join("mods/sodium.jar.part").exists());
         assert!(!root.join("tmpmkzllels1").exists());
         assert!(!root.join("launcher_ui_state.json").exists());
         assert!(!root.join("launcher_msa_credentials.bin").exists());
+        assert!(!root.join("downloads/log.json").exists());
+        assert!(!root.join("command_history.txt").exists());
         assert!(root.join("mods/sodium.jar").is_file());
         assert!(root.join("saves/world/level.dat").is_file());
         assert!(root.join("tmpnotes/readme.txt").is_file());

@@ -914,6 +914,10 @@ pub struct KaelisApp {
     _tray: Option<tray::TrayController>,
     sweeper: Option<tokio::task::JoinHandle<()>>,
     governor: FrameGovernor,
+    /// When the window last lost focus; the idle hibernation timer.
+    unfocused_since: Option<std::time::Instant>,
+    /// Set after one idle trim, so pages are released once per focus loss.
+    idle_trimmed: bool,
     /// A portable archive is being written or unpacked.
     portable_busy: bool,
     /// Folder of the last export, so a second one starts where the first went.
@@ -1242,6 +1246,9 @@ impl KaelisApp {
                 });
         }
         let tray = tray::TrayController::install(creation.egui_ctx.clone(), sender.clone()).ok();
+        // Windows listens for real foreground changes rather than expecting a
+        // frame after focus loss, which an idle launcher never schedules.
+        platform::start_idle_guard();
         let launcher_settings = load_settings();
         install_style(&creation.egui_ctx);
 
@@ -1319,6 +1326,8 @@ impl KaelisApp {
                 focused: true,
                 animating: false,
             },
+            unfocused_since: None,
+            idle_trimmed: false,
             portable_busy: false,
             last_export_dir: None,
             launch_after_java: false,
@@ -4395,7 +4404,7 @@ impl KaelisApp {
         self.runtime.spawn(async move {
             // Owns the count until this future ends, however it ends.
             let _live_game = live_game;
-            let result = run_instance(instance, identity, log.clone(), move || {
+            let result = run_instance(instance, identity, log.clone(), move |_pid| {
                 send_event(
                     &started_sender,
                     &started_context,
@@ -5327,6 +5336,10 @@ impl KaelisApp {
                 // the tray; let it stay visible rather than fighting them.
                 if count == 1 {
                     platform::hide_for_game(context);
+                    // The launcher now has no visible frame: give its pages
+                    // back while the game owns the screen. They fault back in
+                    // on the next restore; the tray and the game are untouched.
+                    platform::trim_working_set();
                 }
             }
             GuiEvent::GameExited {
@@ -7263,8 +7276,13 @@ impl KaelisApp {
                         });
                     });
                     let install_label = if busy { "Installing…" } else { "Create" };
-                    if ui
-                        .add_enabled(!busy && ready, egui::Button::new(install_label))
+                    // The primary action of this panel, in the one accent the
+                    // whole app uses, at the same height and width as the
+                    // import/export pair so the row reads as one control group.
+                    let create = ui
+                        .add_enabled_ui(!busy && ready, |ui| primary_button(ui, install_label))
+                        .inner;
+                    if create
                         .on_disabled_hover_text(if busy {
                             "Wait for the current installation to finish."
                         } else {
@@ -10463,7 +10481,7 @@ impl KaelisApp {
                     if ui
                         .horizontal(|ui| {
                             ui.add_sized(
-                                [200.0, 24.0],
+                                [200.0, CONTROL_HEIGHT],
                                 egui::Button::new(format!("Apply to {name}")),
                             )
                             .on_hover_text("Saves the heap and JVM arguments to this instance.")
@@ -10493,10 +10511,14 @@ impl KaelisApp {
                     }
                 }
                 None => {
-                    ui.add_enabled(false, egui::Button::new("Apply to selected instance"))
-                        .on_disabled_hover_text(
-                            "Select an instance on the Overview, Instances, or Content tab first.",
-                        );
+                    ui.add_enabled(
+                        false,
+                        egui::Button::new("Apply to selected instance")
+                            .min_size(egui::vec2(200.0, CONTROL_HEIGHT)),
+                    )
+                    .on_disabled_hover_text(
+                        "Select an instance on the Overview, Instances, or Content tab first.",
+                    );
                 }
             }
         });
@@ -10861,8 +10883,28 @@ impl eframe::App for KaelisApp {
         }
         // A capture window may start unfocused; it still has to advance its
         // warm-up frames, so screenshot mode is always treated as focused.
-        self.governor.focused =
-            context.input(|input| input.focused) || self.screenshot_path.is_some();
+        let focused = context.input(|input| input.focused) || self.screenshot_path.is_some();
+        // Idle hibernation: ninety seconds after focus loss the decoded
+        // textures and fonts have not been looked at once, so the OS is asked
+        // to page them out. The single timer is armed on the focus-loss frame
+        // and never re-armed, so an unfocused launcher costs one wake, not a
+        // polling loop. Regaining focus cancels the state and pages fault back
+        // in on demand.
+        if focused {
+            self.unfocused_since = None;
+            self.idle_trimmed = false;
+        } else if self.unfocused_since.is_none() {
+            self.unfocused_since = Some(std::time::Instant::now());
+            context.request_repaint_after(std::time::Duration::from_secs(90));
+        } else if !self.idle_trimmed
+            && self
+                .unfocused_since
+                .is_some_and(|since| since.elapsed() >= std::time::Duration::from_secs(90))
+        {
+            platform::trim_working_set();
+            self.idle_trimmed = true;
+        }
+        self.governor.focused = focused;
         // Screenshot mode walks a fixed number of frames, so it must keep
         // repainting even when nothing is animating.
         self.governor.animating = self.is_busy() || self.screenshot_path.is_some();
@@ -11203,12 +11245,11 @@ fn parse_handoff(arguments: &[String]) -> HandoffRequest {
 }
 
 fn show_window(context: &egui::Context) {
-    // A hidden viewport paints no frames, so egui's own command alone cannot
-    // bring the window back. Restore it natively first, then sync the toolkit.
-    platform::restore_now();
-    context.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-    context.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-    context.send_viewport_cmd(egui::ViewportCommand::Focus);
+    // A hidden window paints no frames, so egui's own command alone cannot
+    // bring the window back. The platform path restores it natively, raises it
+    // above a running game, and requests the frame that reapplies the toolkit
+    // state.
+    platform::wake(context);
 }
 
 /// Folder-safe id for an instance name.
@@ -12593,6 +12634,9 @@ fn account_summary_card(ui: &mut egui::Ui, name: &str, kind: &str) -> bool {
 fn release_summary_card(ui: &mut egui::Ui, latest: &str) {
     KaelisApp::glass_frame().show(ui, |ui| {
         ui.set_min_width(ui.available_width());
+        // Sits beside the account card, whose action button makes it taller.
+        // Matching the inner height keeps the two bottoms on one line.
+        ui.set_min_height(71.0);
         ui.spacing_mut().item_spacing.y = 2.0;
         ui.label(
             egui::RichText::new("LATEST RELEASE")

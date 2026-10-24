@@ -43,6 +43,13 @@ impl TrayController {
                         None
                     };
                     if let Some(action) = action {
+                        // The window may be hidden for a running game, and a
+                        // hidden window paints no frame — so the event alone
+                        // would never be processed. Wake the real window first
+                        // from this thread; the event then syncs the toolkit.
+                        // Quit needs the same wake: Close is a viewport command
+                        // and a hidden viewport would never apply it.
+                        crate::platform::wake(&context);
                         let _ = events.send(GuiEvent::Tray(action));
                         context.request_repaint();
                     }
@@ -68,8 +75,8 @@ impl TrayController {
                             }
                     );
                     if restores {
+                        crate::platform::wake(&click_context);
                         let _ = click_events.send(GuiEvent::Tray(TrayAction::Show));
-                        click_context.request_repaint();
                     }
                 }
             })
@@ -80,6 +87,10 @@ impl TrayController {
             .with_tooltip("Kaelis Minecraft Launcher")
             .with_icon(icon)
             .with_menu(Box::new(menu))
+            // Left click is the direct gesture; the menu stays on right click.
+            // Without this, Windows turns a left click into the menu and the
+            // icon never emits a Click event at all.
+            .with_menu_on_left_click(false)
             .build()
             .map_err(|error| error.to_string())?;
         Ok(Self { _icon: tray })

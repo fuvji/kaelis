@@ -1420,7 +1420,12 @@ fn http_client() -> Result<reqwest::Client, String> {
         .user_agent(kaelis_core::brand::user_agent())
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(60))
-        .pool_idle_timeout(std::time::Duration::from_secs(90))
+        // An idle launcher should own no sockets. Keep a couple alive for the
+        // next click and close everything shortly after the last request; the
+        // old 90 s default held connections for a minute and a half of doing
+        // nothing.
+        .pool_idle_timeout(std::time::Duration::from_secs(15))
+        .pool_max_idle_per_host(2)
         .redirect(https_redirects_only())
         .build()
         .map_err(|error| format!("could not create HTTP client: {error}"))
@@ -1526,7 +1531,7 @@ fn play_instance(instance_id: &str, username: Option<&str>) -> ExitCode {
     let profile = offline_profile(&username);
     let identity = LaunchIdentity::offline(profile.name, profile.uuid);
     let log = EphemeralLog::new(20_000);
-    match runtime.block_on(run_instance(instance, identity, log.clone(), || {})) {
+    match runtime.block_on(run_instance(instance, identity, log.clone(), |_| {})) {
         Ok(status) if status.success() => {
             log.clear();
             ExitCode::SUCCESS

@@ -15,6 +15,7 @@ pub mod modrinth;
 pub mod mods;
 pub mod mrpack;
 pub mod portable;
+pub mod power;
 pub mod repair;
 pub mod retry;
 pub mod runtime;

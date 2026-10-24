@@ -1,6 +1,6 @@
 [package]
 name = "kaelis-gui"
-version = "0.2.3"
+version = "0.2.5"
 edition.workspace = true
 description = "Kaelis desktop interface: content studio, instances, and accounts"
 homepage = "https://github.com/fuvji/kaelis"
@@ -42,8 +42,13 @@ rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "t
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
+    # Emptying the working set is what makes hibernation real rather than a
+    # hidden window with the same memory behind it.
+    "Win32_System_ProcessStatus",
     "Win32_System_DataExchange",
     "Win32_System_Threading",
+    # The idle guard listens for foreground changes instead of polling.
+    "Win32_UI_Accessibility",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
