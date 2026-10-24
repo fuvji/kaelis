@@ -166,4 +166,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           # This job checks nothing out, so `gh` has no repository to infer from.
           GH_REPO: ${{ github.repository }}
-        run: gh workflow run pages.yml --ref "$GITHUB_REF_NAME"
+        # `main`, not the tag: the Pages environment only admits the default
+        # branch, and the page copy lives on main while the downloads step pulls
+        # the newest release, which is the one just published.
+        run: gh workflow run pages.yml --ref main
