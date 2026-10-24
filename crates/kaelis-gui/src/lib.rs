@@ -4057,6 +4057,30 @@ impl KaelisApp {
         }
     }
 
+    /// Make a finished Microsoft session the current identity: its row enters
+    /// Accounts, the mode and preferred name follow it, and the whole choice is
+    /// written to disk in the same step. Every path that ends in a live session
+    /// — the device flow, the keychain restore, and the Account tab's heal —
+    /// funnels through here, so a signed-in account cannot be missing from the
+    /// list. Returns the settings write so the caller can say so.
+    fn adopt_microsoft_session(
+        &mut self,
+        session: AuthSession,
+        context: &egui::Context,
+    ) -> Result<(), String> {
+        let name = session.profile.name.clone();
+        let uuid = session.profile.id.clone();
+        self.offline_account = None;
+        self.avatar = None;
+        self.account_mode = AccountMode::Microsoft;
+        self.microsoft_session = Some(session);
+        self.upsert_account(AccountKind::Microsoft, &name, &uuid);
+        if !uuid.is_empty() {
+            self.request_avatar(context.clone(), uuid);
+        }
+        save_settings(&self.settings_snapshot()).map_err(|error| error.to_string())
+    }
+
     /// Insert or refresh one identity. The active row moves to the end so the
     /// list reads newest-last without a separate timestamp sort.
     fn upsert_account(&mut self, kind: AccountKind, name: &str, uuid: &str) {
@@ -4609,40 +4633,32 @@ impl KaelisApp {
                 self.auth_busy = false;
                 self.auth_cancel = None;
                 self.auth_device = None;
-                self.auth_status = if session.token_saved {
-                    format!(
-                        "Signed in as {}. Added to Accounts and saved for the next start.",
-                        session.profile.name
-                    )
-                } else {
-                    format!(
-                        "Signed in as {}. Added to Accounts; this session lasts until Kaelis closes.",
-                        session.profile.name
-                    )
+                let name = session.profile.name.clone();
+                let saved = session.token_saved;
+                let persisted = self.adopt_microsoft_session(session, context);
+                self.auth_status = match (saved, persisted) {
+                    (true, Ok(())) => format!(
+                        "Signed in as {name}. Added to Accounts and saved for the next start."
+                    ),
+                    (false, Ok(())) => format!(
+                        "Signed in as {name}. Added to Accounts; this session lasts until Kaelis closes."
+                    ),
+                    (_, Err(error)) => format!(
+                        "Signed in as {name} and added to Accounts, but the list could not be written: {error}"
+                    ),
                 };
-                let uuid = session.profile.id.clone();
-                self.upsert_account(AccountKind::Microsoft, &session.profile.name, &uuid);
-                self.offline_account = None;
-                self.avatar = None;
-                self.account_mode = AccountMode::Microsoft;
-                self.last_account = session.profile.name.clone();
-                let saved =
-                    save_settings(&self.settings_snapshot()).map_err(|error| error.to_string());
-                if let Err(error) = saved {
-                    self.auth_status =
-                        format!("Signed in, but the account preference was not saved: {error}");
-                }
-                self.microsoft_session = Some(session);
-                self.request_avatar(context.clone(), uuid);
             }
             GuiEvent::Restored(Ok(session)) => {
                 self.auth_busy = false;
-                self.auth_status = format!("Welcome back, {}.", session.profile.name);
-                self.account_mode = AccountMode::Microsoft;
-                let uuid = session.profile.id.clone();
-                self.upsert_account(AccountKind::Microsoft, &session.profile.name, &uuid);
-                self.microsoft_session = Some(session);
-                self.request_avatar(context.clone(), uuid);
+                let name = session.profile.name.clone();
+                match self.adopt_microsoft_session(session, context) {
+                    Ok(()) => self.auth_status = format!("Welcome back, {name}."),
+                    Err(error) => {
+                        self.auth_status = format!(
+                            "Welcome back, {name}. The account list could not be written: {error}"
+                        );
+                    }
+                }
             }
             GuiEvent::Restored(Err(error)) => {
                 self.auth_busy = false;
@@ -4656,7 +4672,17 @@ impl KaelisApp {
                 self.auth_busy = false;
                 self.auth_cancel = None;
                 self.auth_device = None;
-                self.auth_status = error;
+                // A refusal has to be impossible to miss: the reason names the
+                // exact step that stopped, so a child account or a profile with
+                // no Java Edition is never mistaken for a broken button.
+                let cancelled = error == "device authorization was cancelled";
+                self.auth_status = error.clone();
+                if !cancelled {
+                    self.set_status(
+                        StatusKind::Error,
+                        format!("Microsoft sign-in failed: {error}"),
+                    );
+                }
             }
             GuiEvent::Avatar(Ok(image)) => {
                 self.avatar = Some(context.load_texture(
@@ -10836,6 +10862,22 @@ impl eframe::App for KaelisApp {
         // and the active tab only breaks the .zip tie.
         if let Some(paths) = dropped_paths(context) {
             self.handle_drop(paths, context);
+        }
+        // Development-only fixture: a signed-in Microsoft identity, dispatched
+        // through the real completion handler so a captured frame proves the
+        // account actually lands in the list. Debug builds only.
+        #[cfg(debug_assertions)]
+        if self.screenshot_path.is_some()
+            && self.screenshot_frame == 1
+            && self.microsoft_session.is_none()
+            && let Ok(name) = std::env::var("KAELIS_SCREENSHOT_SESSION")
+            && !name.trim().is_empty()
+        {
+            let session = AuthSession::fixture(kaelis_api::auth::MinecraftProfile {
+                id: "069a79f444e94726a5befca90e38aaf5".to_owned(),
+                name: name.trim().to_owned(),
+            });
+            self.handle_event(context, GuiEvent::SignedIn(Ok(session)));
         }
         // Development-only fixture: show the device-code panel without asking
         // Microsoft for a real code, so a captured frame proves its layout.

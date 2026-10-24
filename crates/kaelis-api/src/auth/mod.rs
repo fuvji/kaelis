@@ -118,6 +118,18 @@ impl AuthSession {
     pub fn access_token(&self) -> &str {
         self.minecraft_token.as_str()
     }
+
+    /// Debug-only stand-in session, used by the visual-check harness to drive
+    /// the real sign-in completion path without a Microsoft account. It never
+    /// reaches a network call and does not exist in a release build.
+    #[cfg(debug_assertions)]
+    pub fn fixture(profile: MinecraftProfile) -> Self {
+        Self {
+            profile,
+            token_saved: false,
+            minecraft_token: Zeroizing::new(String::new()),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -389,10 +401,16 @@ impl MicrosoftAuth {
             .header("x-xbl-contract-version", "1")
             .json(&body)
             .send()
-            .await?
-            .error_for_status()?
-            .json::<XboxResponse>()
             .await?;
+        let response = match response.error_for_status() {
+            Ok(response) => response,
+            Err(error) => {
+                return Err(AuthError::Rejected(format!(
+                    "Xbox Live rejected the Microsoft token: {error}"
+                )));
+            }
+        };
+        let response = response.json::<XboxResponse>().await?;
         if response.token.is_empty() {
             return Err(AuthError::Rejected(
                 "Xbox returned an empty token".to_owned(),
@@ -462,15 +480,16 @@ impl MicrosoftAuth {
         let body = serde_json::json!({
             "identityToken": format!("XBL3.0 x={user_hash};{xsts_token}")
         });
-        let response = self
-            .client
-            .post(MC_LOGIN_URL)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<MinecraftLoginResponse>()
-            .await?;
+        let response = self.client.post(MC_LOGIN_URL).json(&body).send().await?;
+        let response = match response.error_for_status() {
+            Ok(response) => response,
+            Err(error) => {
+                return Err(AuthError::Rejected(format!(
+                    "Minecraft Services refused the Xbox token: {error}"
+                )));
+            }
+        };
+        let response = response.json::<MinecraftLoginResponse>().await?;
         if response.access_token.is_empty() {
             return Err(AuthError::Rejected(
                 "Minecraft Services returned an empty access token".to_owned(),
@@ -491,10 +510,15 @@ impl MicrosoftAuth {
                 "This Microsoft account does not own Minecraft: Java Edition.".to_owned(),
             ));
         }
-        let profile = response
-            .error_for_status()?
-            .json::<MinecraftProfile>()
-            .await?;
+        let status = response.status();
+        let profile = match response.error_for_status() {
+            Ok(response) => response.json::<MinecraftProfile>().await?,
+            Err(error) => {
+                return Err(AuthError::Rejected(format!(
+                    "The Minecraft profile could not be read ({status}): {error}"
+                )));
+            }
+        };
         if profile.id.is_empty() || profile.name.is_empty() {
             return Err(AuthError::Rejected(
                 "Minecraft profile response was incomplete".to_owned(),
