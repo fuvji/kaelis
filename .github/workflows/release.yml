@@ -12,6 +12,8 @@ on:
 
 permissions:
   contents: write
+  # Publishing dispatches the site deploy, which needs workflow permissions.
+  actions: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -155,3 +157,11 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: release/*
+
+      # A release created with the workflow token does not raise a `release`
+      # event for other workflows, so the site is dispatched explicitly; without
+      # this the page ships the previous release's binaries.
+      - name: Deploy the site with the new downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main
