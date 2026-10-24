@@ -1,27 +1,62 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
+
+![Version](https://img.shields.io/badge/version-0.2.2-70a5ff)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
+![License](https://img.shields.io/badge/license-MIT-8b949e)
+![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
+![Tests](https://img.shields.io/badge/tests-244%20passing-3fb950)
+
 <img width="1080" height="700" alt="accounts" src="https://github.com/user-attachments/assets/48041394-24b6-4a1c-8885-ad04ca1db913" />
 
-**Minecraft, composed.** A native Rust launcher for Windows, macOS, and Linux
-with one calm library for instances, modpacks, mods, resource packs, and
-shaders.
+**Minecraft, composed.** The fastest and lightest way to run Minecraft: a
+native Rust launcher for Windows, macOS, and Linux with one calm library for
+instances, modpacks, mods, resource packs, and shaders — and power features that
+keep that library clean, correct, and fast on their own.
 
 [Website](site/index.html) · [Releases](https://github.com/fuvji/kaelis/releases) · [Issues](https://github.com/fuvji/kaelis/issues) · [Community](https://discord.gg/fvrdYzrQjq)
 
+## Power features
+
+| Feature | What it does |
+| --- | --- |
+| **Auto Erase Junk** | Clears logs, crash dumps, loader caches, extracted natives, stale server packs, heap dumps, and interrupted-download staging when the launcher starts and after every game — eleven disposable folders plus the JVM's own leftovers, capped so it can never stall startup |
+| **Auto-repair before launch** | Scans the instance's mods and installs missing required mods (for example `ukulib` for uku's Armor HUD) before the JVM starts |
+| **Auto-disable duplicates** | Keeps the newest jar when two files provide the same mod id, so the older copy cannot crash the game first |
+| **Required dependencies** | Every install resolves and downloads the dependency graph — Modrinth and CurseForge alike |
+| **Verified mod updates** | Hash-matches installed jars, finds the newest compatible release for each, and replaces it only after SHA-1 verification; disabled jars stay disabled |
+| **Keyless catalogue** | Modrinth and the entire CurseForge catalogue — search, paging, resource packs, shaders — with no API key and no account |
+| **Managed Java** | Installs the Mojang runtime the version metadata names and launches through it, so no system JDK is required |
+| **Portable instances** | One `.kaelis.zip` round trip, plus Prism/MultiMC, CurseForge, `.mrpack`, and loose pack imports |
+| **Runs in parallel** | Per-instance OS guards let different instances launch together; the same instance is refused instead of doubled |
+| **Private by default** | RAM-only instance logs, no telemetry, no analytics, no background daemon, nothing stored that the OS credential store can hold instead |
+
+**Auto Erase Junk never guesses.** It removes only what Minecraft or Kaelis
+regenerates on the next launch: `logs`, `crash-reports`, `.cache`, `.mixin.out`,
+`.fabric`, `.quilt`, `.connector`, `debug`, `temp`, `natives`, and
+`server-resource-packs`, plus root-level noise (`Thumbs.db`, `desktop.ini`,
+`usercache.json`, `hs_err_pid*`, `replay_pid*`, `java_pid*`, `.attach_pid*`,
+`.hprof`, `.replay`). Saves, mods, configuration, resource packs, shaders,
+screenshots, and options are never touched, a symlinked instance root is refused
+rather than followed, and a hostile folder cannot slow startup past 50,000
+inspected entries.
+
+<img width="1080" height="700" alt="Instances" src="site/assets/app-instances.png" />
+
 ## Performance
 
-Measured on the shipped Windows build with `tools/bench.ps1` (3 runs, warm disk
-cache, window detected through UI Automation) on 2026-10-24:
+Measured on the shipped Windows 0.2.2 build with `tools/bench.ps1` (3 runs, warm
+disk cache, window detected through UI Automation) on 2026-10-24:
 
 | Metric | Result |
 | --- | --- |
-| `kaelis --version` | 70 ms median, 89 ms p95 |
-| Window, empty data root | 162 ms median |
-| Window, 200-jar instance | 160 ms median |
-| Working set (idle) | 80.0 MB empty, 80.6 MB with 200 jars |
-| Private bytes (idle) | 90 MB |
+| `kaelis --version` | 71 ms median, 89 ms p95 |
+| Window, empty data root | 216 ms median |
+| Window, 200-jar instance | 191 ms median |
+| Working set (idle) | 100.1 MB empty, 98.8 MB with 200 jars |
+| Private bytes (idle) | 90.9 MB |
 | Idle CPU | 0.00% (event-driven, no repaint loop) |
-| Handles | 553 |
-| Release binary | 17,872,896 B |
+| Handles | 554 |
+| Release binary | 17,962,496 B, SHA-256 `500c8389…` |
 
 The window does not wait for mod metadata: jar scanning and artwork decoding
 run on workers, so a 200-mod instance opens in the same time as an empty one.
@@ -36,6 +71,30 @@ against other launchers, and the absolute window time moves with the host: the
 same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
+
+## What's new in 0.2.2
+
+- **CurseForge is a real catalogue now.** Without a key, search reads the public
+  mirror of the official v1 API — same paths, JSON, pagination, hashes, and
+  dependency metadata as `api.curseforge.com` — so a typed name returns a page of
+  projects instead of one exact match, and paging, resource packs, and shaders
+  all work. An approved key in `CF_API_KEY` aims the identical calls at the
+  official endpoint.
+- **The named project ranks first.** Search asks for downloads order, because the
+  endpoint's default order ignores relevance (`jei` used to return
+  `seamless-ores` first).
+- **Dependency graphs come for free.** Required mods install keyless, from the
+  same file metadata the official API publishes.
+- **Less traffic.** Catalogue pages are cached for a minute, and installs address
+  files by their real id, which removes one metadata lookup per install.
+- **Degrades, never empties.** If the mirror is unreachable, an exact project
+  name, link, or id still resolves through the public index, and the launcher
+  says so instead of showing an empty list.
+- **A release republishes the site.** Publishing a tag now dispatches the Pages
+  deploy, which fetches that release's downloads and hydrates the page, instead
+  of waiting for a separate push.
+
+<img width="1080" height="700" alt="Content studio" src="site/assets/app-content.png" />
 
 ## Quick start
 
@@ -148,7 +207,7 @@ diagnostics on stderr, so scripts and MCP servers can parse it without a GUI.
 | `kaelis --play <instance> [--offline <name>]` | Launches with the managed runtime and the saved offline identity |
 | `kaelis --check-updates <instance> [--json]` | Newest compatible Modrinth version for every installed mod |
 | `kaelis --update-mods <instance> [--json]` | Downloads, verifies, and installs every available mod update |
-| `kaelis --install-mod <instance> <provider:project>` | Installs a mod and its required dependencies; a bare slug means Modrinth |
+| `kaelis --install-mod <instance> <provider:project>` | Installs a mod and its required dependencies; a bare slug means Modrinth, and a CurseForge slug or numeric id both work |
 | `kaelis --repair <instance>` | Reinstalls missing required dependencies |
 | `kaelis --import-modpack <instance> <pack file>` | Imports an `.mrpack` or `.zip` pack into an instance |
 | `kaelis --export-instance <instance> <out.kaelis.zip>` | Writes one portable archive |
@@ -162,6 +221,7 @@ kaelis --accounts --json
 kaelis --use-account Builder
 kaelis --check-updates fabric-1-21 --json
 kaelis --play fabric-1-21 --offline Steve
+kaelis --install-mod fabric-1-21 curseforge:reeses-sodium-options
 ```
 
 Exit codes are stable: `0` success, `2` bad arguments, other non-zero values are
@@ -215,6 +275,10 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
+The workspace currently passes 244 tests (126 api, 49 core, 57 gui, 12
+launcher), and Clippy is clean with warnings denied on Windows, macOS, and
+Linux.
+
 The release path also generates `dist/KAELIS-LINKS.txt`, publishes the same
 bytes as [`site/downloads/KAELIS-LINKS.txt`](site/downloads/KAELIS-LINKS.txt),
 and builds a fresh per-user Windows installer. The index lists every runtime endpoint,
@@ -251,7 +315,11 @@ a `v*` tag builds Windows, macOS (universal), and Linux, publishes one release
 with every artifact, the generated `KAELIS-LINKS.txt`, and a combined
 `SHA256SUMS.txt`. The Windows job installs NSIS, so `Kaelis-Setup.exe` is rebuilt
 from the same fresh binary as the portable download rather than reusing an old
-local setup. `tools/release.ps1` is the same Windows path used locally.
+local setup, and the publish job dispatches the site deploy so the page can never
+serve the previous release under a new version number. `tools/release.ps1` is the
+same Windows path used locally.
+
+<img width="1080" height="700" alt="Overview" src="site/assets/app-overview.png" />
 
 <img width="1240" height="430" alt="account-skin" src="https://github.com/user-attachments/assets/9d54e89e-e081-4bc1-a7d4-005c93bb83b6" />
 
