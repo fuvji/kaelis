@@ -15,6 +15,10 @@ use std::sync::{Mutex, OnceLock};
 
 struct Tracked {
     pid: u32,
+    /// Only the Windows monitor reads this. Keeping the field out of other
+    /// builds avoids a dead-code warning under `-D warnings` on Unix, where
+    /// the governor has no priority class to steer.
+    #[cfg(windows)]
     demoted: bool,
 }
 
@@ -44,6 +48,7 @@ pub fn track(pid: u32) -> LiveGame {
     {
         games.push(Tracked {
             pid,
+            #[cfg(windows)]
             demoted: false,
         });
     }
