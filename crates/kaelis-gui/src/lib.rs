@@ -4609,7 +4609,17 @@ impl KaelisApp {
                 self.auth_busy = false;
                 self.auth_cancel = None;
                 self.auth_device = None;
-                self.auth_status = format!("Signed in as {}.", session.profile.name);
+                self.auth_status = if session.token_saved {
+                    format!(
+                        "Signed in as {}. Added to Accounts and saved for the next start.",
+                        session.profile.name
+                    )
+                } else {
+                    format!(
+                        "Signed in as {}. Added to Accounts; this session lasts until Kaelis closes.",
+                        session.profile.name
+                    )
+                };
                 let uuid = session.profile.id.clone();
                 self.upsert_account(AccountKind::Microsoft, &session.profile.name, &uuid);
                 self.offline_account = None;
@@ -7971,7 +7981,7 @@ impl KaelisApp {
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
-                        .small_button("Rescan")
+                        .button("Rescan")
                         .on_hover_text("Re-read the instance folders from disk.")
                         .clicked()
                     {
@@ -9717,6 +9727,20 @@ impl KaelisApp {
     fn show_account(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
         ui.add_space(4.0);
         ui.spacing_mut().item_spacing.y = 5.0;
+        // A live session is the source of truth. If a completion event was
+        // missed, the list was overwritten by an import, or the settings file
+        // was edited by hand, the signed-in identity still gets its row the
+        // moment this tab is shown instead of vanishing from the list.
+        if let Some(session) = &self.microsoft_session {
+            let name = session.profile.name.clone();
+            let uuid = session.profile.id.clone();
+            let known = self.accounts.iter().any(|account| {
+                account.kind == AccountKind::Microsoft && account.name.eq_ignore_ascii_case(&name)
+            });
+            if !known {
+                self.upsert_account(AccountKind::Microsoft, &name, &uuid);
+            }
+        }
         self.ensure_account_heads(context);
         self.ensure_steve_texture(context);
 

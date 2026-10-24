@@ -107,6 +107,10 @@ pub struct MinecraftProfile {
 
 pub struct AuthSession {
     pub profile: MinecraftProfile,
+    /// Whether the refresh token reached the OS credential store. A failure
+    /// here must not erase a sign-in that already succeeded: the session is
+    /// usable for this run and the UI says it will not survive a restart.
+    pub token_saved: bool,
     minecraft_token: Zeroizing<String>,
 }
 
@@ -212,10 +216,10 @@ impl MicrosoftAuth {
         cancel: Option<tokio::sync::watch::Receiver<bool>>,
     ) -> Result<AuthSession, AuthError> {
         let (microsoft_access, refresh) = self.poll_device_token(device, cancel).await?;
-        let session = self.exchange_for_minecraft(&microsoft_access).await?;
-        if let Some(refresh) = refresh.as_deref() {
-            store_refresh_token(&session.profile.name, refresh)?;
-        }
+        let mut session = self.exchange_for_minecraft(&microsoft_access).await?;
+        session.token_saved = refresh
+            .as_deref()
+            .is_some_and(|refresh| store_refresh_token(&session.profile.name, refresh).is_ok());
         Ok(session)
     }
 
@@ -236,10 +240,10 @@ impl MicrosoftAuth {
             .await?;
         let tokens = parse_token_response(response).await?;
         let (microsoft_access, rotated_refresh) = tokens.into_secrets();
-        let session = self.exchange_for_minecraft(&microsoft_access).await?;
-        if let Some(rotated) = rotated_refresh.as_deref() {
-            store_refresh_token(&session.profile.name, rotated)?;
-        }
+        let mut session = self.exchange_for_minecraft(&microsoft_access).await?;
+        session.token_saved = rotated_refresh
+            .as_deref()
+            .is_some_and(|rotated| store_refresh_token(&session.profile.name, rotated).is_ok());
         Ok(session)
     }
 
@@ -364,6 +368,7 @@ impl MicrosoftAuth {
         let profile = self.minecraft_profile(&minecraft_token).await?;
         Ok(AuthSession {
             profile,
+            token_saved: true,
             minecraft_token: Zeroizing::new(minecraft_token),
         })
     }
@@ -600,6 +605,18 @@ mod tests {
         .expect("live endpoint shape parses");
         assert_eq!(device.interval, 5);
         assert!(device.verification_uri_complete.is_none());
+    }
+
+    #[test]
+    #[ignore = "touches the OS credential store"]
+    fn refresh_tokens_round_trip_through_the_credential_store() {
+        let user = "kaelis-keyring-probe";
+        super::store_refresh_token(user, "probe").expect("store token");
+        assert_eq!(
+            super::load_refresh_token(user).expect("load token"),
+            "probe"
+        );
+        super::delete_refresh_token(user).expect("delete token");
     }
 
     #[tokio::test]
