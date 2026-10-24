@@ -1,10 +1,15 @@
 //! Native tray icon and event bridge. The receiver blocks while idle, so it
 //! does not poll while the launcher is hidden.
+//!
+//! The menu stays three actions and one separator: Show, Play, Quit. Anything
+//! longer turns a tray back into a second application window, and every extra
+//! item is a string the shell has to lay out and an id the event thread has to
+//! compare on every click.
 
 use crate::GuiEvent;
 use eframe::egui;
 use tokio::sync::mpsc::UnboundedSender;
-use tray_icon::menu::{Menu, MenuEvent, MenuItem};
+use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 pub(crate) struct TrayController {
@@ -18,9 +23,10 @@ impl TrayController {
     ) -> Result<Self, String> {
         let menu = Menu::new();
         let show = MenuItem::new("Show Kaelis", true, None);
-        let launch = MenuItem::new("Launch last instance", true, None);
+        let launch = MenuItem::new("Play last instance", true, None);
         let quit = MenuItem::new("Quit", true, None);
-        menu.append_items(&[&show, &launch, &quit])
+        let separator = PredefinedMenuItem::separator();
+        menu.append_items(&[&show, &launch, &separator, &quit])
             .map_err(|error| error.to_string())?;
 
         let show_id = show.id().clone();
@@ -47,8 +53,6 @@ impl TrayController {
                         // hidden window paints no frame — so the event alone
                         // would never be processed. Wake the real window first
                         // from this thread; the event then syncs the toolkit.
-                        // Quit needs the same wake: Close is a viewport command
-                        // and a hidden viewport would never apply it.
                         crate::platform::wake(&context);
                         let _ = events.send(GuiEvent::Tray(action));
                         context.request_repaint();

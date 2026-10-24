@@ -1531,7 +1531,7 @@ fn play_instance(instance_id: &str, username: Option<&str>) -> ExitCode {
     let profile = offline_profile(&username);
     let identity = LaunchIdentity::offline(profile.name, profile.uuid);
     let log = EphemeralLog::new(20_000);
-    match runtime.block_on(run_instance(instance, identity, log.clone(), |_| {})) {
+    match runtime.block_on(run_instance(instance, identity, log.clone(), |_| {}, None)) {
         Ok(status) if status.success() => {
             log.clear();
             ExitCode::SUCCESS

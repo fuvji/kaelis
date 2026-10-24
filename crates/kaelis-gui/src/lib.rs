@@ -215,6 +215,8 @@ impl StatusKind {
 #[derive(Debug, Clone)]
 enum InstanceAction {
     Play,
+    /// End this instance's game process now.
+    Stop,
     Select,
     Edit,
     /// Pick card artwork straight from the file picker.
@@ -1062,6 +1064,10 @@ pub struct KaelisApp {
     /// Instances with a live game process, by id. Several may run at once;
     /// the window only sleeps in the tray while at least one is alive.
     running_instances: std::collections::HashSet<String>,
+    /// Stop handle per running instance. Sending `true` ends that JVM inside
+    /// its own launch task, so Quit never waits on a window, a frame, or a
+    /// second process.
+    stop_signals: HashMap<String, tokio::sync::watch::Sender<bool>>,
     /// Live game count shared with launch workers, so only the worker that
     /// ends the last game restores the hidden window.
     live_games: Arc<AtomicUsize>,
@@ -1463,6 +1469,7 @@ impl KaelisApp {
             account_head_retry: HashMap::new(),
             steve_head_texture: None,
             running_instances: std::collections::HashSet::new(),
+            stop_signals: HashMap::new(),
             live_games: Arc::new(AtomicUsize::new(0)),
             settings_ram_mb: 4096,
             settings_jvm_args: String::new(),
@@ -4308,6 +4315,44 @@ impl KaelisApp {
         self.running_instances.contains(id)
     }
 
+    /// End one game process now.
+    ///
+    /// The launch task owns the child, so Quit travels through the same watch
+    /// channel it already selects on: `start_kill` runs there, finishes the
+    /// exit event, and the card returns to Play without a `taskkill` spawn or
+    /// a UI stall. A signal that arrives while Java is still being prepared is
+    /// kept and applied the instant the process exists.
+    fn stop_instance(&mut self, id: &str, context: &egui::Context) {
+        let Some(stop) = self.stop_signals.get(id) else {
+            return;
+        };
+        if stop.send(true).is_err() {
+            self.stop_signals.remove(id);
+            return;
+        }
+        let name = self
+            .instances
+            .iter()
+            .find(|instance| instance.id == id)
+            .map(|instance| instance.name.clone())
+            .unwrap_or_else(|| id.to_owned());
+        self.set_status(StatusKind::Busy, format!("Quitting {name}…"));
+        context.request_repaint();
+    }
+
+    /// End the launcher process on the spot.
+    ///
+    /// Every setting is written when it changes and the game log lives in RAM,
+    /// so there is nothing to flush. The tray icon is dropped first because
+    /// Windows leaves a dead application's icon in the notification area until
+    /// it is hovered; the toolkit close path would queue a frame on a hidden
+    /// window and unwind every editor, worker, and runtime handle before the
+    /// process ended.
+    fn quit_now(&mut self) -> ! {
+        self._tray = None;
+        std::process::exit(0)
+    }
+
     fn launch_selected(&mut self, context: egui::Context) {
         let Some(instance) = self.selected_instance().cloned() else {
             self.set_status(
@@ -4392,6 +4437,10 @@ impl KaelisApp {
         // two JVMs for the same instance. The OS guard in `run_instance` is the
         // final authority; this keeps the UI honest in the meantime.
         self.running_instances.insert(instance.id.clone());
+        // The quit path is a channel, not a process lookup: the launch task
+        // already owns the child and selects on this flag while it waits.
+        let (stop, stop_requested) = tokio::sync::watch::channel(false);
+        self.stop_signals.insert(instance.id.clone(), stop);
         let live_game = LiveGame::start(self.live_games.clone());
         self.set_status(StatusKind::Busy, format!("Starting {}…", instance.name));
         let sender = self.sender.clone();
@@ -4404,13 +4453,19 @@ impl KaelisApp {
         self.runtime.spawn(async move {
             // Owns the count until this future ends, however it ends.
             let _live_game = live_game;
-            let result = run_instance(instance, identity, log.clone(), move |_pid| {
-                send_event(
-                    &started_sender,
-                    &started_context,
-                    GuiEvent::GameStarted(started_id.clone()),
-                );
-            })
+            let result = run_instance(
+                instance,
+                identity,
+                log.clone(),
+                move |_pid| {
+                    send_event(
+                        &started_sender,
+                        &started_context,
+                        GuiEvent::GameStarted(started_id.clone()),
+                    );
+                },
+                Some(stop_requested),
+            )
             .await;
             log.clear();
             // `_live_game` restores the window when this is the last game; a
@@ -5347,6 +5402,7 @@ impl KaelisApp {
                 message,
             } => {
                 self.running_instances.remove(&instance_id);
+                self.stop_signals.remove(&instance_id);
                 self.clean_finished_instance(&instance_id, context);
                 self.set_status(
                     StatusKind::Info,
@@ -5364,6 +5420,7 @@ impl KaelisApp {
             }
             GuiEvent::GameFailed { instance_id, error } => {
                 self.running_instances.remove(&instance_id);
+                self.stop_signals.remove(&instance_id);
                 self.clean_finished_instance(&instance_id, context);
                 self.set_status(StatusKind::Error, error);
                 if self.running_instances.is_empty() {
@@ -5464,7 +5521,7 @@ impl KaelisApp {
             GuiEvent::Tray(action) => match action {
                 tray::TrayAction::Show => show_window(context),
                 tray::TrayAction::LaunchLast => self.launch_selected(context.clone()),
-                tray::TrayAction::Quit => context.send_viewport_cmd(egui::ViewportCommand::Close),
+                tray::TrayAction::Quit => self.quit_now(),
             },
         }
     }
@@ -6487,7 +6544,18 @@ impl KaelisApp {
                             .strong(),
                     );
                     ui.horizontal_wrapped(|ui| {
-                        if primary_button(ui, "Launch selected").clicked() {
+                        let selected_running = selected
+                            .as_ref()
+                            .is_some_and(|instance| self.instance_running(&instance.id));
+                        if selected_running {
+                            if quit_button(ui, "Quit game", egui::vec2(112.0, CONTROL_HEIGHT))
+                                .on_hover_text("End this Minecraft process now")
+                                .clicked()
+                                && let Some(instance) = &selected
+                            {
+                                self.stop_instance(&instance.id, context);
+                            }
+                        } else if primary_button(ui, "Launch selected").clicked() {
                             self.launch_selected(context.clone());
                         }
                         if ui
@@ -7758,26 +7826,33 @@ impl KaelisApp {
                                     if ui.button("Edit").clicked() {
                                         action = Some((index, InstanceAction::Edit));
                                     }
-                                    if ui
+                                    if running {
+                                        // The same slot becomes Quit: one
+                                        // click signals the launch task that
+                                        // owns the JVM, and the process ends
+                                        // before the card can repaint.
+                                        if quit_button(ui, "Quit", egui::vec2(62.0, 24.0))
+                                            .on_hover_text(
+                                                "End this Minecraft process now",
+                                            )
+                                            .clicked()
+                                        {
+                                            action = Some((index, InstanceAction::Stop));
+                                        }
+                                    } else if ui
                                         .add_enabled(
-                                            !installing && !running,
+                                            !installing,
                                             egui::Button::new(
-                                                egui::RichText::new(if running {
-                                                    "Running"
-                                                } else {
-                                                    "Play"
-                                                })
-                                                .strong()
-                                                .color(accent_on()),
+                                                egui::RichText::new("Play")
+                                                    .strong()
+                                                    .color(accent_on()),
                                             )
                                             .fill(accent())
                                             .min_size(egui::vec2(62.0, 24.0)),
                                         )
-                                        .on_disabled_hover_text(if running {
-                                            "This instance already has a game window. Use Show from the tray to manage it."
-                                        } else {
-                                            "Wait for the current installation to finish."
-                                        })
+                                        .on_disabled_hover_text(
+                                            "Wait for the current installation to finish.",
+                                        )
                                         .clicked()
                                     {
                                         action = Some((index, InstanceAction::Play));
@@ -7817,6 +7892,7 @@ impl KaelisApp {
             }
             match action {
                 InstanceAction::Play => self.launch_selected(context.clone()),
+                InstanceAction::Stop => self.stop_instance(&instance.id, context),
                 InstanceAction::Select => {}
                 InstanceAction::PickIcon => {
                     self.select_instance(&instance.id);
@@ -10785,6 +10861,13 @@ impl KaelisApp {
 
 impl eframe::App for KaelisApp {
     fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
+        // The title-bar close button takes the same instant path as Quit. A
+        // graceful toolkit shutdown would first paint a frame, then join every
+        // worker; settings are already on disk, so there is nothing to gain by
+        // waiting.
+        if context.input(|input| input.viewport().close_requested()) {
+            self.quit_now();
+        }
         self.apply_interface_scale(context);
         self.handle_keyboard_navigation(context);
         if self.editing.is_none()
@@ -11536,22 +11619,31 @@ fn visible_mod_indices(
     visible.sort_by(|left, right| {
         let left_item = &items[*left];
         let right_item = &items[*right];
-        match view.sort {
-            ModSort::Relevance => rows[*right]
-                .relevance
-                .cmp(&rows[*left].relevance)
-                .then_with(|| right_item.downloads.cmp(&left_item.downloads))
-                .then_with(|| left_item.title.cmp(&right_item.title)),
-            ModSort::Downloads => right_item
-                .downloads
-                .cmp(&left_item.downloads)
-                .then_with(|| left_item.title.cmp(&right_item.title)),
-            ModSort::Name => left_item
-                .title
-                .to_ascii_lowercase()
-                .cmp(&right_item.title.to_ascii_lowercase())
-                .then_with(|| left_item.title.cmp(&right_item.title)),
-        }
+        // Modrinth is the primary catalogue and stays above the CurseForge
+        // mirror in every order. Download totals are not comparable between
+        // the two (the mirror counts every pack that ever embedded a project),
+        // so mixing them put CurseForge on top even when the query matched a
+        // Modrinth project exactly. Within each provider the chosen order is
+        // untouched.
+        left_item
+            .provider
+            .cmp(&right_item.provider)
+            .then_with(|| match view.sort {
+                ModSort::Relevance => rows[*right]
+                    .relevance
+                    .cmp(&rows[*left].relevance)
+                    .then_with(|| right_item.downloads.cmp(&left_item.downloads))
+                    .then_with(|| left_item.title.cmp(&right_item.title)),
+                ModSort::Downloads => right_item
+                    .downloads
+                    .cmp(&left_item.downloads)
+                    .then_with(|| left_item.title.cmp(&right_item.title)),
+                ModSort::Name => left_item
+                    .title
+                    .to_ascii_lowercase()
+                    .cmp(&right_item.title.to_ascii_lowercase())
+                    .then_with(|| left_item.title.cmp(&right_item.title)),
+            })
     });
     visible
 }
@@ -12552,6 +12644,46 @@ fn primary_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
         )
         .rounding(egui::Rounding::same(CONTROL_RADIUS))
         .min_size(egui::vec2(98.0, CONTROL_HEIGHT)),
+    );
+    ui.style_mut().visuals.widgets = previous;
+    response
+}
+
+/// The action that ends a running game: the same states and geometry as
+/// [`primary_button`], in the one colour that means "this stops something".
+/// Driving the widget states keeps hover and press feedback while the fill
+/// stays red, which a fixed `Button::fill` cannot do.
+fn quit_button(ui: &mut egui::Ui, text: &str, min_size: egui::Vec2) -> egui::Response {
+    let previous = ui.style().visuals.widgets.clone();
+    {
+        let widgets = &mut ui.style_mut().visuals.widgets;
+        for (widget, fill, stroke) in [
+            (&mut widgets.inactive, DANGER, DANGER),
+            (
+                &mut widgets.hovered,
+                egui::Color32::from_rgb(255, 138, 142),
+                egui::Color32::from_rgb(255, 190, 192),
+            ),
+            (
+                &mut widgets.active,
+                egui::Color32::from_rgb(226, 88, 94),
+                egui::Color32::from_rgb(255, 190, 192),
+            ),
+        ] {
+            widget.weak_bg_fill = fill;
+            widget.bg_fill = fill;
+            widget.bg_stroke = egui::Stroke::new(1.0_f32, stroke);
+        }
+    }
+    let response = ui.add(
+        egui::Button::new(
+            egui::RichText::new(text)
+                .size(11.0)
+                .strong()
+                .color(accent_on()),
+        )
+        .rounding(egui::Rounding::same(CONTROL_RADIUS))
+        .min_size(min_size),
     );
     ui.style_mut().visuals.widgets = previous;
     response
@@ -13730,6 +13862,30 @@ mod tests {
             ),
             vec![1]
         );
+    }
+
+    #[test]
+    fn modrinth_cards_are_listed_before_curseforge() {
+        // Deliberately hostile order and counts: the mirror numbers are larger
+        // and its rows arrive first. Modrinth still has to lead every sort.
+        let items = vec![
+            search_item(ModProvider::CurseForge, "jei", "Just Enough Items", 20),
+            search_item(ModProvider::CurseForge, "create", "Create", 9_000),
+            search_item(ModProvider::Modrinth, "sodium", "Sodium", 10),
+            search_item(ModProvider::Modrinth, "lithium", "Lithium", 500),
+        ];
+        let rows = build_mod_rows(&items, "");
+        for sort in [ModSort::Relevance, ModSort::Downloads, ModSort::Name] {
+            let visible = visible_mod_indices(
+                &items,
+                &rows,
+                None,
+                None,
+                "",
+                test_view(ModFilter::All, sort, true, true),
+            );
+            assert_eq!(visible, vec![3, 2, 1, 0], "{sort:?}");
+        }
     }
 
     #[test]

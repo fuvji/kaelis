@@ -1,10 +1,10 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.2.5-70a5ff)
+![Version](https://img.shields.io/badge/version-0.2.6-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
-![Tests](https://img.shields.io/badge/tests-250%20passing-3fb950)
+![Tests](https://img.shields.io/badge/tests-253%20passing-3fb950)
 
 <img width="1080" height="700" alt="accounts" src="https://github.com/user-attachments/assets/48041394-24b6-4a1c-8885-ad04ca1db913" />
 
@@ -63,21 +63,21 @@ unreferenced cache.
 
 ## Performance
 
-Measured on the shipped Windows 0.2.5 build with `tools/bench.ps1` (3 runs, warm
-disk cache, window detected through UI Automation) on 2026-10-24:
+Measured on the shipped Windows 0.2.6 build with `tools/bench.ps1` (3 runs, warm
+disk cache, window detected through UI Automation) on 2026-10-25:
 
 | Metric | Result |
 | --- | --- |
-| `kaelis --version` | 67 ms median, 299 ms p95 (one cold process start in three) |
-| Window, empty data root | 214 ms median |
-| Window, 200-jar instance | 172 ms median |
-| Working set (idle) | 98.5 MB empty, 99.6 MB with 200 jars |
-| Private bytes (idle) | 90.9 MB empty, 91.6 MB with 200 jars |
+| `kaelis --version` | 79 ms median, 110 ms p95 |
+| Window, empty data root | 365 ms median |
+| Window, 200-jar instance | 327 ms median |
+| Working set (idle) | 80.4 MB empty, 80.9 MB with 200 jars |
+| Private bytes (idle) | 90.1 MB empty, 90.9 MB with 200 jars |
 | Idle CPU | 0.00% (event-driven, no repaint loop) |
-| Handles | 492 empty, 493 with 200 jars |
-| Hibernated working set | 2.3 MB after 90 s unfocused (from 100.2 MB) |
-| Release binary | 18,003,968 B, SHA-256 `f0ed328f…` |
-| Second launch restore | 119 ms (handoff + native window wake) |
+| Handles | 491 empty, 491 with 200 jars |
+| Hibernated working set | 1.6 MB after 90 s unfocused (from 80.9 MB) |
+| Release binary | 18,021,888 B, SHA-256 `82d0aaac…` |
+| Second launch restore | 160 ms (handoff + native window wake) |
 
 The window does not wait for mod metadata: jar scanning and artwork decoding
 run on workers, so a 200-mod instance opens in the same time as an empty one.
@@ -93,7 +93,30 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.2.5
+## What's new in 0.2.6
+
+- **Quit ends the process now.** The tray's Quit and the title-bar close drop
+  the tray icon and exit immediately instead of queuing a frame on a hidden
+  window and unwinding every editor, worker, and runtime handle first. Settings
+  are already written when they change and game logs are RAM-only, so nothing
+  is lost, and no ghost icon is left in the notification area.
+- **Play becomes Quit while the game runs.** A running instance's card turns
+  its action into a red Quit, and the Overview's **Launch selected** does the
+  same for the active instance. One click asks the launch task that already owns
+  the JVM to end it — no process scan, no `taskkill` child, no wait for a window
+  close — and the card returns to Play when the exit event lands, usually within
+  a frame. A stop clicked while Java is still being prepared is kept and applied
+  the moment the process exists.
+- **Modrinth leads the catalogue.** Modrinth cards are listed before the
+  CurseForge mirror in every order: Best match, Most downloaded, and Name A-Z.
+  Download totals are not comparable between the two — the mirror counts every
+  pack that ever embedded a project — so CurseForge can no longer outrank an
+  exact Modrinth match. Duplicate projects still collapse to the Modrinth card.
+- **A three-action tray.** Show Kaelis, Play last instance, and Quit, with one
+  separator for a single glance. The interface stays dark; Windows draws native
+  tray menus in the system theme, so the shell never fights it.
+
+### From 0.2.5
 
 - **Show Kaelis always appears, even over a running game.** Hiding no longer
   goes through egui's viewport at all: on Windows the real window is hidden with

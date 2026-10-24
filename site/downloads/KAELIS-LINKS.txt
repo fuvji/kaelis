@@ -1,8 +1,8 @@
 KAELIS - URL, INSTALLATION, AND LINK INDEX
 ==========================================
-Launcher      Kaelis 0.2.5
+Launcher      Kaelis 0.2.6
 Platform      windows-x86_64
-Packaged      2026-10-24T11:32:26Z
+Packaged      2026-10-24T22:26:45Z
 Generator     tools/links.ps1 (run again after any endpoint or release change)
 Repository    https://github.com/fuvji/kaelis
 Website       https://fuvji.github.io/kaelis/
@@ -333,16 +333,16 @@ link files, and refreshes the hashes after the build.
   Paths are relative to the repository root. Hashes are SHA-256.
 
   site/downloads/Kaelis.exe
-    18003968 bytes (17.2 MB)
-    f0ed328f64f71d9a6791ec89513b83349555b1685ee575cfcfd92c417e933e73
+    18021888 bytes (17.2 MB)
+    82d0aaac4714c99a8b2c9be86f14aee312a1929a0359f2cd987b90a79593770a
 
   site/downloads/Kaelis-Portable.zip
-    8476510 bytes (8.1 MB)
-    c47c5be04a0d53a00d380d5b25f6b18be3161bef83c12aa12d6648ae992dfcff
+    8484581 bytes (8.1 MB)
+    c63d0dc6ef85e7a398c4948941cef630dec40e3f1fdc927c6e5dc35f94d275d4
 
   site/downloads/Kaelis-Setup.exe
-    6307402 bytes (6.0 MB)
-    248a1a8b058e357b8e3836945bb2da3e018d9aed31f60d264b57a8d93e2ae6fd
+    6313645 bytes (6.0 MB)
+    97d6c9815a78e39bbc20d38fe8a5b40526be52ed30fb3550633c0d750d37ff77
 
   dist/Kaelis.exe and dist/Kaelis-Setup.exe are local scratch copies;
   site/downloads is the published set. The portable ZIP contains the same

@@ -806,14 +806,64 @@ where
     }
 }
 
+/// A request to end a running JVM.
+///
+/// The launcher keeps the sender; the launch future selects on the receiver
+/// while the game runs. A stop therefore ends the process from inside the
+/// same task that owns it, with no signal handler, no polling, and no second
+/// process to start.
+pub type StopSignal = tokio::sync::watch::Receiver<bool>;
+
+/// Wait for a child to exit, or kill it the moment the launcher asks.
+///
+/// `start_kill` is not a graceful shutdown, and that is deliberate: Quit in a
+/// launcher means "end this now". A signal that arrived before the JVM even
+/// started is honoured immediately, and a launcher that drops its half of the
+/// channel leaves the game running rather than killing it behind the user's
+/// back.
+async fn wait_for_exit(
+    child: &mut tokio::process::Child,
+    stop: Option<StopSignal>,
+) -> std::io::Result<std::process::ExitStatus> {
+    let Some(mut stop) = stop else {
+        return child.wait().await;
+    };
+    if *stop.borrow() {
+        let _ = child.start_kill();
+        return child.wait().await;
+    }
+    tokio::select! {
+        status = child.wait() => status,
+        _ = wait_for_stop(&mut stop) => {
+            let _ = child.start_kill();
+            child.wait().await
+        }
+    }
+}
+
+/// Resolve only when the sender sets the flag. A closed channel means the
+/// launcher is gone; that is not a stop request, so the wait never resolves.
+async fn wait_for_stop(stop: &mut StopSignal) {
+    loop {
+        if *stop.borrow() {
+            return;
+        }
+        if stop.changed().await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    }
+}
+
 /// Launch a preinstalled Java instance. `on_spawn` runs after the JVM process
 /// is created, allowing the UI to freeze and move to its tray state; it receives
-/// the new process id so the caller can report which game owns a window.
+/// the new process id so the caller can report which game owns a window. An
+/// optional `stop` handle ends the JVM the moment the launcher sends it.
 pub async fn run_instance<F>(
     instance: Instance,
     identity: LaunchIdentity,
     log: EphemeralLog,
     on_spawn: F,
+    stop: Option<StopSignal>,
 ) -> Result<std::process::ExitStatus, LaunchError>
 where
     F: FnOnce(u32) + Send + 'static,
@@ -866,7 +916,7 @@ where
         .stderr
         .take()
         .map(|stderr| tokio::spawn(capture(stderr, log.clone(), "stderr")));
-    let status = child.wait().await;
+    let status = wait_for_exit(&mut child, stop).await;
     if let Some(task) = stdout_task {
         let _ = task.await;
     }
@@ -903,6 +953,76 @@ mod tests {
             "vanilla",
             PathBuf::from("instance"),
         )
+    }
+
+    /// A real child that stays alive far longer than any test should wait.
+    fn long_running_child() -> tokio::process::Child {
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = tokio::process::Command::new("cmd");
+            command.args(["/C", "ping -n 30 127.0.0.1 >NUL"]);
+            command
+        };
+        #[cfg(not(windows))]
+        let mut command = {
+            let mut command = tokio::process::Command::new("sleep");
+            command.arg("30");
+            command
+        };
+        command
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        command.spawn().expect("a long-running child starts")
+    }
+
+    /// A real child that exits successfully on its own shortly.
+    fn short_lived_child() -> tokio::process::Child {
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = tokio::process::Command::new("cmd");
+            command.args(["/C", "ping -n 2 127.0.0.1 >NUL"]);
+            command
+        };
+        #[cfg(not(windows))]
+        let mut command = {
+            let mut command = tokio::process::Command::new("sleep");
+            command.arg("0.4");
+            command
+        };
+        command
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        command.spawn().expect("a short-lived child starts")
+    }
+
+    #[tokio::test]
+    async fn a_stop_request_ends_the_game_in_the_same_tick() {
+        let mut child = long_running_child();
+        let (stop, receiver) = tokio::sync::watch::channel(false);
+        // Quit may land before the JVM is spawned; the flag must still apply.
+        stop.send(true).expect("receiver alive");
+        let started = std::time::Instant::now();
+        let status = wait_for_exit(&mut child, Some(receiver))
+            .await
+            .expect("wait completes");
+        assert!(!status.success(), "a stopped game did not succeed");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "stop waited for the game: {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_closed_launcher_leaves_the_game_running() {
+        let mut child = short_lived_child();
+        let (stop, receiver) = tokio::sync::watch::channel(false);
+        // The launcher exiting must not be mistaken for a Quit request.
+        drop(stop);
+        let status = wait_for_exit(&mut child, Some(receiver))
+            .await
+            .expect("wait completes");
+        assert!(status.success(), "the game was killed by a closed channel");
     }
 
     #[test]

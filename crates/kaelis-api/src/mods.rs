@@ -160,7 +160,9 @@ impl SearchOptions {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Catalogue a project came from. Declaration order is the display order:
+/// Modrinth is the primary source, CurseForge the mirror behind it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModProvider {
     #[default]
