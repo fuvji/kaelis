@@ -589,10 +589,18 @@ async fn official_files(
     kind: crate::mods::ContentKind,
     key: &str,
 ) -> Result<Vec<CfFile>, CurseForgeError> {
-    let mod_id: u32 = project
-        .trim()
-        .parse()
-        .map_err(|_| CurseForgeError::NotFound(project.to_owned()))?;
+    // The official API addresses projects by number. A slug or link is turned
+    // into one through the public index, so a keyed client accepts the same
+    // references a keyless one does.
+    let mod_id: u32 = match project.trim().parse::<u32>() {
+        Ok(id) => id,
+        Err(_) => {
+            fetch_project(client, kind, project.trim())
+                .await?
+                .ok_or_else(|| CurseForgeError::NotFound(project.to_owned()))?
+                .id
+        }
+    };
     let loader_type = kind
         .uses_loader()
         .then(|| loader_type(loader))

@@ -694,16 +694,16 @@ fn install_mod(instance_id: &str, spec: &str) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let curseforge_key =
-        kaelis_api::secrets::load_secret(kaelis_api::secrets::CURSEFORGE_KEY_ACCOUNT)
-            .ok()
-            .flatten();
-    let platforms = kaelis_api::mods::ModPlatformClient::with_curseforge_key(http, curseforge_key);
+    // CurseForge needs no stored credential: content resolves through the
+    // public index, and an approved key would come from the environment.
+    let platforms = kaelis_api::mods::ModPlatformClient::new(http);
     let loader = effective_loader(&instance);
     let mut item = kaelis_api::mods::ModSearchItem {
         provider,
         id: project.to_owned(),
-        slug: String::new(),
+        // A CurseForge spec may be a slug or an id; the slug field carries it
+        // so the public file index can resolve either form.
+        slug: project.to_owned(),
         title: project.to_owned(),
         description: String::new(),
         downloads: 0,
@@ -784,11 +784,9 @@ fn repair_instance(instance_id: &str) -> ExitCode {
         Ok(http) => http,
         Err(error) => return fail(error),
     };
-    let curseforge_key =
-        kaelis_api::secrets::load_secret(kaelis_api::secrets::CURSEFORGE_KEY_ACCOUNT)
-            .ok()
-            .flatten();
-    let platforms = kaelis_api::mods::ModPlatformClient::with_curseforge_key(http, curseforge_key);
+    // CurseForge needs no stored credential: content resolves through the
+    // public index, and an approved key would come from the environment.
+    let platforms = kaelis_api::mods::ModPlatformClient::new(http);
     let loader = effective_loader(&instance);
     let report = runtime.block_on(kaelis_api::repair::repair_environment(
         &platforms,

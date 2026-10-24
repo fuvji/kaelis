@@ -23,6 +23,17 @@ pub fn store_secret(account: &str, value: &str) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+/// Delete a CurseForge key an older build stored in Settings.
+///
+/// The key field is gone and content resolves without one, so the entry is
+/// dead weight; removing it keeps the promise that the launcher stores no
+/// third-party credential. A missing entry is not an error.
+pub fn forget_legacy_curseforge_key() {
+    if matches!(load_secret(CURSEFORGE_KEY_ACCOUNT), Ok(Some(_))) {
+        let _ = delete_secret(CURSEFORGE_KEY_ACCOUNT);
+    }
+}
+
 pub fn delete_secret(account: &str) -> Result<(), String> {
     match entry(account)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),

@@ -1220,6 +1220,9 @@ impl KaelisApp {
         sweeper: tokio::task::JoinHandle<()>,
         handoff: Option<HandoffServer>,
     ) -> Self {
+        // Settings no longer asks for a CurseForge key, so any key an older
+        // build stored is removed once instead of sitting unused.
+        kaelis_api::secrets::forget_legacy_curseforge_key();
         let (sender, receiver) = mpsc::unbounded_channel();
         if let Some(server) = handoff {
             let events = sender.clone();

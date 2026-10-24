@@ -1,5 +1,5 @@
-# Kaelis 0.2.0 - released 2026-10-24
+# Kaelis 0.2.1 - released 2026-10-24
 # Verify: shasum -a 256 -c SHA256SUMS.txt  |  certutil -hashfile <file> SHA256
-db133dc494ba49c6a220966401fe66a9579af606d16bd5c06bd5b6931627f296  Kaelis.exe
-54488b6b99784ffeeee81cde08abd06caf61e86eb7d2efc4c10026d2537bcde0  Kaelis-Portable.zip
-75d3ddf6064ad321b9c410776ba686225858187a2d63e410cbf19ce952d154fc  Kaelis-Setup.exe
+fc4c76f967148f0ea8733d4ffe01ae34c64af2fa7e3e0a70338de11b64b5f582  Kaelis.exe
+4f691d9761abda803f5f8deaad7038e68c2568af820b8986c2f450e6bce3d912  Kaelis-Portable.zip
+02f0e3282468d86b53d0452bfae8f992728dac8620bf678314ee987a2e380c41  Kaelis-Setup.exe

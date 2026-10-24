@@ -770,10 +770,8 @@ impl ModPlatformClient {
                                 }
                             }
                             ModProvider::CurseForge => {
-                                let mod_id = item
-                                    .id
-                                    .parse::<u32>()
-                                    .map_err(|_| ModInstallError::InvalidCurseForgeId)?;
+                                let mod_id = curseforge_numeric_id(&item)
+                                    .ok_or(ModInstallError::InvalidCurseForgeId)?;
                                 installed.insert(format!("curseforge:{mod_id}"));
                                 let (path, dependencies) = self
                                     .install_curseforge(
@@ -1044,10 +1042,8 @@ impl ModPlatformClient {
                 .await?
             }
             ModProvider::CurseForge => {
-                let mod_id = item
-                    .id
-                    .parse::<u32>()
-                    .map_err(|_| ModInstallError::InvalidCurseForgeId)?;
+                let mod_id =
+                    curseforge_numeric_id(item).ok_or(ModInstallError::InvalidCurseForgeId)?;
                 self.install_curseforge_content(
                     mod_id,
                     &item.slug,
@@ -1623,6 +1619,26 @@ fn enqueue_curseforge_dependencies(queue: &mut VecDeque<InstallRequest>, depende
             slug: String::new(),
         });
     }
+}
+
+/// The install queue keys projects by number, but a CLI spec or a pasted link
+/// may name a project by slug alone. A slug gets a stable synthetic id so
+/// deduplication stays correct; the slug itself is still what the file index is
+/// asked for.
+fn curseforge_numeric_id(item: &ModSearchItem) -> Option<u32> {
+    if let Ok(id) = item.id.parse::<u32>() {
+        return Some(id);
+    }
+    let slug = item.slug.trim();
+    if slug.is_empty() {
+        return None;
+    }
+    let mut hash: u32 = 2_166_136_261;
+    for byte in slug.bytes() {
+        hash ^= u32::from(byte);
+        hash = hash.wrapping_mul(16_777_619);
+    }
+    Some(hash | 1)
 }
 
 /// The public file index accepts a slug, while a dependency only carries an id.
