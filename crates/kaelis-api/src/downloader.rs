@@ -156,6 +156,15 @@ async fn download_once(client: &reqwest::Client, task: &DownloadTask) -> Result<
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
     tokio::fs::create_dir_all(parent).await?;
+    // A verified copy on this disk needs no network and no second copy: link it
+    // into the destination. The store only ever holds verified bytes, so the
+    // link is trusted exactly like a freshly verified download.
+    if !task.sha1.is_empty()
+        && !tokio::fs::try_exists(&task.dest).await?
+        && super::content::link_from_store(&task.sha1, &task.dest)
+    {
+        return Ok(());
+    }
     let existing_file_is_valid = if tokio::fs::try_exists(&task.dest).await? {
         let size_matches = task.expected_size.is_none_or(|expected| {
             std::fs::metadata(&task.dest).is_ok_and(|metadata| metadata.len() == expected)
@@ -172,6 +181,11 @@ async fn download_once(client: &reqwest::Client, task: &DownloadTask) -> Result<
         false
     };
     if existing_file_is_valid {
+        // A file installed before the store existed becomes shareable here
+        // without another download: a repair or reinstall fills the gap.
+        if !task.sha1.is_empty() {
+            super::content::adopt(&task.sha1, &task.dest);
+        }
         return Ok(());
     }
 
@@ -262,6 +276,10 @@ async fn download_once(client: &reqwest::Client, task: &DownloadTask) -> Result<
 
     std::fs::rename(&temp_path, &task.dest)?;
     staged.committed = true;
+    // Verified bytes become the single on-disk copy every later instance links.
+    if !task.sha1.is_empty() {
+        super::content::adopt(&task.sha1, &task.dest);
+    }
     Ok(())
 }
 

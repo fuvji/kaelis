@@ -63,7 +63,7 @@ const DISPOSABLE_DIRS: [&str; 11] = [
 ];
 
 /// Root-level files that only ever hold diagnostics, caches, or OS noise.
-const ROOT_JUNK: [&str; 5] = [
+const ROOT_JUNK: [&str; 10] = [
     ".DS_Store",
     "Thumbs.db",
     "desktop.ini",
@@ -71,6 +71,16 @@ const ROOT_JUNK: [&str; 5] = [
     // Name-to-UUID cache. Minecraft rewrites it from the account database on
     // the next launch, so removing it loses nothing.
     "usercache.json",
+    // Official-launcher leftovers: UI state, stale Microsoft credentials, and
+    // the realm session cache. The official launcher writes them again on its
+    // next start, and the credential file is the one piece of junk that is also
+    // a privacy risk.
+    "launcher_ui_state.json",
+    "launcher_msa_credentials.bin",
+    "launcher_accounts_microsoft_store.json",
+    "realms_persistence.json",
+    // Vanilla's pre-save backup and the server list's older copy.
+    "servers.dat_old",
 ];
 /// JVM artefacts that are never read again: crash reports, replay captures,
 /// attach sockets, and heap dumps. A heap dump is the worst of them — one
@@ -122,7 +132,7 @@ pub fn clean_instance(root: &Path) -> std::io::Result<JunkReport> {
     // Staging files are created next to their destination, so they can appear
     // in the instance root and in every content folder. The instance root also
     // collects JVM crash dumps and OS metadata files.
-    for name in ["", "mods", "resourcepacks", "shaderpacks"] {
+    for name in ["", "mods", "resourcepacks", "shaderpacks", "datapacks"] {
         let directory = if name.is_empty() {
             root.to_path_buf()
         } else {
@@ -137,7 +147,12 @@ pub fn clean_instance(root: &Path) -> std::io::Result<JunkReport> {
                 return Ok(report);
             }
             let file_name = entry.file_name().to_string_lossy().to_string();
-            let junk = is_staging_name(&file_name) || (name.is_empty() && is_root_junk(&file_name));
+            let scratch = name.is_empty()
+                && entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false)
+                && is_scratch_dir(&entry.path(), &file_name);
+            let junk = scratch
+                || is_staging_name(&file_name)
+                || (name.is_empty() && is_root_junk(&file_name));
             if junk && let Some(removed) = remove_entry(&entry) {
                 report.add(removed);
             }
@@ -169,15 +184,38 @@ pub fn clean_instances(instances_dir: &Path) -> std::io::Result<JunkReport> {
     Ok(total)
 }
 
-/// `.<anything>part`, `.<anything>tmp`, and Kaelis' own staging prefixes.
+/// `anything.part`, `anything.tmp`, `anything.download`, and Kaelis' own
+/// staging prefixes. The leading dot is not required: a downloader that names
+/// its staging file `sodium.jar.part` leaves exactly the waste this removes,
+/// and that is the shape most common in the wild.
 fn is_staging_name(name: &str) -> bool {
     if name.starts_with(".kaelis-") {
         return true;
     }
-    if !name.starts_with('.') {
+    name.ends_with(".part") || name.ends_with(".tmp") || name.ends_with(".download")
+}
+
+/// Loader or JVM scratch directories left in the instance root.
+///
+/// Fabric's datafixer pre-flight and a few mod loaders create `tmp…` folders
+/// next to the game and normally delete them on exit. A crash leaves one behind
+/// containing only generated files; nothing a user creates is named `tmp` plus
+/// a random suffix inside a game directory.
+fn is_scratch_dir(path: &Path, name: &str) -> bool {
+    // `tmp` plus a generated suffix: long, alphanumeric, and carrying at least
+    // one digit. A deliberate folder (`tmpnotes`) keeps its name.
+    if name.len() < 8
+        || !name.starts_with("tmp")
+        || !name.bytes().all(|b| b.is_ascii_alphanumeric())
+        || !name.bytes().any(|b| b.is_ascii_digit())
+    {
         return false;
     }
-    name.ends_with(".part") || name.ends_with(".tmp") || name.ends_with(".download")
+    let Ok(mut entries) = std::fs::read_dir(path) else {
+        return false;
+    };
+    let _ = entries.next();
+    true
 }
 
 fn remove_entry(entry: &std::fs::DirEntry) -> Option<JunkReport> {
@@ -379,6 +417,44 @@ mod tests {
         let report = clean_instance(&root).expect("clean");
         assert_eq!(report.files, 1);
         assert!(!log.exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn removes_leftover_scratch_downloads_and_launcher_state() {
+        let root = scratch("deeper");
+        // Interrupted downloads keep their real name plus the suffix.
+        write(&root.join("mods/sodium.jar.part"), b"partial");
+        write(&root.join("resourcepacks/pack.zip.download"), b"partial");
+        write(&root.join("examples.dat.tmp"), b"partial");
+        // A crashed Fabric pre-flight leaves this behind.
+        write(
+            &root.join("tmpmkzllels1/SystemPropertyEnvironment.json"),
+            b"{}",
+        );
+        // Official-launcher state, including a stale credential file.
+        write(&root.join("launcher_ui_state.json"), b"{}");
+        write(&root.join("launcher_msa_credentials.bin"), b"bin");
+        write(&root.join("servers.dat_old"), b"old");
+        // User content that must survive every rule above.
+        write(&root.join("saves/world/level.dat"), b"level");
+        write(&root.join("mods/sodium.jar"), b"jar");
+        write(&root.join("tmpnotes/readme.txt"), b"short deliberate name");
+        write(&root.join("config/sodium.json"), b"{}");
+
+        let report = clean_instance(&root).expect("clean");
+        // Three staging files, the scratch folder's one file, and three root
+        // files; the folder itself counts as a directory.
+        assert_eq!(report.files, 7);
+        assert_eq!(report.dirs, 1);
+        assert!(!root.join("mods/sodium.jar.part").exists());
+        assert!(!root.join("tmpmkzllels1").exists());
+        assert!(!root.join("launcher_ui_state.json").exists());
+        assert!(!root.join("launcher_msa_credentials.bin").exists());
+        assert!(root.join("mods/sodium.jar").is_file());
+        assert!(root.join("saves/world/level.dat").is_file());
+        assert!(root.join("tmpnotes/readme.txt").is_file());
+        assert!(root.join("config/sodium.json").is_file());
         let _ = std::fs::remove_dir_all(root);
     }
 

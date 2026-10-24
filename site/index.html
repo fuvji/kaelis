@@ -40,7 +40,7 @@
         "applicationSubCategory": "Minecraft launcher",
         "operatingSystem": "Windows 10, Windows 11, macOS 11, Linux",
         "processorRequirements": "x86_64 or arm64",
-        "softwareVersion": "0.2.2",
+        "softwareVersion": "0.2.3",
         "softwareRequirements": "Rust 1.85+ to build from source; Java is provisioned automatically",
         "downloadUrl": "https://fuvji.github.io/kaelis/downloads/Kaelis-Portable.zip",
         "installUrl": "https://fuvji.github.io/kaelis/#downloads",
@@ -424,7 +424,7 @@
     <div class="shell" id="top">
       <section class="hero" aria-labelledby="hero-title">
         <div>
-          <span class="eyebrow"><i></i>v0.2.2 · Windows · macOS · Linux</span>
+          <span class="eyebrow"><i></i>v0.2.3 · Windows · macOS · Linux</span>
           <h1 id="hero-title">Minecraft,<br><em>composed.</em></h1>
           <p class="lede">Instances, mods, packs, shaders, and accounts in one native workspace. Files stay local. Nothing runs in the background.</p>
           <div class="hero-actions">
@@ -488,7 +488,7 @@
           <article class="card">
             <span class="tag">Clean</span>
             <h3>Auto Erase Junk</h3>
-            <p>Logs, crash dumps, loader caches, extracted natives, and stale server packs vanish at launch and after every game. Saves, mods, and configs stay.</p>
+            <p>Logs, crash dumps, loader caches, extracted natives, stale server packs, crashed loader scratch, interrupted downloads, and stale official-launcher state vanish at launch and after every game. Saves, mods, and configs stay.</p>
           </article>
         </div>
       </section>
@@ -535,7 +535,7 @@
             <h3>Windows portable ZIP</h3>
             <p>One executable. Extract anywhere and run. Instances stay in your profile.</p>
             <div class="facts">
-              <span><b data-release="exe-size">17.1 MB</b> app</span>
+              <span><b data-release="exe-size">17.2 MB</b> app</span>
               <span><b data-release="zip-size">8.1 MB</b> zip</span>
               <span>Windows 10 / 11 · x64</span>
               <span>No install</span>
@@ -593,7 +593,7 @@
         </div>
 
         <div class="downloads-foot">
-          <span><b style="color:var(--text)">New in 0.2.2</b> · CurseForge is fully browsable with no key: name search, paging, resource packs and shaders, per-file hashes, and required-dependency installs, all through the public mirror of the official v1 format. An approved key still upgrades the same calls.</span>
+          <span><b style="color:var(--text)">New in 0.2.3</b> · Instances share one copy of the game: verified assets, libraries, the client jar, and the Java runtime are hard-linked from a content-addressed store, so a second instance of the same version costs a few MB instead of another 600+. Reopening Kaelis restores the running window in ~80 ms, and clicking the tray icon does the same. CurseForge remains fully browsable with no key.</span>
           <span>Every tag builds all three platforms in CI and publishes checksums.</span>
           <a href="downloads/KAELIS-LINKS.txt">URL &amp; install index ↗</a>
           <a href="https://github.com/fuvji/kaelis/releases/latest" rel="noreferrer">All releases ↗</a>
@@ -604,9 +604,9 @@
           <summary>Checksums and build provenance</summary>
           <div class="body">
             <p style="margin:0;color:var(--muted);font-size:13px">Every artifact is hashed at release time. Published files: <a href="downloads/SHA256SUMS.txt" style="color:var(--accent-soft)">SHA256SUMS.txt</a> and the generated <a href="downloads/KAELIS-LINKS.txt" style="color:var(--accent-soft)">URL &amp; installation index</a>.</p>
-            <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">500c8389ebe385fbb7cfd95b486dde6e32de75b0a31fe0a15bf24eace72ece64</code></div>
-            <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">30c10c40b2ad842c61f38170386e7cbaa19925990a68a388fc247bd42cfcb309</code></div>
-            <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">980e4f8fce2ad9ebcb863b5ae818581f0c37eed282c56d4cbe93b9f1886e732c</code></div>
+            <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">963675075bb3563fe97be8c0d69494eced1d6b71bf29e351c3d3af44bf3981fe</code></div>
+            <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">507a30d3e5c14370e469a74a56be46f0dc5e52ba391b0d86ed6313b2f74aa4e2</code></div>
+            <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">d68b43d315c0b539c29230a7abdf62dcf3fbd5cfe4648e8de9c1ba33afb5a6c6</code></div>
             <div class="hash"><span>Verify on Linux / macOS</span><code>shasum -a 256 -c SHA256SUMS.txt</code></div>
           </div>
         </details>

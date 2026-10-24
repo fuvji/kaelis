@@ -1,10 +1,10 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.2.2-70a5ff)
+![Version](https://img.shields.io/badge/version-0.2.3-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
-![Tests](https://img.shields.io/badge/tests-244%20passing-3fb950)
+![Tests](https://img.shields.io/badge/tests-250%20passing-3fb950)
 
 <img width="1080" height="700" alt="accounts" src="https://github.com/user-attachments/assets/48041394-24b6-4a1c-8885-ad04ca1db913" />
 
@@ -19,7 +19,8 @@ keep that library clean, correct, and fast on their own.
 
 | Feature | What it does |
 | --- | --- |
-| **Auto Erase Junk** | Clears logs, crash dumps, loader caches, extracted natives, stale server packs, heap dumps, and interrupted-download staging when the launcher starts and after every game — eleven disposable folders plus the JVM's own leftovers, capped so it can never stall startup |
+| **Auto Erase Junk** | Clears logs, crash dumps, loader caches, extracted natives, stale server packs, heap dumps, crashed-loader `tmp*` folders, interrupted downloads even when they keep their real name, and stale official-launcher state (including its saved Microsoft credential) at every start and after every game — capped so it can never stall startup |
+| **One copy of the game** | Every verified download — libraries, assets, client jar, Java runtime — is hard-linked into a content-addressed store, so a second instance of the same version occupies a few extra MB instead of another 600 MB. Store entries no instance references are pruned automatically |
 | **Auto-repair before launch** | Scans the instance's mods and installs missing required mods (for example `ukulib` for uku's Armor HUD) before the JVM starts |
 | **Auto-disable duplicates** | Keeps the newest jar when two files provide the same mod id, so the older copy cannot crash the game first |
 | **Required dependencies** | Every install resolves and downloads the dependency graph — Modrinth and CurseForge alike |
@@ -28,35 +29,53 @@ keep that library clean, correct, and fast on their own.
 | **Managed Java** | Installs the Mojang runtime the version metadata names and launches through it, so no system JDK is required |
 | **Portable instances** | One `.kaelis.zip` round trip, plus Prism/MultiMC, CurseForge, `.mrpack`, and loose pack imports |
 | **Runs in parallel** | Per-instance OS guards let different instances launch together; the same instance is refused instead of doubled |
+| **Reopens, never doubles** | One process, one tray icon: a second launch, a Start-menu click, or the tray icon restores the running window in ~80 ms instead of starting another launcher |
 | **Private by default** | RAM-only instance logs, no telemetry, no analytics, no background daemon, nothing stored that the OS credential store can hold instead |
 
 **Auto Erase Junk never guesses.** It removes only what Minecraft or Kaelis
 regenerates on the next launch: `logs`, `crash-reports`, `.cache`, `.mixin.out`,
 `.fabric`, `.quilt`, `.connector`, `debug`, `temp`, `natives`, and
-`server-resource-packs`, plus root-level noise (`Thumbs.db`, `desktop.ini`,
-`usercache.json`, `hs_err_pid*`, `replay_pid*`, `java_pid*`, `.attach_pid*`,
-`.hprof`, `.replay`). Saves, mods, configuration, resource packs, shaders,
-screenshots, and options are never touched, a symlinked instance root is refused
-rather than followed, and a hostile folder cannot slow startup past 50,000
-inspected entries.
+`server-resource-packs`; staging files ending `.part`, `.tmp`, or `.download`
+with or without a leading dot, in the root and in every content folder; crashed
+loader/JVM scratch folders (`tmp` plus a generated suffix); and root-level noise
+(`Thumbs.db`, `usercache.json`, `hs_err_pid*`, `java_pid*`, `.attach_pid*`,
+`.hprof`, `.replay`, `realms_persistence.json`, `servers.dat_old`, and the
+official launcher's UI state and saved credential file). Saves, mods,
+configuration, resource packs, shaders, screenshots, and options are never
+touched, a symlinked instance root is refused rather than followed, and a
+hostile folder cannot slow startup past 50,000 inspected entries.
+
+**The same bytes are stored once.** A verified file is hard-linked into
+`<data>/content`, keyed by its SHA-1, before any later instance can ask for it:
+the download layer checks the store first, so a second instance of the same
+version links 443 MB of assets, 66 MB of libraries, the client jar, and the
+100 MB Java runtime in place of downloading them. Hard links are one inode with
+two names, so deleting an instance never damages another, and a store entry that
+no instance references is pruned from disk. A store on another volume, or a
+filesystem without hard links, simply falls back to a normal download.
+
+`kaelis --clean [--json]` runs the same pass with no window: junk from every
+instance, a one-time share of files that predate the store, and a prune of
+unreferenced cache.
 
 <img width="1080" height="700" alt="Instances" src="site/assets/app-instances.png" />
 
 ## Performance
 
-Measured on the shipped Windows 0.2.2 build with `tools/bench.ps1` (3 runs, warm
+Measured on the shipped Windows 0.2.3 build with `tools/bench.ps1` (3 runs, warm
 disk cache, window detected through UI Automation) on 2026-10-24:
 
 | Metric | Result |
 | --- | --- |
-| `kaelis --version` | 71 ms median, 89 ms p95 |
-| Window, empty data root | 216 ms median |
-| Window, 200-jar instance | 191 ms median |
-| Working set (idle) | 100.1 MB empty, 98.8 MB with 200 jars |
-| Private bytes (idle) | 90.9 MB |
+| `kaelis --version` | 87 ms median, 134 ms p95 |
+| Window, empty data root | 589 ms median |
+| Window, 200-jar instance | 335 ms median |
+| Working set (idle) | 98.0 MB empty, 99.1 MB with 200 jars |
+| Private bytes (idle) | 90.5 MB empty, 91.4 MB with 200 jars |
 | Idle CPU | 0.00% (event-driven, no repaint loop) |
-| Handles | 554 |
-| Release binary | 17,962,496 B, SHA-256 `500c8389…` |
+| Handles | 503 empty, 487 with 200 jars |
+| Release binary | 17,992,704 B, SHA-256 `96367507…` |
+| Second launch restore | 95 ms (handoff + native window wake) |
 
 The window does not wait for mod metadata: jar scanning and artwork decoding
 run on workers, so a 200-mod instance opens in the same time as an empty one.
@@ -72,7 +91,26 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.2.2
+## What's new in 0.2.3
+
+- **One copy of every game file.** Verified downloads are hard-linked into a
+  content-addressed store before the next instance asks for them, so a second
+  instance of the same version links the assets, libraries, client jar, and Java
+  runtime instead of downloading or storing them again. Entries that no instance
+  references are pruned; there is no copy, move, or second decompression. A
+  store on another volume falls back to a normal download.
+- **Reopening Kaelis always brings it back.** A second launch hands its arguments
+  to the running window and exits in about 80 ms; the channel is retried for two
+  seconds so a double-click during a cold start still lands, and a native window
+  wake covers a lost channel. Clicking the tray icon itself restores the window,
+  exactly like **Show Kaelis**, including while a game is running.
+- **Auto Erase Junk found the rest.** Staging files are removed even when they
+  keep their real name (`sodium.jar.part`), a crashed loader's `tmp…` folder is
+  gone, and the official launcher's UI state and saved Microsoft credential file
+  no longer survive in an instance. `kaelis --clean [--json]` runs the whole pass
+  headlessly.
+
+### From 0.2.2
 
 - **CurseForge is a real catalogue now.** Without a key, search reads the public
   mirror of the official v1 API — same paths, JSON, pagination, hashes, and
@@ -199,6 +237,7 @@ diagnostics on stderr, so scripts and MCP servers can parse it without a GUI.
 | `kaelis` | Opens the desktop launcher |
 | `kaelis --version [--json]` | Build identity, platform, site and checksum URLs |
 | `kaelis --status [--json]` | Data root, instance and account counts, active identity, resolved Java |
+| `kaelis --clean [--json]` | Erase junk from every instance, share files that predate the store, prune unreferenced cache |
 | `kaelis --list-instances [--json]` | Every instance: id, name, version, loader, mod count |
 | `kaelis --list-versions [--show-alpha] [--show-beta] [--hide-snapshots] [--json]` | Newest Mojang versions |
 | `kaelis --accounts [--json]` | Every saved identity, its kind, profile id, and the active one |

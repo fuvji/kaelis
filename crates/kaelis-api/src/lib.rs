@@ -3,6 +3,7 @@
 pub mod account_import;
 pub mod accounts;
 pub mod auth;
+pub mod content;
 pub mod curseforge;
 pub mod downloader;
 pub mod foreign;

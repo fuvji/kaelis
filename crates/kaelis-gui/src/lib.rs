@@ -3130,6 +3130,27 @@ impl KaelisApp {
                 Ok(report) => report.summary(),
                 Err(error) => format!("Cleanup skipped: {error}"),
             };
+            // Older instances keep private copies of libraries, the client jar,
+            // and the Java runtime until one pass links them into the shared
+            // store. A per-instance marker makes every later start a no-op.
+            let mut shared = kaelis_api::content::ShareReport::default();
+            for instance in Instance::load_all().unwrap_or_default() {
+                shared.add(kaelis_api::content::seed_instance(&instance.root));
+            }
+            let pruned = kaelis_api::content::prune_unreferenced();
+            let message = if pruned.is_empty() {
+                message
+            } else {
+                format!(
+                    "{message} Pruned {:.1} MiB of unreferenced cache.",
+                    pruned.bytes as f64 / (1024.0 * 1024.0)
+                )
+            };
+            let message = if shared.is_empty() {
+                message
+            } else {
+                format!("{message} {}", shared.summary())
+            };
             send_event(&sender, &repaint, GuiEvent::Notice(message));
         });
     }

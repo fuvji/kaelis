@@ -270,9 +270,11 @@ mod platform {
         let path = wide(&pipe_path(name));
         let mut pipe = None;
         let mut last_error = 0_u32;
-        // The primary may still be creating the endpoint or recycling an
-        // instance; retry briefly rather than dropping a launch request.
-        for attempt in 0..10 {
+        // The primary creates this endpoint moments after it owns the guard, so
+        // a double-click during a cold start can arrive first. Two seconds of
+        // retries covers that window without making a real second launch wait.
+        const ATTEMPTS: usize = 40;
+        for attempt in 0..ATTEMPTS {
             // SAFETY: the path is NUL terminated and lives through the call.
             let handle = unsafe {
                 CreateFileW(
@@ -296,8 +298,8 @@ mod platform {
                     // SAFETY: the path is valid; waits for a free instance.
                     unsafe { WaitNamedPipeW(path.as_ptr(), 200) };
                 }
-                ERROR_FILE_NOT_FOUND if attempt < 9 => {
-                    std::thread::sleep(std::time::Duration::from_millis(25));
+                ERROR_FILE_NOT_FOUND if attempt + 1 < ATTEMPTS => {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
                 }
                 _ => break,
             }
@@ -415,19 +417,35 @@ mod platform {
 
     pub(super) fn send(name: &str, payload: &[u8]) -> Result<(), HandoffError> {
         let path = socket_path(name);
-        let mut stream = match UnixStream::connect(&path) {
-            Ok(stream) => stream,
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    std::io::ErrorKind::NotFound
-                        | std::io::ErrorKind::ConnectionRefused
-                        | std::io::ErrorKind::ConnectionReset
-                ) =>
-            {
-                return Err(HandoffError::NotRunning);
+        // Same cold-start window as Windows: the socket appears a moment after
+        // the guard, so a second launch retries instead of giving up.
+        let mut stream = None;
+        let mut last = None;
+        for attempt in 0..40 {
+            match UnixStream::connect(&path) {
+                Ok(stream) => {
+                    stream = Some(stream);
+                    break;
+                }
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::NotFound
+                            | std::io::ErrorKind::ConnectionRefused
+                            | std::io::ErrorKind::ConnectionReset
+                    ) =>
+                {
+                    last = Some(error);
+                    if attempt < 39 {
+                        std::thread::sleep(Duration::from_millis(50));
+                    }
+                }
+                Err(error) => return Err(error.into()),
             }
-            Err(error) => return Err(error.into()),
+        }
+        let Some(mut stream) = stream else {
+            let _ = last;
+            return Err(HandoffError::NotRunning);
         };
         stream.set_write_timeout(Some(Duration::from_secs(2)))?;
         let mut frame = Vec::with_capacity(payload.len() + 4);

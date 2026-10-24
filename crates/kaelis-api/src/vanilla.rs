@@ -483,6 +483,8 @@ fn asset_tasks(index: &AssetIndex, root: &Path) -> Result<Vec<DownloadTask>, Van
             return Err(VanillaInstallError::Invalid("asset SHA-1"));
         }
         let hash = object.hash.to_ascii_lowercase();
+        // Mojang's object layout repeats the hash: the first two characters are
+        // the folder and the whole 40-character hash is the file name.
         let relative = format!("{}/{}", &hash[..2], hash);
         let destination = safe_destination(&object_root, &relative)?;
         if !destinations.insert(destination.clone()) {

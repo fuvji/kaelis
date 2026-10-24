@@ -69,6 +69,10 @@ enum Action {
     Status {
         json: bool,
     },
+    /// Erase disposable files from every instance and prune the shared store.
+    Clean {
+        json: bool,
+    },
     /// Every saved identity, with the one the next launch will use.
     Accounts {
         json: bool,
@@ -114,6 +118,8 @@ fn main() -> ExitCode {
     let _single_instance = if interactive && !screenshot_mode {
         match SingleInstance::claim() {
             Ok(guard) => Some(guard),
+            // The primary binds its channel moments after this guard exists, so
+            // the forwarder retries for long enough to cover a cold start.
             Err(SingleInstanceError::AlreadyRunning(_)) => return forward_to_primary(),
             Err(error) => {
                 eprintln!("[Kaelis] could not claim single-instance guard: {error}");
@@ -129,7 +135,12 @@ fn main() -> ExitCode {
         match HandoffServer::bind() {
             Ok(server) => Some(server),
             Err(error) => {
-                eprintln!("[Kaelis] single-instance handoff unavailable: {error}");
+                // AddrInUse means another primary still owns the endpoint,
+                // which needs no message of its own.
+                if !matches!(&error, handoff::HandoffError::Io(io) if io.kind() == std::io::ErrorKind::AddrInUse)
+                {
+                    eprintln!("[Kaelis] single-instance handoff unavailable: {error}");
+                }
                 None
             }
         }
@@ -176,6 +187,7 @@ fn main() -> ExitCode {
         }
         Action::ListInstances { json } => list_instances(json),
         Action::Status { json } => status(json),
+        Action::Clean { json } => clean_junk(json),
         Action::Accounts { json } => list_accounts(json),
         Action::UseAccount { name, json } => use_account(&name, json),
         Action::CheckUpdates { instance_id, json } => check_mod_updates(&instance_id, json, false),
@@ -245,12 +257,100 @@ fn forward_to_primary() -> ExitCode {
     match handoff::forward(&arguments) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            // The previous behavior was a silent successful exit; keep the exit
-            // code stable for scripts and surface why the handoff was lost.
+            // The channel can be missing while a window still exists: an older
+            // build, or a primary whose endpoint was never bound. Waking the
+            // window natively keeps a double-click from being a silent no-op.
+            if activate_existing_window() {
+                return ExitCode::SUCCESS;
+            }
+            // Keep the exit code stable for scripts and say why the handoff
+            // was lost; a launcher that opened nothing must not look happy.
             eprintln!("[Kaelis] another instance is running, but handoff failed: {error}");
             ExitCode::SUCCESS
         }
     }
+}
+
+/// Restore the window of the process that owns the single-instance guard.
+///
+/// This is the fallback for a lost handoff channel, not the normal path: the
+/// window is found by the launcher title, so it works across processes.
+#[cfg(windows)]
+fn activate_existing_window() -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        FindWindowW, SW_RESTORE, SW_SHOW, SetForegroundWindow, ShowWindow,
+    };
+
+    let title = wide(kaelis_core::brand::LAUNCHER_NAME);
+    // SAFETY: both pointers are NUL-terminated and live for the call; a null
+    // class name asks for any class with this exact title.
+    let window = unsafe { FindWindowW(std::ptr::null(), title.as_ptr()) };
+    if window.is_null() {
+        return false;
+    }
+    // SAFETY: the handle was just returned for a live top-level window.
+    unsafe {
+        ShowWindow(window, SW_RESTORE);
+        ShowWindow(window, SW_SHOW);
+        SetForegroundWindow(window);
+    }
+    true
+}
+
+#[cfg(not(windows))]
+fn activate_existing_window() -> bool {
+    false
+}
+
+/// Erase disposable files from every instance, share what predates the store,
+/// and prune cache entries no instance references.
+fn clean_junk(json: bool) -> ExitCode {
+    let instances = Instance::load_all().unwrap_or_default();
+    let mut junk = kaelis_core::junk::JunkReport::default();
+    for instance in &instances {
+        if let Ok(report) = kaelis_core::junk::clean_instance(&instance.root) {
+            junk.files += report.files;
+            junk.dirs += report.dirs;
+            junk.bytes += report.bytes;
+        }
+    }
+    // Hashing an old instance is a one-time cost, so a run with nothing new to
+    // share is instant.
+    let mut shared = kaelis_api::content::ShareReport::default();
+    for instance in &instances {
+        shared.add(kaelis_api::content::seed_instance(&instance.root));
+    }
+    let pruned = kaelis_api::content::prune_unreferenced();
+    // Only entries older than an hour: a running game's temp must survive.
+    let swept = kaelis_core::sweeper::sweep_stale(3600).unwrap_or(0);
+    if json {
+        print_json(serde_json::json!({
+            "instances": instances.len(),
+            "junk": {
+                "files": junk.files,
+                "dirs": junk.dirs,
+                "bytes": junk.bytes,
+            },
+            "shared": { "files": shared.files, "bytes": shared.bytes },
+            "pruned": { "files": pruned.files, "bytes": pruned.bytes },
+            "swept": swept,
+        }));
+        return ExitCode::SUCCESS;
+    }
+    println!("{}", junk.summary());
+    if !shared.is_empty() {
+        println!("{}", shared.summary());
+    }
+    if !pruned.is_empty() {
+        println!(
+            "Pruned unreferenced cache · {:.1} MiB",
+            pruned.bytes as f64 / (1024.0 * 1024.0)
+        );
+    }
+    if swept > 0 {
+        println!("Swept {swept} stale temporary item(s).");
+    }
+    ExitCode::SUCCESS
 }
 
 fn parse_args(args: impl Iterator<Item = String>) -> Result<Action, String> {
@@ -272,6 +372,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Action, String> {
     let mut duplicate_with_worlds = false;
     let mut list_instances = false;
     let mut status = false;
+    let mut clean = false;
     let mut accounts_report = false;
     let mut use_account = None;
     let mut check_updates = None;
@@ -288,6 +389,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Action, String> {
             "--list-instances" => list_instances = true,
             "--json" => json = true,
             "--status" => status = true,
+            "--clean" => clean = true,
             "--accounts" => accounts_report = true,
             "--check-updates" => {
                 check_updates = Some(
@@ -400,11 +502,34 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Action, String> {
         && check_updates.is_none()
         && update_mods.is_none()
         && duplicate_instance.is_none()
+        && !clean
     {
         return Err(
             "--json refines --version, --offline, --list-versions, --list-instances, --status, --accounts or --use-account"
                 .to_owned(),
         );
+    }
+    if clean {
+        let mixed = version
+            || list_versions
+            || list_instances
+            || status
+            || accounts_report
+            || use_account.is_some()
+            || instance_id.is_some()
+            || offline_name.is_some()
+            || install_mod.is_some()
+            || import_pack.is_some()
+            || export_instance.is_some()
+            || import_instance.is_some()
+            || duplicate_instance.is_some()
+            || repair_instance_id.is_some()
+            || check_updates.is_some()
+            || update_mods.is_some();
+        if mixed {
+            return Err("--clean is a standalone operation".to_owned());
+        }
+        return Ok(Action::Clean { json });
     }
     if accounts_report && use_account.is_some() {
         return Err("--accounts and --use-account are separate commands".to_owned());
@@ -623,6 +748,7 @@ fn usage() -> &'static str {
        kaelis --duplicate <instance-id> [--with-worlds] [--json]\n\
        kaelis --list-instances [--json]\n\
        kaelis --status [--json]\n\
+       kaelis --clean [--json]\n\
        kaelis --accounts [--json]\n\
        kaelis --use-account <name> [--json]\n\
        kaelis --check-updates <instance-id> [--json]\n\
@@ -643,6 +769,10 @@ fn usage() -> &'static str {
      creating an instance under a free id.\n\
      --duplicate copies mods, packs, shaders, settings, and notes under a free\n\
      id; add --with-worlds to copy saves too. Logs and crash reports never copy.\n\
+     --clean erases logs, crash reports, interrupted downloads, loader scratch,\n\
+     and stale launcher state from every instance, shares game files that predate\n\
+     the shared store, and prunes cache no instance references any more. It never\n\
+     touches saves, mods, configs, resource packs, shaders, or screenshots.\n\
      --json prints one machine-readable document instead of prose; every report\n\
      is stable across versions so scripts and MCP servers can parse it."
 }

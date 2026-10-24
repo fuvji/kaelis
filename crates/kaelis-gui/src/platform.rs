@@ -34,7 +34,7 @@ pub(crate) fn restore_now() {
 fn restore_windows_window() {
     use windows_sys::Win32::System::Threading::GetCurrentProcessId;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowTextW, GetWindowThreadProcessId, SW_RESTORE, SW_SHOW,
+        EnumWindows, GetClassNameW, GetWindowTextW, GetWindowThreadProcessId, SW_RESTORE, SW_SHOW,
         SetForegroundWindow, ShowWindow,
     };
 
@@ -42,6 +42,19 @@ fn restore_windows_window() {
         pid: u32,
         title: Vec<u16>,
         found: isize,
+        /// Any titled, non-console top-level window of this process. The
+        /// launcher title is the fast path; this keeps the window reachable if
+        /// a future build ever renders a dynamic title.
+        fallback: isize,
+    }
+
+    /// ASCII-only case fold for a UTF-16 code unit; non-letters pass through.
+    fn fold(value: u16) -> u16 {
+        if (u16::from(b'A')..=u16::from(b'Z')).contains(&value) {
+            value + 32
+        } else {
+            value
+        }
     }
 
     unsafe extern "system" fn find_window(
@@ -60,11 +73,35 @@ fn restore_windows_window() {
         let mut buffer = [0_u16; 128];
         // SAFETY: the buffer is valid for its declared length.
         let length = unsafe { GetWindowTextW(window, buffer.as_mut_ptr(), buffer.len() as i32) };
-        if length <= 0 || buffer[..length as usize] != target.title {
+        if length <= 0 {
             return 1;
         }
-        target.found = window as isize;
-        0
+        let title = &buffer[..length as usize];
+        // Prefix, not equality: the launcher may append the instance name, and
+        // a hidden window must still be found after any title change.
+        let matches = title.len() >= target.title.len()
+            && title
+                .iter()
+                .zip(&target.title)
+                .all(|(left, right)| fold(*left) == fold(*right));
+        if matches {
+            target.found = window as isize;
+            return 0;
+        }
+        if target.fallback == 0 {
+            let mut class = [0_u16; 64];
+            // SAFETY: the buffer is valid for its declared length.
+            let class_length =
+                unsafe { GetClassNameW(window, class.as_mut_ptr(), class.len() as i32) };
+            let console = class_length > 0 && {
+                let name = String::from_utf16_lossy(&class[..class_length as usize]);
+                name.eq_ignore_ascii_case("ConsoleWindowClass")
+            };
+            if !console {
+                target.fallback = window as isize;
+            }
+        }
+        1
     }
 
     let title = kaelis_core::brand::LAUNCHER_NAME
@@ -75,16 +112,22 @@ fn restore_windows_window() {
         pid: unsafe { GetCurrentProcessId() },
         title,
         found: 0,
+        fallback: 0,
     };
     // SAFETY: the callback only touches `target` through the pointer we pass,
     // and both live until EnumWindows returns.
     unsafe {
         EnumWindows(Some(find_window), &mut target as *mut Target as isize);
     }
-    if target.found == 0 {
+    let found = if target.found != 0 {
+        target.found
+    } else {
+        target.fallback
+    };
+    if found == 0 {
         return;
     }
-    let window = target.found as windows_sys::Win32::Foundation::HWND;
+    let window = found as windows_sys::Win32::Foundation::HWND;
     // SAFETY: `window` was returned by EnumWindows for this process.
     unsafe {
         ShowWindow(window, SW_RESTORE);

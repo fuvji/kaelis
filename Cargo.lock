@@ -2697,7 +2697,7 @@ dependencies = [
 
 [[package]]
 name = "kaelis-api"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "futures",
  "kaelis-core",
@@ -2710,6 +2710,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "url",
+ "windows-sys 0.60.2",
  "xxhash-rust",
  "zeroize",
  "zip",
@@ -2717,7 +2718,7 @@ dependencies = [
 
 [[package]]
 name = "kaelis-core"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "directories",
  "libc",
@@ -2730,7 +2731,7 @@ dependencies = [
 
 [[package]]
 name = "kaelis-gui"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "arboard",
  "base64 0.22.1",
@@ -2754,7 +2755,7 @@ dependencies = [
 
 [[package]]
 name = "kaelis-launcher"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "eframe",
  "embed-resource",

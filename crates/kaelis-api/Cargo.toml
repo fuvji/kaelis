@@ -1,6 +1,6 @@
 [package]
 name = "kaelis-api"
-version = "0.2.2"
+version = "0.2.3"
 edition.workspace = true
 description = "Kaelis API: Mojang versions, Modrinth, CurseForge, auth, and launch"
 homepage = "https://github.com/fuvji/kaelis"
@@ -23,6 +23,9 @@ zeroize = "1"
 
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", default-features = false, features = ["windows-native"] }
+# The shared content store asks the filesystem how many links name a file, so a
+# cache entry that no instance references can be pruned safely.
+windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", default-features = false, features = ["apple-native"] }

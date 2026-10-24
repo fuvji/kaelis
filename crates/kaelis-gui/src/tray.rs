@@ -5,7 +5,7 @@ use crate::GuiEvent;
 use eframe::egui;
 use tokio::sync::mpsc::UnboundedSender;
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
-use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
+use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 pub(crate) struct TrayController {
     _icon: TrayIcon,
@@ -27,6 +27,8 @@ impl TrayController {
         let launch_id = launch.id().clone();
         let quit_id = quit.id().clone();
         let receiver = MenuEvent::receiver().clone();
+        let click_events = events.clone();
+        let click_context = context.clone();
         std::thread::Builder::new()
             .name("kaelis-tray-events".to_owned())
             .spawn(move || {
@@ -43,6 +45,31 @@ impl TrayController {
                     if let Some(action) = action {
                         let _ = events.send(GuiEvent::Tray(action));
                         context.request_repaint();
+                    }
+                }
+            })
+            .map_err(|error| error.to_string())?;
+
+        // A tray icon is also a button. Clicking it is the gesture every other
+        // tray application answers, so it restores the window instead of
+        // silently doing nothing and leaving the menu as the only way back.
+        std::thread::Builder::new()
+            .name("kaelis-tray-click".to_owned())
+            .spawn(move || {
+                let receiver = TrayIconEvent::receiver().clone();
+                while let Ok(event) = receiver.recv() {
+                    let restores = matches!(
+                        event,
+                        TrayIconEvent::DoubleClick { .. }
+                            | TrayIconEvent::Click {
+                                button: MouseButton::Left,
+                                button_state: MouseButtonState::Up,
+                                ..
+                            }
+                    );
+                    if restores {
+                        let _ = click_events.send(GuiEvent::Tray(TrayAction::Show));
+                        click_context.request_repaint();
                     }
                 }
             })
