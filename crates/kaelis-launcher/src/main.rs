@@ -694,15 +694,15 @@ fn install_mod(instance_id: &str, spec: &str) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    // CurseForge needs no stored credential: content resolves through the
-    // public index, and an approved key would come from the environment.
+    // CurseForge needs no stored credential: its catalogue is read through the
+    // public mirror of the v1 API, and an approved key is an optional upgrade.
     let platforms = kaelis_api::mods::ModPlatformClient::new(http);
     let loader = effective_loader(&instance);
     let mut item = kaelis_api::mods::ModSearchItem {
         provider,
         id: project.to_owned(),
         // A CurseForge spec may be a slug or an id; the slug field carries it
-        // so the public file index can resolve either form.
+        // so a slug-only spec still resolves while a real id is used directly.
         slug: project.to_owned(),
         title: project.to_owned(),
         description: String::new(),
@@ -784,8 +784,8 @@ fn repair_instance(instance_id: &str) -> ExitCode {
         Ok(http) => http,
         Err(error) => return fail(error),
     };
-    // CurseForge needs no stored credential: content resolves through the
-    // public index, and an approved key would come from the environment.
+    // CurseForge needs no stored credential: its catalogue is read through the
+    // public mirror of the v1 API, and an approved key is an optional upgrade.
     let platforms = kaelis_api::mods::ModPlatformClient::new(http);
     let loader = effective_loader(&instance);
     let report = runtime.block_on(kaelis_api::repair::repair_environment(

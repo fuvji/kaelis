@@ -1,8 +1,8 @@
 KAELIS - URL, INSTALLATION, AND LINK INDEX
 ==========================================
-Launcher      Kaelis 0.2.1
+Launcher      Kaelis 0.2.2
 Platform      windows-x86_64
-Packaged      2026-10-24T06:29:41Z
+Packaged      2026-10-24T07:07:16Z
 Generator     tools/links.ps1 (run again after any endpoint or release change)
 Repository    https://github.com/fuvji/kaelis
 Website       https://fuvji.github.io/kaelis/
@@ -333,16 +333,16 @@ link files, and refreshes the hashes after the build.
   Paths are relative to the repository root. Hashes are SHA-256.
 
   site/downloads/Kaelis.exe
-    17946624 bytes (17.1 MB)
-    fc4c76f967148f0ea8733d4ffe01ae34c64af2fa7e3e0a70338de11b64b5f582
+    17962496 bytes (17.1 MB)
+    500c8389ebe385fbb7cfd95b486dde6e32de75b0a31fe0a15bf24eace72ece64
 
   site/downloads/Kaelis-Portable.zip
-    8447728 bytes (8.1 MB)
-    4f691d9761abda803f5f8deaad7038e68c2568af820b8986c2f450e6bce3d912
+    8455128 bytes (8.1 MB)
+    30c10c40b2ad842c61f38170386e7cbaa19925990a68a388fc247bd42cfcb309
 
   site/downloads/Kaelis-Setup.exe
-    6287467 bytes (6.0 MB)
-    02f0e3282468d86b53d0452bfae8f992728dac8620bf678314ee987a2e380c41
+    6292128 bytes (6.0 MB)
+    980e4f8fce2ad9ebcb863b5ae818581f0c37eed282c56d4cbe93b9f1886e732c
 
   dist/Kaelis.exe and dist/Kaelis-Setup.exe are local scratch copies;
   site/downloads is the published set. The portable ZIP contains the same
@@ -366,13 +366,15 @@ link files, and refreshes the hashes after the build.
   endpoint that was added without updating this generator.
 
   https://api.cfwidget.com
-    crates\kaelis-api\src\curseforge.rs:23
+    crates\kaelis-api\src\curseforge.rs:26
+  https://api.curse.tools/v1
+    crates\kaelis-api\src\curseforge.rs:25
   https://login.live.com/oauth20_connect.srf
     crates\kaelis-api\src\auth\mod.rs:22
   https://login.live.com/oauth20_token.srf
     crates\kaelis-api\src\auth\mod.rs:23
   https://mediafilez.forgecdn.net
-    crates\kaelis-api\src\curseforge.rs:24
+    crates\kaelis-api\src\curseforge.rs:27
 
 ==============================================================================
 9. DISCLAIMER

@@ -88,15 +88,15 @@ kaelis --import-instance ~/fabric-1-21.kaelis.zip
 <img width="1080" height="700" alt="modpacks" src="https://github.com/user-attachments/assets/161668d6-006e-41b5-951f-d4c98abb049c" />
 
 Both Modrinth and CurseForge are supported, and neither needs a key or account.
-Type a CurseForge project name, paste its link, or give its project id and it
-resolves straight to the project, then installs from the official CDN. Nothing
-to configure, and nothing stored.
+CurseForge is read through the public mirror of its v1 API: the same paths,
+JSON, pagination, and file metadata as the official endpoint. Typing a name
+searches the real catalogue, a project link or id resolves exactly, and every
+install comes from the official ForgeCDN with hash and required-dependency
+checks. Nothing to configure, and nothing stored.
 
-CurseForge's own catalogue search endpoint is key-only, so Kaelis never scrapes
-it: the keyless path resolves exact projects instead of pretending to browse a
-catalogue it cannot legally read. Modrinth remains the full-text catalogue. If
-you hold an approved CurseForge key, exporting `CF_API_KEY` upgrades search to
-the official API without changing anything else.
+If you hold an approved CurseForge key, exporting `CF_API_KEY` aims the same
+calls at the official endpoint, which adds its per-key quota without changing
+anything else in the launcher.
 
 Sites without an API — SpigotMC, Planet Minecraft, 9Minecraft, GitHub release
 pages, private packs — are covered by the link and local-file paths instead of

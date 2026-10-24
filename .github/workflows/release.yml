@@ -1,6 +1,6 @@
 name: Release
 
-# Tag a commit (`git tag v0.2.1 && git push --tags`) and every platform is built
+# Tag a commit (`git tag v0.2.2 && git push --tags`) and every platform is built
 # from that exact source. The site links point at these artifacts, so a tag is
 # the only way a download can change.
 on:

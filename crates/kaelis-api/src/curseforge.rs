@@ -1,18 +1,18 @@
 //! CurseForge content client.
 //!
-//! Two transports share one surface:
+//! Three wires share one surface, and none of them needs an account:
 //!
 //! * The official v1 API, used when `CF_API_KEY` (or an explicit key) is set.
-//!   It carries the full catalogue, dependency graphs, and hashes.
-//! * The public catalogue, used otherwise. `api.cfwidget.com` indexes projects
-//!   and their files, and ForgeCDN serves the bytes; file ids encode the CDN
-//!   path, so a download needs no extra metadata call.
+//!   It is the account-bound wire: a per-key quota and the provider's blessing.
+//! * `api.curse.tools`, a public read-only mirror of that same v1 API. Same
+//!   paths, same JSON, same pagination, same file metadata — no key. This is
+//!   what makes a real CurseForge catalogue search work with zero setup.
+//! * `api.cfwidget.com`, the last resort: it indexes a project by slug or id,
+//!   so an exact reference still resolves when the mirror is unreachable.
 //!
-//! The public transport resolves an exact reference — a project URL, a numeric
-//! id, or a slug — and installs it with no account, key, or setup. CurseForge's
-//! search endpoint itself is key-only, so a keyless search resolves the typed
-//! name as a project rather than listing categories, and returns nothing when
-//! it is not an exact project. That keeps every result installable.
+//! The first two speak the identical format, so one request builder serves
+//! both; only the base URL and the key header differ. ForgeCDN serves the bytes,
+//! and a file's own `downloadUrl` is used when the wire publishes one.
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -20,14 +20,26 @@ use std::time::{Duration, Instant};
 use thiserror::Error;
 
 pub const CURSEFORGE_API: &str = "https://api.curseforge.com/v1";
+/// Public read-only mirror of the v1 API. Same request and response format as
+/// [`CURSEFORGE_API`], no key, no account.
+pub const CURSEFORGE_MIRROR: &str = "https://api.curse.tools/v1";
 pub const CFWIDGET_API: &str = "https://api.cfwidget.com";
 pub const FORGECDN: &str = "https://mediafilez.forgecdn.net";
 pub const MINECRAFT_GAME_ID: u32 = 432;
+/// `sortField=6` is total downloads. The endpoint's default order ignores the
+/// search filter for relevance and returns unrelated popular projects first,
+/// while downloads puts the project a user names at the top of the page.
+const CATALOGUE_SORT_FIELD: u32 = 6;
 /// The public index answers `202` while it builds a cold entry.
 const PUBLIC_FILE_ATTEMPTS: u32 = 3;
 /// A resolved project is reused for five minutes, so typing and re-installing
 /// never re-downloads a large project page.
 const PROJECT_CACHE_TTL: Duration = Duration::from_secs(300);
+/// One catalogue page is reused for a minute: toggling a filter, stepping pages,
+/// or retyping a name then costs nothing. CurseForge's own edge caches answers
+/// for an hour, so this removes round trips without hiding updates.
+const SEARCH_CACHE_TTL: Duration = Duration::from_secs(60);
+const SEARCH_CACHE_ENTRIES: usize = 96;
 
 #[derive(Debug, Error)]
 pub enum CurseForgeError {
@@ -39,6 +51,15 @@ pub enum CurseForgeError {
     Rejected(u16),
     #[error("CurseForge has no project matching {0}")]
     NotFound(String),
+}
+
+impl CurseForgeError {
+    /// True when the provider, not the request, failed: a connection problem,
+    /// a refusal, or an error page. Only these justify the fallback index; an
+    /// empty result is a real answer and must never be second-guessed.
+    fn is_transport(&self) -> bool {
+        matches!(self, Self::Http(_) | Self::Rejected(_))
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -95,6 +116,11 @@ struct CfSearchResponse {
     pub data: Vec<CfMod>,
     #[serde(default)]
     pub pagination: CfPagination,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CfModResponse {
+    pub data: CfMod,
 }
 
 /// One page of CurseForge results plus the provider's total count.
@@ -179,12 +205,6 @@ fn api_key(explicit: Option<&str>) -> Option<String> {
         .or_else(api_key_from_env)
 }
 
-fn with_key(req: reqwest::RequestBuilder, key: &str) -> reqwest::RequestBuilder {
-    req.header("x-api-key", key)
-        .header("User-Agent", kaelis_core::brand::user_agent())
-        .header("Accept", "application/json")
-}
-
 fn loader_type(loader: &str) -> Result<u32, CurseForgeError> {
     match loader.to_ascii_lowercase().as_str() {
         "forge" => Ok(1),
@@ -222,8 +242,10 @@ pub async fn search(
 /// Search one CurseForge content class. The loader filter is only valid for
 /// mods; packs, shaders, and worlds are filtered by game version alone.
 ///
-/// With a key this is a real catalogue search. Without one it resolves the
-/// query as an exact project reference, so every card it returns is installable.
+/// The keyless path is a real catalogue search through the public mirror, with
+/// the same JSON and pagination as the official endpoint. Only when the mirror
+/// itself fails does an exact project reference resolve through the public
+/// index, so CurseForge keeps working at reduced breadth instead of erroring.
 pub async fn search_kind(
     client: &reqwest::Client,
     query: &str,
@@ -233,61 +255,163 @@ pub async fn search_kind(
     page: Page,
     explicit_key: Option<&str>,
 ) -> Result<SearchPage, CurseForgeError> {
-    match api_key(explicit_key) {
-        Some(key) => official_search(client, query, game_version, loader, kind, page, &key).await,
-        None => public_search(client, query, game_version, loader, kind, page).await,
-    }
-}
-
-async fn official_search(
-    client: &reqwest::Client,
-    query: &str,
-    game_version: &str,
-    loader: &str,
-    kind: crate::mods::ContentKind,
-    page: Page,
-    key: &str,
-) -> Result<SearchPage, CurseForgeError> {
+    let key = api_key(explicit_key);
     let loader_type = kind
         .uses_loader()
         .then(|| loader_type(loader))
         .transpose()?;
-    let url = format!("{CURSEFORGE_API}/mods/search");
-    let class_id = kind.curseforge_class().to_string();
-    let page_size = page.limit.clamp(1, 50).to_string();
-    let index = page.offset.to_string();
+    let result = catalogue_search(
+        client,
+        wire_for(key.as_deref()),
+        query,
+        game_version,
+        kind.curseforge_class(),
+        loader_type,
+        page,
+    )
+    .await;
+    match result {
+        Ok(page) => Ok(page),
+        Err(error) if key.is_none() && error.is_transport() => {
+            widget_search(client, query, game_version, loader, kind, page).await
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// One catalogue wire: the official API with its key, or the keyless mirror.
+/// They speak the same format, so a request is written once and aimed at one.
+#[derive(Clone, Copy)]
+struct Wire<'a> {
+    base: &'a str,
+    key: Option<&'a str>,
+}
+
+fn wire_for(key: Option<&str>) -> Wire<'_> {
+    Wire {
+        base: base_for(key),
+        key,
+    }
+}
+
+/// Base URL for the wire that serves this request: the official API when a key
+/// is configured, its keyless public mirror otherwise.
+fn base_for(key: Option<&str>) -> &'static str {
+    if key.is_some() {
+        CURSEFORGE_API
+    } else {
+        CURSEFORGE_MIRROR
+    }
+}
+
+/// One catalogue search on either wire. The official API and its mirror speak
+/// the same format, so only the base URL and the key header differ.
+async fn catalogue_search(
+    client: &reqwest::Client,
+    wire: Wire<'_>,
+    query: &str,
+    game_version: &str,
+    class_id: u32,
+    loader_type: Option<u32>,
+    page: Page,
+) -> Result<SearchPage, CurseForgeError> {
+    let Wire { base, key } = wire;
+    let url = format!("{base}/mods/search");
+    let params = search_params(query, game_version, page, class_id, loader_type);
+    let cache_key = search_cache_key(base, &params);
+    if let Some(page) = cached_search(&cache_key) {
+        return Ok(page);
+    }
     let response = crate::retry::get_with_retry(&crate::retry::RetryPolicy::default(), || {
-        let request = client.get(url.as_str()).query(&[
-            ("gameId", MINECRAFT_GAME_ID.to_string()),
-            ("classId", class_id.clone()),
-            ("gameVersion", game_version.to_owned()),
-            ("searchFilter", query.to_owned()),
-            ("pageSize", page_size.clone()),
-            ("index", index.clone()),
-        ]);
-        let request = if let Some(loader_type) = loader_type {
-            request.query(&[("modLoaderType", loader_type.to_string())])
-        } else {
-            request
-        };
-        with_key(request, key)
+        let request = client
+            .get(url.as_str())
+            .header("User-Agent", kaelis_core::brand::user_agent())
+            .header("Accept", "application/json")
+            .query(&params);
+        match key {
+            Some(key) => request.header("x-api-key", key),
+            None => request,
+        }
     })
     .await?;
     let response = checked(response)?;
     let resp = response.json::<CfSearchResponse>().await?;
-    Ok(SearchPage {
+    let page = SearchPage {
         mods: resp.data,
         total: resp.pagination.total_count,
-    })
+    };
+    cache_search(&cache_key, &page);
+    Ok(page)
 }
 
-/// Keyless search: resolve the typed name, url, or id as one project.
+type SearchCache = Mutex<HashMap<String, (Instant, Arc<SearchPage>)>>;
+
+fn search_cache() -> &'static SearchCache {
+    static CACHE: OnceLock<SearchCache> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Identity of one catalogue page: the wire plus every query parameter, so two
+/// searches never share an answer unless they asked the same question.
+fn search_cache_key(base: &str, params: &[(&'static str, String)]) -> String {
+    let mut key = String::with_capacity(base.len() + 64);
+    key.push_str(base);
+    for (name, value) in params {
+        key.push('&');
+        key.push_str(name);
+        key.push('=');
+        key.push_str(value);
+    }
+    key
+}
+
+fn cached_search(key: &str) -> Option<SearchPage> {
+    let cache = search_cache().lock().ok()?;
+    let (stored, page) = cache.get(key)?;
+    (stored.elapsed() < SEARCH_CACHE_TTL).then(|| (**page).clone())
+}
+
+fn cache_search(key: &str, page: &SearchPage) {
+    if let Ok(mut cache) = search_cache().lock() {
+        if cache.len() >= SEARCH_CACHE_ENTRIES {
+            cache.clear();
+        }
+        cache.insert(key.to_owned(), (Instant::now(), Arc::new(page.clone())));
+    }
+}
+
+/// Catalogue query for one page. The window is clamped to the provider's
+/// maximum of fifty per page; `index` is absolute, not a page number.
+fn search_params(
+    query: &str,
+    game_version: &str,
+    page: Page,
+    class_id: u32,
+    loader_type: Option<u32>,
+) -> Vec<(&'static str, String)> {
+    let mut params = vec![
+        ("gameId", MINECRAFT_GAME_ID.to_string()),
+        ("classId", class_id.to_string()),
+        ("gameVersion", game_version.to_owned()),
+        ("searchFilter", query.trim().to_owned()),
+        ("pageSize", page.limit.clamp(1, 50).to_string()),
+        ("index", page.offset.to_string()),
+        ("sortField", CATALOGUE_SORT_FIELD.to_string()),
+        ("sortOrder", "desc".to_owned()),
+    ];
+    if let Some(loader_type) = loader_type {
+        params.push(("modLoaderType", loader_type.to_string()));
+    }
+    params
+}
+
+/// Fallback keyless search: resolve the typed name, url, or id as one project.
 ///
-/// Only an exact reference produces a card, and only when the project publishes
-/// a file for the requested version and loader, so a result never leads to a
-/// dead install. Paged requests beyond the first return nothing: there is one
-/// candidate, not a catalogue.
-async fn public_search(
+/// This runs only when the public mirror cannot answer. Only an exact reference
+/// produces a card, and only when the project publishes a file for the requested
+/// version and loader, so a result never leads to a dead install. Paged requests
+/// beyond the first return nothing: there is one candidate, not a catalogue.
+async fn widget_search(
     client: &reqwest::Client,
     query: &str,
     game_version: &str,
@@ -565,8 +689,9 @@ pub async fn mod_files(
     .await
 }
 
-/// List a project's files. `project` is a numeric id or a slug; the public
-/// transport resolves either, the official API needs the id.
+/// List a project's files. `project` is a numeric id, a slug, or a project
+/// link; a slug is resolved to its id first, because both catalogue wires
+/// address files by id. A mirror failure falls back to the public index.
 pub async fn files_for_kind(
     client: &reqwest::Client,
     project: &str,
@@ -575,48 +700,79 @@ pub async fn files_for_kind(
     kind: crate::mods::ContentKind,
     explicit_key: Option<&str>,
 ) -> Result<Vec<CfFile>, CurseForgeError> {
-    match api_key(explicit_key) {
-        Some(key) => official_files(client, project, game_version, loader, kind, &key).await,
-        None => public_files(client, project, kind).await,
+    let key = api_key(explicit_key);
+    let requested = async {
+        let mod_id = project_id(client, project, kind).await?;
+        catalogue_files(
+            client,
+            wire_for(key.as_deref()),
+            mod_id,
+            game_version,
+            kind,
+            loader,
+        )
+        .await
+    };
+    match requested.await {
+        Ok(files) => Ok(files),
+        Err(error) if key.is_none() && error.is_transport() => {
+            widget_files(client, project, kind).await
+        }
+        Err(error) => Err(error),
     }
 }
 
-async fn official_files(
+/// Numeric project id for whichever reference the caller holds.
+async fn project_id(
     client: &reqwest::Client,
     project: &str,
-    game_version: &str,
-    loader: &str,
     kind: crate::mods::ContentKind,
-    key: &str,
+) -> Result<u32, CurseForgeError> {
+    let reference = project.trim();
+    if let Ok(id) = reference.parse::<u32>() {
+        return Ok(id);
+    }
+    let slug = crate::mods::parse_project_link(reference)
+        .filter(|link| link.kind == kind)
+        .map(|link| link.slug)
+        .unwrap_or_else(|| reference.to_owned());
+    fetch_project(client, kind, &slug)
+        .await?
+        .map(|index| index.id)
+        .ok_or_else(|| CurseForgeError::NotFound(reference.to_owned()))
+}
+
+async fn catalogue_files(
+    client: &reqwest::Client,
+    wire: Wire<'_>,
+    mod_id: u32,
+    game_version: &str,
+    kind: crate::mods::ContentKind,
+    loader: &str,
 ) -> Result<Vec<CfFile>, CurseForgeError> {
-    // The official API addresses projects by number. A slug or link is turned
-    // into one through the public index, so a keyed client accepts the same
-    // references a keyless one does.
-    let mod_id: u32 = match project.trim().parse::<u32>() {
-        Ok(id) => id,
-        Err(_) => {
-            fetch_project(client, kind, project.trim())
-                .await?
-                .ok_or_else(|| CurseForgeError::NotFound(project.to_owned()))?
-                .id
-        }
-    };
+    let Wire { base, key } = wire;
     let loader_type = kind
         .uses_loader()
         .then(|| loader_type(loader))
         .transpose()?;
-    let url = format!("{CURSEFORGE_API}/mods/{mod_id}/files");
+    let mut params = vec![
+        ("gameVersion", game_version.to_owned()),
+        ("pageSize", "50".to_owned()),
+    ];
+    if let Some(loader_type) = loader_type {
+        params.push(("modLoaderType", loader_type.to_string()));
+    }
+    let url = format!("{base}/mods/{mod_id}/files");
     let response = crate::retry::get_with_retry(&crate::retry::RetryPolicy::default(), || {
-        let request = client.get(url.as_str()).query(&[
-            ("gameVersion", game_version.to_owned()),
-            ("pageSize", "50".to_owned()),
-        ]);
-        let request = if let Some(loader_type) = loader_type {
-            request.query(&[("modLoaderType", loader_type.to_string())])
-        } else {
-            request
-        };
-        with_key(request, key)
+        let request = client
+            .get(url.as_str())
+            .header("User-Agent", kaelis_core::brand::user_agent())
+            .header("Accept", "application/json")
+            .query(&params);
+        match key {
+            Some(key) => request.header("x-api-key", key),
+            None => request,
+        }
     })
     .await?;
     let response = checked(response)?;
@@ -624,7 +780,7 @@ async fn official_files(
     Ok(resp.data)
 }
 
-async fn public_files(
+async fn widget_files(
     client: &reqwest::Client,
     project: &str,
     kind: crate::mods::ContentKind,
@@ -643,6 +799,54 @@ async fn public_files(
         return Err(CurseForgeError::NotFound(reference.to_owned()));
     }
     Ok(files)
+}
+
+/// Resolve an exact project reference to its catalogue entry, with or without a
+/// key. A numeric id is read from the catalogue; a slug or link is read from the
+/// public index, which is the only wire that answers by slug. Used for pasted
+/// links, where searching the slug would be a guess rather than a lookup.
+pub async fn resolve_project(
+    client: &reqwest::Client,
+    reference: &str,
+    kind: crate::mods::ContentKind,
+    explicit_key: Option<&str>,
+) -> Result<CfMod, CurseForgeError> {
+    let reference = reference.trim();
+    if let Ok(id) = reference.parse::<u32>() {
+        let key = api_key(explicit_key);
+        return mod_by_id(client, wire_for(key.as_deref()), id).await;
+    }
+    let slug = crate::mods::parse_project_link(reference)
+        .filter(|link| link.kind == kind)
+        .map(|link| link.slug)
+        .unwrap_or_else(|| reference.to_owned());
+    fetch_project(client, kind, &slug)
+        .await?
+        .map(|project| CfMod::from((*project).clone()))
+        .ok_or_else(|| CurseForgeError::NotFound(reference.to_owned()))
+}
+
+async fn mod_by_id(
+    client: &reqwest::Client,
+    wire: Wire<'_>,
+    mod_id: u32,
+) -> Result<CfMod, CurseForgeError> {
+    let Wire { base, key } = wire;
+    let url = format!("{base}/mods/{mod_id}");
+    let response = crate::retry::get_with_retry(&crate::retry::RetryPolicy::default(), || {
+        let request = client
+            .get(url.as_str())
+            .header("User-Agent", kaelis_core::brand::user_agent())
+            .header("Accept", "application/json");
+        match key {
+            Some(key) => request.header("x-api-key", key),
+            None => request,
+        }
+    })
+    .await?;
+    let response = checked(response)?;
+    let resp = response.json::<CfModResponse>().await?;
+    Ok(resp.data)
 }
 
 /// ForgeCDN addresses a file by splitting its id into directory and leaf.
@@ -750,6 +954,7 @@ pub fn file_sha1(file: &CfFile) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::{CfFile, CfMod};
+    use std::collections::HashMap;
 
     const PROJECT: &str = r#"{
         "id": 394468,
@@ -886,11 +1091,88 @@ mod tests {
         assert!(!file.dependencies[1].is_required());
     }
 
-    /// Live check of the keyless path: resolution, file index, and CDN.
-    /// Ignored so the suite stays offline; run with `--ignored` to verify.
+    #[test]
+    fn a_keyed_client_uses_the_official_api_and_a_keyless_one_the_mirror() {
+        assert_eq!(super::base_for(Some("key")), super::CURSEFORGE_API);
+        assert_eq!(super::base_for(None), super::CURSEFORGE_MIRROR);
+        assert!(super::CURSEFORGE_MIRROR.starts_with("https://"));
+    }
+
+    #[test]
+    fn search_query_carries_the_window_class_and_loader() {
+        let params = super::search_params(
+            " Sodium ",
+            "1.21.11",
+            super::Page {
+                limit: 99,
+                offset: 40,
+            },
+            6,
+            Some(4),
+        );
+        let map = params.iter().cloned().collect::<HashMap<_, _>>();
+        assert_eq!(map["searchFilter"], "Sodium");
+        assert_eq!(map["gameVersion"], "1.21.11");
+        assert_eq!(map["classId"], "6");
+        assert_eq!(map["modLoaderType"], "4");
+        assert_eq!(map["pageSize"], "50", "the provider caps a page at fifty");
+        assert_eq!(map["index"], "40", "index is absolute, not a page number");
+        assert_eq!(
+            map["sortField"], "6",
+            "downloads, so a named project ranks first"
+        );
+        assert_eq!(map["sortOrder"], "desc");
+    }
+
+    #[test]
+    fn a_channel_without_a_loader_omits_the_loader_filter() {
+        let params = super::search_params("shiny", "1.21.11", super::Page::default(), 6552, None);
+        let map = params.iter().cloned().collect::<HashMap<_, _>>();
+        assert!(!map.contains_key("modLoaderType"));
+        assert_eq!(map["pageSize"], "1", "an empty limit still asks for one");
+    }
+
+    #[test]
+    fn only_transport_failures_fall_back_to_the_public_index() {
+        assert!(super::CurseForgeError::Rejected(403).is_transport());
+        assert!(!super::CurseForgeError::NotFound("x".to_owned()).is_transport());
+        assert!(!super::CurseForgeError::UnsupportedLoader("rift".to_owned()).is_transport());
+    }
+
+    #[test]
+    fn a_catalogue_page_is_reused_and_keyed_by_its_whole_question() {
+        let first = super::search_cache_key(
+            super::CURSEFORGE_MIRROR,
+            &[
+                ("index", "0".to_owned()),
+                ("searchFilter", "sodium".to_owned()),
+            ],
+        );
+        let second = super::search_cache_key(
+            super::CURSEFORGE_MIRROR,
+            &[
+                ("index", "30".to_owned()),
+                ("searchFilter", "sodium".to_owned()),
+            ],
+        );
+        assert_ne!(first, second, "a page is not another page's answer");
+        super::cache_search(
+            &first,
+            &super::SearchPage {
+                mods: Vec::new(),
+                total: 7,
+            },
+        );
+        assert_eq!(super::cached_search(&first).expect("cached").total, 7);
+        assert!(super::cached_search(&second).is_none());
+    }
+
+    /// Live check of the keyless catalogue: a real search, its files, the CDN,
+    /// a second page, and exact link resolution. Ignored so the suite stays
+    /// offline; run with `--ignored` to verify the wire.
     #[tokio::test]
     #[ignore = "network: reads the live CurseForge public catalogue"]
-    async fn the_public_catalogue_answers_without_a_key() {
+    async fn the_public_catalogue_searches_without_a_key() {
         let client = reqwest::Client::builder()
             .user_agent(kaelis_core::brand::user_agent())
             .timeout(std::time::Duration::from_secs(30))
@@ -899,32 +1181,53 @@ mod tests {
         let page = super::search_kind(
             &client,
             "sodium",
-            "1.21.1",
+            "1.21.11",
             "fabric",
             crate::mods::ContentKind::Mod,
             super::Page {
-                limit: 20,
+                limit: 10,
                 offset: 0,
             },
             None,
         )
         .await
-        .expect("public resolution answers");
-        assert_eq!(page.mods.len(), 1, "one exact project, not a list");
-        assert_eq!(page.mods[0].slug, "sodium");
-        assert_eq!(page.total, 1);
+        .expect("the keyless catalogue answers");
+        assert!(page.total > 10, "a search, not a single lookup");
+        assert_eq!(page.mods.len(), 10);
+        assert_eq!(page.mods[0].slug, "sodium", "the named project ranks first");
+        let sodium = page.mods[0].clone();
+
+        let second = super::search_kind(
+            &client,
+            "sodium",
+            "1.21.11",
+            "fabric",
+            crate::mods::ContentKind::Mod,
+            super::Page {
+                limit: 10,
+                offset: 10,
+            },
+            None,
+        )
+        .await
+        .expect("the second page answers");
+        assert!(
+            second.mods.iter().all(|item| item.id != sodium.id),
+            "paging advances"
+        );
 
         let files = super::files_for_kind(
             &client,
-            "sodium",
-            "1.21.1",
+            &sodium.id.to_string(),
+            "1.21.11",
             "fabric",
             crate::mods::ContentKind::Mod,
             None,
         )
         .await
-        .expect("public file index answers");
-        let picked = super::pick_file(&files, "1.21.1", "fabric").expect("a fabric file");
+        .expect("the file list answers by id");
+        let picked = super::pick_file(&files, "1.21.11", "fabric").expect("a fabric file");
+        assert!(super::file_sha1(picked).is_some(), "files carry hashes");
         let url = picked.download_url.clone().expect("a download url");
         let head = client.head(&url).send().await.expect("cdn answers");
         assert!(
@@ -932,6 +1235,12 @@ mod tests {
             "{url} answered {}",
             head.status()
         );
+
+        let resolved =
+            super::resolve_project(&client, "sodium", crate::mods::ContentKind::Mod, None)
+                .await
+                .expect("a slug resolves exactly");
+        assert_eq!(resolved.slug, "sodium");
     }
 
     #[test]

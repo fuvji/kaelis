@@ -561,10 +561,10 @@ impl ModPlatformClient {
             .await
     }
 
-    /// Provider-scoped search. CurseForge answers through its public catalogue
-    /// when no key is present, so no configuration is needed to browse it.
-    /// Results that both platforms list under the same slug/title are merged to
-    /// a single card.
+    /// Provider-scoped search. CurseForge answers through the public mirror of
+    /// its v1 API when no key is present, so its whole catalogue is searchable
+    /// with no configuration. Results that both platforms list under the same
+    /// slug/title are merged to a single card.
     pub async fn search_scoped(
         &self,
         query: &str,
@@ -1174,25 +1174,22 @@ impl ModPlatformClient {
                 }
             }
             ModProvider::CurseForge => {
-                let page = super::curseforge::search_kind(
+                // A link names one project; resolve it exactly instead of
+                // searching for its slug and hoping it lands on page one.
+                let project = super::curseforge::resolve_project(
                     &self.http,
                     &link.slug,
-                    game_version,
-                    loader,
                     link.kind,
-                    super::curseforge::Page {
-                        limit: 20,
-                        offset: 0,
-                    },
                     self.curseforge_key.as_deref(),
                 )
-                .await?;
-                let found = page
-                    .mods
-                    .into_iter()
-                    .find(|item| item.slug.eq_ignore_ascii_case(&link.slug))
-                    .ok_or(ModInstallError::ProjectNotFound)?;
-                curseforge_item(link.kind, found)
+                .await
+                .map_err(|error| match error {
+                    super::curseforge::CurseForgeError::NotFound(_) => {
+                        ModInstallError::ProjectNotFound
+                    }
+                    error => ModInstallError::CurseForge(error),
+                })?;
+                curseforge_item(link.kind, project)
             }
         };
         self.install_content_reported(
@@ -1623,13 +1620,18 @@ fn enqueue_curseforge_dependencies(queue: &mut VecDeque<InstallRequest>, depende
 
 /// The install queue keys projects by number, but a CLI spec or a pasted link
 /// may name a project by slug alone. A slug gets a stable synthetic id so
-/// deduplication stays correct; the slug itself is still what the file index is
-/// asked for.
+/// deduplication stays correct; the id is never sent to CurseForge.
 fn curseforge_numeric_id(item: &ModSearchItem) -> Option<u32> {
-    if let Ok(id) = item.id.parse::<u32>() {
-        return Some(id);
-    }
-    let slug = item.slug.trim();
+    item.id
+        .parse::<u32>()
+        .ok()
+        .or_else(|| synthetic_project_id(&item.slug))
+}
+
+/// Stable non-numeric-key hash for a slug, always odd so it cannot collide
+/// with the zero sentinel.
+fn synthetic_project_id(slug: &str) -> Option<u32> {
+    let slug = slug.trim();
     if slug.is_empty() {
         return None;
     }
@@ -1641,13 +1643,15 @@ fn curseforge_numeric_id(item: &ModSearchItem) -> Option<u32> {
     Some(hash | 1)
 }
 
-/// The public file index accepts a slug, while a dependency only carries an id.
+/// Files are addressed by number on both catalogue wires. A real id is used as
+/// it stands, so an install from search never spends a lookup on the public
+/// index; only a synthetic queue key is replaced by the slug it was hashed
+/// from, which is the reference that can actually resolve.
 fn curseforge_reference(mod_id: u32, slug: &str) -> String {
-    let slug = slug.trim();
-    if slug.is_empty() {
-        mod_id.to_string()
+    if synthetic_project_id(slug).is_some_and(|synthetic| synthetic == mod_id) {
+        slug.trim().to_owned()
     } else {
-        slug.to_owned()
+        mod_id.to_string()
     }
 }
 

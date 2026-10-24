@@ -1278,7 +1278,7 @@ impl KaelisApp {
             None => "Choose Microsoft sign-in or an offline profile.".to_owned(),
         };
         // Both integrations are zero-setup now: Microsoft uses a one-click code
-        // and CurseForge answers through its public catalogue.
+        // and CurseForge answers through the public mirror of its v1 API.
         let status = if tray.is_some() {
             "Ready".to_owned()
         } else {
@@ -8206,7 +8206,7 @@ impl KaelisApp {
                     } else {
                         ui.checkbox(&mut self.mod_show_curseforge, "Search CurseForge")
                             .on_hover_text(
-                                "Resolves a CurseForge project name, link, or id without a key. No key is ever needed.",
+                                "Searches the whole CurseForge catalogue with no key and no setup; a project link or id resolves exactly.",
                             );
                     }
                     ui.checkbox(&mut self.mod_auto_search, "Search as I type");
@@ -10599,7 +10599,7 @@ impl KaelisApp {
             section_label(ui, "ZERO-SETUP SERVICES");
             ui.label(
                 egui::RichText::new(
-                    "Microsoft sign-in and CurseForge both work without a key. Microsoft shows a short code once and keeps you signed in through the OS credential store; CurseForge content comes from its public catalogue.",
+                    "Microsoft sign-in and CurseForge both work without a key. Microsoft shows a short code once and keeps you signed in through the OS credential store; CurseForge search and downloads run through the public mirror of its v1 API.",
                 )
                 .small()
                 .weak(),
