@@ -423,8 +423,8 @@ mod platform {
         let mut last = None;
         for attempt in 0..40 {
             match UnixStream::connect(&path) {
-                Ok(stream) => {
-                    stream = Some(stream);
+                Ok(connected) => {
+                    stream = Some(connected);
                     break;
                 }
                 Err(error)
