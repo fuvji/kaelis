@@ -6,7 +6,7 @@
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
 ![Tests](https://img.shields.io/badge/tests-260%20passing-3fb950)
 
-<img width="1080" height="700" alt="accounts" src="https://github.com/user-attachments/assets/48041394-24b6-4a1c-8885-ad04ca1db913" />
+<img width="1080" height="700" alt="Accounts tab: the active identity and every saved offline or Microsoft account" src="site/assets/app-accounts.png" />
 
 **Minecraft, composed.** The fastest and lightest way to run Minecraft: a
 native Rust launcher for Windows, macOS, and Linux with one calm library for
