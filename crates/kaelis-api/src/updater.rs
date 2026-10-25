@@ -214,6 +214,7 @@ pub fn apply(_update: &PreparedUpdate) -> Result<(), String> {
 /// of leaving the user without a launcher. `%` is doubled because `set`
 /// expands it, and a path that cannot be represented safely is rejected by
 /// [`apply`]'s callers through [`prepare`]'s writability check.
+#[cfg(windows)]
 fn swap_script(update: &PreparedUpdate, pid: u32) -> String {
     let exe = script_path(&update.target);
     let staged = script_path(&update.staged);
@@ -255,6 +256,7 @@ fn swap_script(update: &PreparedUpdate, pid: u32) -> String {
 }
 
 /// A path is safe for the generated script when quoting can represent it.
+#[cfg(windows)]
 fn script_path(path: &Path) -> String {
     path.display().to_string().replace('%', "%%")
 }
@@ -416,7 +418,10 @@ fn hex(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{PreparedUpdate, hex, parse_checksum, swap_script};
+    #[cfg(windows)]
+    use super::{PreparedUpdate, swap_script};
+    use super::{hex, parse_checksum};
+    #[cfg(windows)]
     use std::path::PathBuf;
 
     #[test]
@@ -443,6 +448,7 @@ cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc  Kaelis-Portabl
         assert!(parse_checksum(list, "Kaelis.exe").is_none());
     }
 
+    #[cfg(windows)]
     #[test]
     fn the_swap_script_waits_for_the_launcher_and_rolls_back() {
         let update = PreparedUpdate {
@@ -460,6 +466,7 @@ cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc  Kaelis-Portabl
         assert!(script.contains("start \"\" \"%KAELIS_EXE%\""));
     }
 
+    #[cfg(windows)]
     #[test]
     fn percent_signs_are_escaped_for_set() {
         let update = PreparedUpdate {
@@ -509,7 +516,6 @@ cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc  Kaelis-Portabl
     #[cfg(windows)]
     #[test]
     fn the_swap_script_replaces_the_executable_and_launches_it() {
-        use super::{PreparedUpdate, swap_script};
         use std::process::{Command, Stdio};
         use std::time::{Duration, Instant};
 
