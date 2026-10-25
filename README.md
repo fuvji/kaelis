@@ -70,25 +70,30 @@ unreferenced cache.
 
 ## Performance
 
-Measured on the shipped Windows 0.2.11 build with `tools/bench.ps1` (5 runs, warm
-disk cache, window detected through UI Automation) on 2026-10-25:
+Measured on the published Windows 0.2.11 artifact with `tools/bench.ps1` (5 runs,
+warm disk cache, window detected through UI Automation) on 2026-10-25:
 
 | Metric | Result |
 | --- | --- |
-| `kaelis --version` | 62 ms median, 89 ms p95 |
-| Window, empty data root | 176 ms median |
-| Window, 200-jar instance | 169 ms median |
-| Working set (idle) | 80.7 MB empty, 100.1 MB with 200 jars |
-| Private bytes (idle) | 90.4 MB empty, 91.7 MB with 200 jars |
+| `kaelis --version` | 78 ms median, 91 ms p95 |
+| Window, empty data root | 336 ms median |
+| Window, 200-jar instance | 341 ms median |
+| Working set (idle) | 98.3 MB empty, 91.7 MB with 200 jars |
+| Private bytes (idle) | 90.8 MB empty, 91.1 MB with 200 jars |
 | Idle CPU | 0.00% median (event-driven, no repaint loop) |
-| Handles | 494 empty, 496 with 200 jars |
-| Hibernated working set | 1.6 MB after 90 s unfocused (0.2.10 measurement; path unchanged) |
-| Shipped Windows binary | 18,128,384 B, SHA-256 `15ea4d65…` |
-| Second launch restore | 62 ms (handoff + native window wake; 0.2.10 measurement, path unchanged) |
-| Window close to process exit | 16 ms (0.2.10 measurement, path unchanged) |
+| Handles | 495 empty, 498 with 200 jars |
+| Hibernated working set | 1.6 MB after 90 s unfocused (path unchanged since 0.2.10) |
+| Published Windows binary | 17,039,872 B, SHA-256 `ddca9a30…` |
+| Second launch restore | 62 ms (handoff + native window wake; path unchanged since 0.2.10) |
+| Window close to process exit | 16 ms (path unchanged since 0.2.10) |
 
 The window does not wait for mod metadata: jar scanning and artwork decoding
 run on workers, so a 200-mod instance opens in the same time as an empty one.
+The window figure is the one that moves with the host: the same machine
+recorded 177 ms for 0.2.10 earlier in the day and 307–341 ms for both 0.2.10 and
+0.2.11 in the same later session, so today's absolute number is host state, not
+a regression. Working set, private bytes, handles, and idle CPU are the figures
+that stay put.
 Startup no longer walks the temp folder before the window: the background
 sweeper's first tick does it on the runtime. Pack downloads use 8 parallel
 transfers, and an idle launcher schedules no frames at all. The binary carries
