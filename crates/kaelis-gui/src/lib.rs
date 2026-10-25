@@ -819,6 +819,8 @@ pub(crate) enum GuiEvent {
     Versions(Result<VersionManifest, String>),
     /// A newer published launcher build, if GitHub has one.
     LauncherRelease(Option<LauncherRelease>),
+    /// A verified update finished downloading, or the reason it could not.
+    UpdatePrepared(Result<Option<kaelis_api::updater::PreparedUpdate>, String>),
     ModSearch {
         generation: u64,
         query: String,
@@ -1125,6 +1127,8 @@ pub struct KaelisApp {
     /// Newest GitHub release newer than this build; `None` when up to date or
     /// when the anonymous check could not reach GitHub.
     launcher_release: Option<LauncherRelease>,
+    /// An update is downloading, verifying, or being installed right now.
+    update_busy: bool,
     /// `current_file` of every jar being replaced right now.
     updating_mods: HashSet<String>,
     /// User commands: named shell lines fired by an event or an interval.
@@ -1255,6 +1259,10 @@ impl KaelisApp {
         // Settings no longer asks for a CurseForge key, so any key an older
         // build stored is removed once instead of sitting unused.
         kaelis_api::secrets::forget_legacy_curseforge_key();
+        // A finished update leaves its script and, after an aborted download, a
+        // partial file behind. Only files old enough to be abandoned are
+        // touched, so a swap that is still running is never disturbed.
+        kaelis_api::updater::purge_staging();
         // Windows paints the tray menu itself, so the dark preference has to
         // be installed before that menu is created.
         platform::enable_dark_menus();
@@ -1535,6 +1543,7 @@ impl KaelisApp {
             update_report: None,
             updates_busy: false,
             launcher_release: None,
+            update_busy: false,
             updating_mods: HashSet::new(),
             automation: automation_store,
             automation_log,
@@ -1604,6 +1613,64 @@ impl KaelisApp {
                 });
             send_event(&sender, &repaint, GuiEvent::LauncherRelease(release));
         });
+    }
+
+    /// Download and install the published build.
+    ///
+    /// The artifact is verified against the release's published SHA-256 before
+    /// it can replace this executable; a failed download or a checksum mismatch
+    /// leaves the running build untouched and keeps the footer link as the
+    /// manual fallback.
+    fn start_self_update(&mut self, context: egui::Context) {
+        if self.update_busy {
+            return;
+        }
+        self.update_busy = true;
+        self.set_status(StatusKind::Busy, "Downloading the latest Kaelis…");
+        let sender = self.sender.clone();
+        let repaint = context;
+        let client = self.http.clone();
+        self.runtime.spawn(async move {
+            let result = kaelis_api::updater::prepare(&client)
+                .await
+                .map_err(|error| error.to_string());
+            send_event(&sender, &repaint, GuiEvent::UpdatePrepared(result));
+        });
+    }
+
+    /// Hand a verified build to the swap script and end this process.
+    ///
+    /// Exiting is part of installing: the script waits for this pid to vanish
+    /// before renaming the executable, so lingering here would stall the swap.
+    fn install_prepared_update(
+        &mut self,
+        update: Option<kaelis_api::updater::PreparedUpdate>,
+        context: &egui::Context,
+    ) {
+        let Some(update) = update else {
+            self.update_busy = false;
+            self.set_status(StatusKind::Success, "Kaelis is already up to date.");
+            return;
+        };
+        match kaelis_api::updater::apply(&update) {
+            Ok(()) => {
+                self.set_status(
+                    StatusKind::Success,
+                    format!("Restarting into Kaelis {}…", update.version),
+                );
+                self.quit_now()
+            }
+            Err(error) => {
+                self.update_busy = false;
+                self.set_status(
+                    StatusKind::Warning,
+                    format!("Download the new build from the release page: {error}"),
+                );
+                if let Some(release) = &self.launcher_release {
+                    context.open_url(egui::OpenUrl::new_tab(release.url.clone()));
+                }
+            }
+        }
     }
 
     fn start_sign_in(&mut self, context: egui::Context) {
@@ -4973,6 +5040,16 @@ impl KaelisApp {
             GuiEvent::LauncherRelease(release) => {
                 self.launcher_release = release;
             }
+            GuiEvent::UpdatePrepared(Ok(update)) => {
+                self.install_prepared_update(update, context);
+            }
+            GuiEvent::UpdatePrepared(Err(error)) => {
+                self.update_busy = false;
+                self.set_status(
+                    StatusKind::Error,
+                    format!("Could not download the update: {error}"),
+                );
+            }
             GuiEvent::Versions(Err(error)) => {
                 self.set_status(
                     StatusKind::Error,
@@ -6565,6 +6642,7 @@ impl KaelisApp {
     fn is_busy(&self) -> bool {
         self.search_busy
             || self.auth_busy
+            || self.update_busy
             || self.installing_job.is_some()
             || self.installing_instance.is_some()
             || self.installing_runtime.is_some()
@@ -6623,7 +6701,7 @@ impl KaelisApp {
             });
     }
 
-    fn show_footer(&self, context: &egui::Context) {
+    fn show_footer(&mut self, context: &egui::Context) {
         egui::TopBottomPanel::bottom("kaelis-footer")
             .frame(
                 egui::Frame::none()
@@ -6637,7 +6715,8 @@ impl KaelisApp {
                     // has a newer tag the version itself becomes the link, so
                     // the strip stays one line tall.
                     let version = env!("CARGO_PKG_VERSION");
-                    if let Some(release) = &self.launcher_release {
+                    let release = self.launcher_release.clone();
+                    if let Some(release) = &release {
                         let text = egui::RichText::new(format!(
                             "{} {version} · {} available",
                             kaelis_core::brand::LAUNCHER_NAME,
@@ -6658,6 +6737,32 @@ impl KaelisApp {
                             "Open the Kaelis {} release page",
                             release.version
                         ));
+                        // One click replaces this build: the download is
+                        // checksum-verified first, then the launcher restarts
+                        // itself into the new version. The version label above
+                        // stays the manual path for installs that cannot write
+                        // to their own folder.
+                        ui.add_space(6.0);
+                        if self.update_busy {
+                            ui.add(egui::Spinner::new().size(9.0));
+                        } else if ui
+                            .add(
+                                egui::Label::new(
+                                    egui::RichText::new("Update")
+                                        .size(8.5)
+                                        .strong()
+                                        .color(accent_soft()),
+                                )
+                                .sense(egui::Sense::click())
+                                .selectable(false),
+                            )
+                            .on_hover_text(
+                                "Download the verified build, replace this copy, and restart",
+                            )
+                            .clicked()
+                        {
+                            self.start_self_update(context.clone());
+                        }
                     } else {
                         ui.label(
                             egui::RichText::new(format!(

@@ -2697,7 +2697,7 @@ dependencies = [
 
 [[package]]
 name = "kaelis-api"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "futures",
  "kaelis-core",
@@ -2707,6 +2707,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha1",
+ "sha2",
  "thiserror 2.0.21",
  "tokio",
  "url",
@@ -2718,7 +2719,7 @@ dependencies = [
 
 [[package]]
 name = "kaelis-core"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "directories",
  "libc",
@@ -2731,7 +2732,7 @@ dependencies = [
 
 [[package]]
 name = "kaelis-gui"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "arboard",
  "base64 0.22.1",
@@ -2755,7 +2756,7 @@ dependencies = [
 
 [[package]]
 name = "kaelis-launcher"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "eframe",
  "embed-resource",
@@ -4523,6 +4524,17 @@ name = "sha1"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a978451301f4db1d02937a4ab3ccce137717b81826e79b7d49ffe3244a13c3b8"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.2.17",
+ "digest",
+]
+
+[[package]]
+name = "sha2"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",

@@ -21,6 +21,7 @@ pub mod repair;
 pub mod retry;
 pub mod runtime;
 pub mod secrets;
+pub mod updater;
 pub mod updates;
 pub mod vanilla;
 pub mod versions;
@@ -36,4 +37,5 @@ pub use mods::{
 pub use portable::{ExportReport, ImportReport, PortableError, export_instance, import_instance};
 pub use release::{LauncherRelease, is_newer, latest as latest_release};
 pub use repair::{DuplicateRepair, RepairReport};
+pub use updater::{PreparedUpdate, UpdateAsset};
 pub use updates::{ModUpdate, UpdateError, UpdateReport, apply_update, check_updates};

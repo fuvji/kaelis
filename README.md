@@ -1,6 +1,6 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.2.8-70a5ff)
+![Version](https://img.shields.io/badge/version-0.2.9-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
@@ -32,7 +32,7 @@ keep that library clean, correct, and fast on their own.
 | **Reopens, never doubles** | One process, one tray icon: a second launch, a Start-menu click, or the tray icon restores the running window in ~120 ms instead of starting another launcher — including over a fullscreen game |
 | **Hibernates while you play** | Starting a game hides the window and empties its working set, and 90 s unfocused does the same while the window stays open; one tray click restores it, mid-game included |
 | **Tray-first window** | The title-bar minimize button and **Show / Minimize** in the tray hide the launcher to the notification area and give its pages back. The tray icon itself toggles: a click restores a hidden or taskbar-minimised window, and hides a visible one. The native menu is forced dark and is three actions plus one separator |
-| **Update check** | One anonymous GitHub request runs in the background after the window is up. When a newer release exists, the footer version becomes a link to it. Nothing is downloaded or replaced silently |
+| **Updates in one click** | One anonymous GitHub request runs in the background after the window is up. When a newer release exists, the footer version links to it and an **Update** action installs the build right there: the download is SHA-256-verified against the same release, the old executable is backed up, and a failed swap rolls back. Nothing downloads or installs on its own |
 | **Starts with Windows** | One optional per-user sign-in entry opens Kaelis hidden in the tray, with no service, scheduled task, splash, or focus steal. Enable or disable it in Settings or with `kaelis --startup on\|off` |
 | **Survives a launcher restart** | A game's process id and creation time are recorded when it spawns, so reopening Kaelis still shows Quit for a game that is running, keeps a second JVM off the same world, and can end that game from the card |
 | **Private by default** | RAM-only instance logs, no telemetry, no analytics, no background daemon, nothing stored that the OS credential store can hold instead |
@@ -70,18 +70,18 @@ unreferenced cache.
 
 ## Performance
 
-Measured on the shipped Windows 0.2.8 build with `tools/bench.ps1` (5 runs, warm
+Measured on the shipped Windows 0.2.9 build with `tools/bench.ps1` (5 runs, warm
 disk cache, window detected through UI Automation) on 2026-10-25:
 
 | Metric | Result |
 | --- | --- |
-| `kaelis --version` | 64 ms median, 98 ms p95 |
-| Window, empty data root | 180 ms median |
-| Window, 200-jar instance | 178 ms median |
-| Working set (idle) | 99.5 MB empty, 98.9 MB with 200 jars |
-| Private bytes (idle) | 91.1 MB empty, 91.6 MB with 200 jars |
+| `kaelis --version` | 63 ms median, 99 ms p95 |
+| Window, empty data root | 209 ms median |
+| Window, 200-jar instance | 163 ms median |
+| Working set (idle) | 98.8 MB empty, 100.3 MB with 200 jars |
+| Private bytes (idle) | 91.1 MB empty, 91.8 MB with 200 jars |
 | Idle CPU | 0.00% median (event-driven, no repaint loop) |
-| Handles | 499 empty, 496 with 200 jars |
+| Handles | 495 empty, 496 with 200 jars |
 | Hibernated working set | 1.6 MB after 90 s unfocused |
 | Published Windows binary | 16,978,432 B, SHA-256 `c31c7d51…` |
 | Second launch restore | 62 ms (handoff + native window wake) |
@@ -101,8 +101,19 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.2.8
+## What's new in 0.2.9
 
+- **Updates install themselves.** The footer already said when a newer Kaelis
+  existed; the version now carries an **Update** action. One click downloads
+  the published Windows build, hashes it while it streams in, and refuses it
+  unless the SHA-256 matches the checksum in the same release. Only then does
+  the launcher write a short swap script, end itself instantly, and restart
+  into the new version; a failed copy rolls the old executable back. Downloads
+  verify every download, and an install inside a protected folder (such as
+  `Program Files`) is reported instead of being half-replaced; the version
+  link still opens the release page for those installs and for macOS and Linux.
+  A stale staging file is deleted at the next start, so an interrupted attempt
+  never accumulates in the temp folder.
 - **The tray is dark and one click.** Windows paints tray menus itself, so
   Kaelis now sets the process-wide dark menu mode before the menu exists. The
   menu is **Show / Minimize**, **Play last instance**, one separator, and
@@ -137,7 +148,8 @@ launcher. The working set and handle count are the figures that stay stable.
 - **Update checks start themselves.** A background request asks GitHub for the
   newest tag after the first window is up. When it is newer, the footer version
   turns into a single-line link to that release. The check is anonymous, does
-  not block the window, stays silent when offline, and never installs anything.
+  not block the window, stays silent when offline, and never installs anything
+  on its own.
 
 ### From 0.2.6
 
