@@ -6,10 +6,10 @@ ManifestDPIAware true
 
 !define APP_NAME "Kaelis"
 !ifndef APP_VERSION
-  !define APP_VERSION "0.2.7"
+  !define APP_VERSION "0.2.8"
 !endif
 !ifndef APP_VERSION4
-  !define APP_VERSION4 "0.2.7.0"
+  !define APP_VERSION4 "0.2.8.0"
 !endif
 !define APP_PUBLISHER "Kaelis Labs"
 !define APP_URL "https://github.com/fuvji/kaelis"

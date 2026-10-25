@@ -1,6 +1,6 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.2.7-70a5ff)
+![Version](https://img.shields.io/badge/version-0.2.8-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
@@ -19,7 +19,7 @@ keep that library clean, correct, and fast on their own.
 
 | Feature | What it does |
 | --- | --- |
-| **Auto Erase Junk** | Clears logs, crash dumps, loader caches, mod download caches, typed command history, extracted natives, stale server packs, heap dumps, interrupted downloads even when they keep their real name, OS thumbnail files inside content folders, and stale official-launcher state (including its saved Microsoft profile and credential) at every start and after every game — capped so it can never stall startup. Folders it does not recognise are always kept |
+| **Auto Erase Junk** | Clears logs, crash dumps, loader caches (including Architectury Transformer scratch), mod download caches, typed command history, extracted natives, stale server packs, heap dumps, interrupted downloads even when they keep their real name, OS thumbnail files inside content folders, and stale official-launcher state (including its saved Microsoft profile and credential) at every start and after every game — capped so it can never stall startup. Folders it does not recognise are always kept |
 | **One copy of the game** | Every verified download — libraries, assets, client jar, Java runtime — is hard-linked into a content-addressed store, so a second instance of the same version occupies a few extra MB instead of another 600 MB. Store entries no instance references are pruned automatically |
 | **Auto-repair before launch** | Scans the instance's mods and installs missing required mods (for example `ukulib` for uku's Armor HUD) before the JVM starts |
 | **Auto-disable duplicates** | Keeps the newest jar when two files provide the same mod id, so the older copy cannot crash the game first |
@@ -31,15 +31,16 @@ keep that library clean, correct, and fast on their own.
 | **Runs in parallel, quietly** | Per-instance OS guards let different instances launch together; a smart power governor drops every unfocused game to idle priority within 1.5 s and restores it the moment it is focused, so the game being played owns the CPU |
 | **Reopens, never doubles** | One process, one tray icon: a second launch, a Start-menu click, or the tray icon restores the running window in ~120 ms instead of starting another launcher — including over a fullscreen game |
 | **Hibernates while you play** | Starting a game hides the window and empties its working set, and 90 s unfocused does the same while the window stays open; one tray click restores it, mid-game included |
-| **Tray-first window** | The title-bar minimize button and **Show / Minimize** in the tray hide the launcher to the notification area and give its pages back; one click restores it. The native menu is forced dark and is three actions plus one separator |
+| **Tray-first window** | The title-bar minimize button and **Show / Minimize** in the tray hide the launcher to the notification area and give its pages back. The tray icon itself toggles: a click restores a hidden or taskbar-minimised window, and hides a visible one. The native menu is forced dark and is three actions plus one separator |
+| **Update check** | One anonymous GitHub request runs in the background after the window is up. When a newer release exists, the footer version becomes a link to it. Nothing is downloaded or replaced silently |
 | **Starts with Windows** | One optional per-user sign-in entry opens Kaelis hidden in the tray, with no service, scheduled task, splash, or focus steal. Enable or disable it in Settings or with `kaelis --startup on\|off` |
 | **Survives a launcher restart** | A game's process id and creation time are recorded when it spawns, so reopening Kaelis still shows Quit for a game that is running, keeps a second JVM off the same world, and can end that game from the card |
 | **Private by default** | RAM-only instance logs, no telemetry, no analytics, no background daemon, nothing stored that the OS credential store can hold instead |
 
 **Auto Erase Junk never guesses.** It removes only what Minecraft or Kaelis
 regenerates on the next launch: `logs`, `crash-reports`, `.cache`, `.mixin.out`,
-`.fabric`, `.quilt`, `.connector`, `debug`, `temp`, `natives`, and
-`server-resource-packs`; staging files ending `.part`, `.tmp`, or `.download`
+`.fabric`, `.quilt`, `.connector`, `.architectury-transformer`, `cache`,
+`debug`, `temp`, `natives`, and `server-resource-packs`; staging files ending `.part`, `.tmp`, or `.download`
 with or without a leading dot, in the root and in every content folder; OS
 folder noise (`Thumbs.db`, `.DS_Store`, `desktop.ini`) wherever it lands; and
 root-level files that only hold diagnostics, caches, history, or another
@@ -69,20 +70,20 @@ unreferenced cache.
 
 ## Performance
 
-Measured on the shipped Windows 0.2.7 build with `tools/bench.ps1` (3 runs, warm
+Measured on the shipped Windows 0.2.8 build with `tools/bench.ps1` (5 runs, warm
 disk cache, window detected through UI Automation) on 2026-10-25:
 
 | Metric | Result |
 | --- | --- |
-| `kaelis --version` | 73 ms median, 74 ms p95 |
-| Window, empty data root | 164 ms median |
-| Window, 200-jar instance | 155 ms median |
-| Working set (idle) | 80.0 MB empty, 80.8 MB with 200 jars |
-| Private bytes (idle) | 89.9 MB empty, 90.8 MB with 200 jars |
-| Idle CPU | 0.00% (event-driven, no repaint loop) |
-| Handles | 490 empty, 490 with 200 jars |
-| Hibernated working set | 1.6 MB after 90 s unfocused (from 80.8 MB) |
-| Release binary | 18,050,560 B, SHA-256 `287b7229…` |
+| `kaelis --version` | 64 ms median, 98 ms p95 |
+| Window, empty data root | 180 ms median |
+| Window, 200-jar instance | 178 ms median |
+| Working set (idle) | 99.5 MB empty, 98.9 MB with 200 jars |
+| Private bytes (idle) | 91.1 MB empty, 91.6 MB with 200 jars |
+| Idle CPU | 0.00% median (event-driven, no repaint loop) |
+| Handles | 499 empty, 496 with 200 jars |
+| Hibernated working set | 1.6 MB after 90 s unfocused |
+| Release binary | 18,066,944 B, SHA-256 `822df3f9…` |
 | Second launch restore | 62 ms (handoff + native window wake) |
 | Window close to process exit | 16 ms |
 
@@ -100,16 +101,20 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.2.7
+## What's new in 0.2.8
 
 - **The tray is dark and one click.** Windows paints tray menus itself, so
   Kaelis now sets the process-wide dark menu mode before the menu exists. The
   menu is **Show / Minimize**, **Play last instance**, one separator, and
-  **Quit** — three actions, no submenus.
+  **Quit** — three actions, no submenus. The icon itself toggles the window,
+  including a window that is minimised to the taskbar.
 - **Minimize means tray.** The title-bar minimize button hides the window and
   trims its working set instead of adding a taskbar button. **Show / Minimize**
   in the tray does the same, and a single click restores the window. A new
   Settings toggle, **Minimize to the tray**, turns the title-bar behavior off.
+- **The detected loader is a real control-height pill.** Its height is the same
+  as the combo box and every button beside it, with the text on the row's
+  centre line, so Content no longer shows a short box floating above a toolbar.
 - **Start with Windows, silently.** A Settings toggle adds one per-user
   sign-in entry that opens Kaelis hidden in the tray. It is a plain registry
   value — no service, no scheduled task, no splash, no window over the desktop —
@@ -120,13 +125,19 @@ launcher. The working set and handle count are the figures that stay stable.
   a second JVM cannot open the same world, and Quit ends the adopted game.
   A normal launch still clears its record when the JVM exits.
 - **Auto-clean is broader and safer.** It now also clears OS thumbnail files in
-  content folders and the official launcher's account/profile files, and it no
-  longer deletes a `tmp…` folder it merely guesses at. Saves, mods, configs,
+  content folders, the official launcher's account/profile files, `cache`,
+  `.architectury-transformer` scratch, and typed-command history. It no longer
+  deletes a `tmp…` folder it merely guesses at: saves, mods, configs,
   screenshots, and unknown folders always survive.
-- **Content browsing is denser.** Result rows use tighter gutters and a
-  one-line summary, the action area no longer overlaps long metadata, and the
-  detected-loader status is plain text that shares the baseline of the combo
-  box beside it instead of a smaller pill.
+- **Content browsing is nearly twice as dense.** A result is now two lines:
+  title plus provider/installed state, then author, downloads, loader support,
+  and version. Descriptions and categories live in the hover and Details panel.
+  The icon is 32 px, gutters are tighter, and the action area no longer overlaps
+  long metadata, so a screenful holds roughly twice as many mods.
+- **Update checks start themselves.** A background request asks GitHub for the
+  newest tag after the first window is up. When it is newer, the footer version
+  turns into a single-line link to that release. The check is anonymous, does
+  not block the window, stays silent when offline, and never installs anything.
 
 ### From 0.2.6
 

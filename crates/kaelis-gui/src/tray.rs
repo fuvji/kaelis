@@ -74,15 +74,16 @@ impl TrayController {
             })
             .map_err(|error| error.to_string())?;
 
-        // A tray icon is also a button. Clicking it is the gesture every other
-        // tray application answers, so it restores the window instead of
-        // silently doing nothing and leaving the menu as the only way back.
+        // A tray icon is also a button, and every other tray application makes
+        // it toggle: show while hidden, hide while shown. Decide from the live
+        // native window state before waking anything; waking marks the window
+        // shown and would always pick the wrong direction.
         std::thread::Builder::new()
             .name("kaelis-tray-click".to_owned())
             .spawn(move || {
                 let receiver = TrayIconEvent::receiver().clone();
                 while let Ok(event) = receiver.recv() {
-                    let restores = matches!(
+                    let clicked = matches!(
                         event,
                         TrayIconEvent::DoubleClick { .. }
                             | TrayIconEvent::Click {
@@ -91,9 +92,17 @@ impl TrayController {
                                 ..
                             }
                     );
-                    if restores {
-                        crate::platform::wake(&click_context);
-                        let _ = click_events.send(GuiEvent::Tray(TrayAction::Show));
+                    if clicked {
+                        let action = if crate::platform::window_is_shown() {
+                            TrayAction::Hide
+                        } else {
+                            TrayAction::Show
+                        };
+                        if !matches!(action, TrayAction::Hide) {
+                            crate::platform::wake(&click_context);
+                        }
+                        let _ = click_events.send(GuiEvent::Tray(action));
+                        click_context.request_repaint();
                     }
                 }
             })
@@ -102,7 +111,7 @@ impl TrayController {
         let icon = brand_icon().map_err(|error| error.to_string())?;
         let tray = TrayIconBuilder::new()
             .with_tooltip(format!(
-                "Kaelis {} — left-click to show",
+                "Kaelis {} — click to show or hide",
                 env!("CARGO_PKG_VERSION")
             ))
             .with_icon(icon)

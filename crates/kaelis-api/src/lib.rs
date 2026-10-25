@@ -16,6 +16,7 @@ pub mod mods;
 pub mod mrpack;
 pub mod portable;
 pub mod power;
+pub mod release;
 pub mod repair;
 pub mod retry;
 pub mod runtime;
@@ -33,5 +34,6 @@ pub use mods::{
     ContentKind, InstallReport, ModPlatformClient, ModProvider, ModSearchItem, ModSearchResults,
 };
 pub use portable::{ExportReport, ImportReport, PortableError, export_instance, import_instance};
+pub use release::{LauncherRelease, is_newer, latest as latest_release};
 pub use repair::{DuplicateRepair, RepairReport};
 pub use updates::{ModUpdate, UpdateError, UpdateReport, apply_update, check_updates};

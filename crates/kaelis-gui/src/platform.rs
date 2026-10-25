@@ -29,10 +29,13 @@ pub(crate) fn window_is_shown() -> bool {
     // window is merely an invisible viewport.
     #[cfg(windows)]
     {
-        use windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindowVisible};
         if let Some(window) = main_window() {
+            // A minimized window is still "visible" to IsWindowVisible, but a
+            // tray click must restore it rather than hide it. Treat the
+            // taskbar-minimized state as not shown so the click wakes it.
             // SAFETY: the handle belongs to this process.
-            return unsafe { IsWindowVisible(window) } != 0;
+            return unsafe { IsWindowVisible(window) } != 0 && unsafe { IsIconic(window) } == 0;
         }
     }
     WINDOW_SHOWN.load(Ordering::Relaxed)

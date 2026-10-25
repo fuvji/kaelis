@@ -22,6 +22,7 @@ use kaelis_api::mods::{
     ModSearchResults,
 };
 use kaelis_api::portable;
+use kaelis_api::release::LauncherRelease;
 use kaelis_api::repair::{
     DuplicateRepair, RepairReport, disable_duplicate_mods, repair_environment,
 };
@@ -83,7 +84,7 @@ const CONTENT_MAX: f32 = 1180.0;
 const SIDEBAR_WIDTH: f32 = 184.0;
 const RAIL_SIDEBAR_WIDTH: f32 = 56.0;
 const MOD_ICON_BYTES: usize = 1024 * 1024;
-const MOD_ICON_SIZE: f32 = 38.0;
+const MOD_ICON_SIZE: f32 = 32.0;
 const MOD_ICON_CONCURRENCY: usize = 6;
 /// Provider thumbnails are at most 512 px; refuse larger decodes outright so
 /// a hostile or malformed image cannot stall a decoder thread or spike RAM.
@@ -816,6 +817,8 @@ pub(crate) enum GuiEvent {
         result: Result<egui::ColorImage, String>,
     },
     Versions(Result<VersionManifest, String>),
+    /// A newer published launcher build, if GitHub has one.
+    LauncherRelease(Option<LauncherRelease>),
     ModSearch {
         generation: u64,
         query: String,
@@ -1119,6 +1122,9 @@ pub struct KaelisApp {
     /// instances can never show another instance's updates.
     update_report: Option<(String, UpdateReport)>,
     updates_busy: bool,
+    /// Newest GitHub release newer than this build; `None` when up to date or
+    /// when the anonymous check could not reach GitHub.
+    launcher_release: Option<LauncherRelease>,
     /// `current_file` of every jar being replaced right now.
     updating_mods: HashSet<String>,
     /// User commands: named shell lines fired by an event or an interval.
@@ -1528,6 +1534,7 @@ impl KaelisApp {
             launch_at_startup: launcher_settings.launch_at_startup,
             update_report: None,
             updates_busy: false,
+            launcher_release: None,
             updating_mods: HashSet::new(),
             automation: automation_store,
             automation_log,
@@ -1558,6 +1565,12 @@ impl KaelisApp {
         // hold the first frame for every zip it opened.
         app.refresh_installed();
         app.request_versions(creation.egui_ctx.clone());
+        // One anonymous request in the background: no startup delay, no error
+        // banner when offline, and no auto-install. The footer links to the
+        // release only when GitHub actually has a newer tag.
+        if app.screenshot_path.is_none() {
+            app.check_launcher_release(creation.egui_ctx.clone());
+        }
         // A restored offline profile keeps its Steve face until the premium
         // skin for its name (if any) arrives.
         if let Some(profile) = app.offline_account.clone() {
@@ -1575,6 +1588,21 @@ impl KaelisApp {
                 .await
                 .map_err(|error| error.to_string());
             send_event(&sender, &repaint, GuiEvent::Versions(result));
+        });
+    }
+
+    fn check_launcher_release(&self, context: egui::Context) {
+        let sender = self.sender.clone();
+        let repaint = context;
+        let client = self.http.clone();
+        self.runtime.spawn(async move {
+            let release = kaelis_api::release::latest(&client)
+                .await
+                .ok()
+                .filter(|release| {
+                    kaelis_api::release::is_newer(env!("CARGO_PKG_VERSION"), &release.version)
+                });
+            send_event(&sender, &repaint, GuiEvent::LauncherRelease(release));
         });
     }
 
@@ -4942,6 +4970,9 @@ impl KaelisApp {
                     self.set_status(StatusKind::Success, "Minecraft versions refreshed.");
                 }
             }
+            GuiEvent::LauncherRelease(release) => {
+                self.launcher_release = release;
+            }
             GuiEvent::Versions(Err(error)) => {
                 self.set_status(
                     StatusKind::Error,
@@ -6602,16 +6633,41 @@ impl KaelisApp {
             .show(context, |ui| {
                 ui.horizontal(|ui| {
                     // The rail already carries Community and GitHub; repeating
-                    // them here only added noise to a 12 px strip.
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{} {}",
+                    // them here only added noise to a 12 px strip. When GitHub
+                    // has a newer tag the version itself becomes the link, so
+                    // the strip stays one line tall.
+                    let version = env!("CARGO_PKG_VERSION");
+                    if let Some(release) = &self.launcher_release {
+                        let text = egui::RichText::new(format!(
+                            "{} {version} · {} available",
                             kaelis_core::brand::LAUNCHER_NAME,
-                            env!("CARGO_PKG_VERSION")
+                            release.version
                         ))
                         .size(8.5)
-                        .color(MUTED),
-                    );
+                        .color(accent_soft());
+                        let response = ui.add(
+                            egui::Label::new(text)
+                                .sense(egui::Sense::click())
+                                .selectable(false),
+                        );
+                        if response.clicked() {
+                            ui.ctx()
+                                .open_url(egui::OpenUrl::new_tab(release.url.clone()));
+                        }
+                        response.on_hover_text(format!(
+                            "Open the Kaelis {} release page",
+                            release.version
+                        ));
+                    } else {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{} {version}",
+                                kaelis_core::brand::LAUNCHER_NAME
+                            ))
+                            .size(8.5)
+                            .color(MUTED),
+                        );
+                    }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let fps = if self.governor.target_fps() == 0 {
                             "Idle · event-driven"
@@ -8428,7 +8484,7 @@ impl KaelisApp {
                         && !instance.loader.eq_ignore_ascii_case("vanilla")
                         && !instance.loader.eq_ignore_ascii_case(&self.mod_loader)
                     {
-                        inline_status(
+                        status_pill(
                             ui,
                             &format!("Instance is {}", instance.loader),
                             StatusKind::Warning.color(),
@@ -8437,10 +8493,10 @@ impl KaelisApp {
                             "Choose the instance's loader here, or change it in the instance properties.",
                         );
                     } else if let Some(detected) = self.detected_loader.as_deref() {
-                        // Plain inline status instead of a pill: a framed chip
-                        // is shorter than the combo box beside it, which is
-                        // what made this row look misaligned.
-                        inline_status(
+                        // A fixed-height pill: the loader is a status, but it
+                        // has to sit on the same baseline as the combo box and
+                        // buttons beside it instead of floating in the row.
+                        status_pill(
                             ui,
                             &format!("Detected {detected}"),
                             StatusKind::Success.color(),
@@ -9121,7 +9177,12 @@ impl KaelisApp {
                             ui.vertical(|ui| {
                                 ui.set_max_width(text_width);
                                 ui.horizontal(|ui| {
-                                    ui.label(egui::RichText::new(&item.title).strong().size(13.5));
+                                    ui.label(egui::RichText::new(&item.title).strong().size(13.5))
+                                        .on_hover_text(if item.description.is_empty() {
+                                            item.title.clone()
+                                        } else {
+                                            item.description.clone()
+                                        });
                                     if let Some((_, disabled)) = installed_entry {
                                         chip(
                                             ui,
@@ -9140,38 +9201,23 @@ impl KaelisApp {
                                         chip(ui, &item.provider.to_string(), MUTED);
                                     }
                                 });
-                                ui.label(
-                                    egui::RichText::new(format!(
-                                        "{} · {}",
-                                        row.author_line, row.meta_line
-                                    ))
-                                    .size(9.5)
-                                    .color(MUTED),
-                                );
-                                // One line keeps a long description from
-                                // doubling a row; hovering and Details show the
-                                // full text.
-                                ui.label(
-                                    egui::RichText::new(one_line(&item.description, 72))
-                                        .size(10.0)
-                                        .color(MUTED),
-                                )
-                                .on_hover_text(&item.description);
-                                ui.horizontal_wrapped(|ui| {
-                                    chip(ui, &row.compatibility_line, MUTED);
-                                    if !item.client_side.is_empty()
-                                        && item.client_side != "unspecified"
-                                    {
-                                        chip(
-                                            ui,
-                                            &format!("Client {}", item.client_side),
-                                            StatusKind::Info.color(),
-                                        );
-                                    }
-                                    if !row.categories_line.is_empty() {
-                                        chip(ui, &row.categories_line, MUTED);
-                                    }
-                                });
+                                // Two visible lines per project instead of four:
+                                // author, downloads, loader support, and version
+                                // share one line, and description/categories are
+                                // one hover away. A screenful now holds roughly
+                                // twice as many installable projects.
+                                let mut meta = format!("{} · {}", row.author_line, row.meta_line);
+                                if !row.compatibility_line.is_empty() {
+                                    meta.push_str(" · ");
+                                    meta.push_str(&row.compatibility_line);
+                                }
+                                let hover = if row.categories_line.is_empty() {
+                                    item.description.clone()
+                                } else {
+                                    format!("{}\n\n{}", item.description, row.categories_line)
+                                };
+                                ui.label(egui::RichText::new(meta).size(9.5).color(MUTED))
+                                    .on_hover_text(hover);
                                 if !state_label.is_empty() {
                                     ui.label(
                                         egui::RichText::new(&state_label)
@@ -12354,42 +12400,43 @@ fn check_chip(
     dot_label(ui, label, state.color()).on_hover_text(detail)
 }
 
-fn status_pill(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
-    // The pill usually sits in a right-to-left row; size it explicitly so the
-    // dot-then-label layout works without stretching the header.
-    let font = egui::FontId::proportional(9.5);
-    let text_width = ui.fonts(|fonts| {
-        fonts
-            .layout_no_wrap(text.to_owned(), font.clone(), color)
-            .size()
-            .x
-    });
-    egui::Frame::none()
-        .fill(egui::Color32::from_rgba_unmultiplied(
-            color.r(),
-            color.g(),
-            color.b(),
-            14,
-        ))
-        .stroke(egui::Stroke::new(
+/// A status pill with exactly the control height of the buttons, combo boxes,
+/// and checkboxes beside it.
+///
+/// A `Frame` hugs its text, so a one-line status used to be shorter than its
+/// neighbours and sat at the top of the row. Allocating the control height up
+/// front and painting the dot and text on its centre line keeps every toolbar
+/// on one baseline without adding another widget to the paint path.
+fn status_pill(ui: &mut egui::Ui, text: &str, color: egui::Color32) -> egui::Response {
+    let galley =
+        ui.painter()
+            .layout_no_wrap(text.to_owned(), egui::FontId::proportional(9.5), color);
+    let width = galley.size().x + 30.0;
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(width, CONTROL_HEIGHT), egui::Sense::hover());
+    let painter = ui.painter();
+    painter.rect_filled(
+        rect,
+        egui::Rounding::same(CORNER_MD),
+        egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 14),
+    );
+    painter.rect_stroke(
+        rect,
+        egui::Rounding::same(CORNER_MD),
+        egui::Stroke::new(
             1.0_f32,
             egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 34),
-        ))
-        .rounding(egui::Rounding::same(CORNER_MD))
-        .inner_margin(egui::Margin::symmetric(8.0, 2.0))
-        .show(ui, |ui| {
-            ui.allocate_ui_with_layout(
-                egui::vec2(text_width + 12.0, 13.0),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    ui.spacing_mut().item_spacing.x = 6.0;
-                    let (rect, _) =
-                        ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
-                    ui.painter().circle_filled(rect.center(), 2.6, color);
-                    ui.label(egui::RichText::new(text).font(font).color(color));
-                },
-            );
-        });
+        ),
+    );
+    let dot = egui::pos2(rect.left() + 11.0, rect.center().y);
+    painter.circle_filled(dot, 2.6, color);
+    painter.galley(
+        egui::pos2(dot.x + 9.0, rect.center().y - galley.size().y * 0.5),
+        galley,
+        color,
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, text));
+    response
 }
 
 /// Compact section heading for settings groups: one muted line instead of a
@@ -12615,50 +12662,6 @@ fn added_summary(counts: &[(ContentKind, usize)]) -> String {
         parts.push(format!("{count} {noun}"));
     }
     format!("Added {}", parts.join(", "))
-}
-
-/// Inline status text that shares the baseline of the controls in its row.
-///
-/// A chip carries its own padding and is typically shorter than a combo box
-/// or a button, so mixing the two makes a toolbar look ragged. This keeps the
-/// same colour language without adding a box to misalign.
-fn inline_status(ui: &mut egui::Ui, text: &str, color: egui::Color32) -> egui::Response {
-    ui.add(
-        egui::Label::new(egui::RichText::new(text).size(10.0).strong().color(color))
-            .selectable(false),
-    )
-}
-
-/// Collapse whitespace and clip a description to one line. Reading a row
-/// should take one glance; the preview dialog is where the whole paragraph
-/// belongs.
-fn one_line(text: &str, limit: usize) -> String {
-    let mut out = String::with_capacity(limit + 1);
-    let mut written = 0_usize;
-    let mut pending_space = false;
-    for character in text.chars() {
-        if character.is_whitespace() {
-            pending_space = !out.is_empty();
-            continue;
-        }
-        // The space between words counts against the limit too; counting only
-        // glyphs let a clipped line end one character over budget.
-        if std::mem::take(&mut pending_space) {
-            if written >= limit {
-                out.push('…');
-                break;
-            }
-            out.push(' ');
-            written += 1;
-        }
-        if written >= limit {
-            out.push('…');
-            break;
-        }
-        out.push(character);
-        written += 1;
-    }
-    out
 }
 
 fn chip(ui: &mut egui::Ui, text: &str, color: egui::Color32) -> egui::Response {
@@ -14599,18 +14602,6 @@ mod tests {
         assert!(parse_instance_json("hello").is_none());
         // A record missing required fields is not an instance.
         assert!(parse_instance_json("{\"id\":\"x\"}").is_none());
-    }
-
-    #[test]
-    fn descriptions_are_collapsed_to_one_line() {
-        assert_eq!(
-            super::one_line("  Sodium   makes\nrendering fast.  ", 80),
-            "Sodium makes rendering fast."
-        );
-        let clipped = super::one_line(&"word ".repeat(50), 20);
-        assert!(clipped.ends_with('…'));
-        assert!(clipped.chars().count() <= 21);
-        assert!(!clipped.contains('\n'));
     }
 
     #[test]
