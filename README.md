@@ -75,15 +75,15 @@ disk cache, window detected through UI Automation) on 2026-10-25:
 
 | Metric | Result |
 | --- | --- |
-| `kaelis --version` | 63 ms median, 99 ms p95 |
-| Window, empty data root | 209 ms median |
+| `kaelis --version` | 63 ms median, 77 ms p95 |
+| Window, empty data root | 162 ms median |
 | Window, 200-jar instance | 163 ms median |
-| Working set (idle) | 98.8 MB empty, 100.3 MB with 200 jars |
-| Private bytes (idle) | 91.1 MB empty, 91.8 MB with 200 jars |
+| Working set (idle) | 98.4 MB empty, 99.9 MB with 200 jars |
+| Private bytes (idle) | 90.8 MB empty, 91.3 MB with 200 jars |
 | Idle CPU | 0.00% median (event-driven, no repaint loop) |
-| Handles | 495 empty, 496 with 200 jars |
+| Handles | 495 empty, 498 with 200 jars |
 | Hibernated working set | 1.6 MB after 90 s unfocused |
-| Published Windows binary | 16,978,432 B, SHA-256 `c31c7d51…` |
+| Published Windows binary | 17,038,848 B, SHA-256 `1f8b6712…` |
 | Second launch restore | 62 ms (handoff + native window wake) |
 | Window close to process exit | 16 ms |
 
