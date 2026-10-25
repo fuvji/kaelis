@@ -44,9 +44,13 @@ impl JunkReport {
 
 /// Folders whose contents are disposable. Minecraft, mod loaders, and Java
 /// recreate every one of them on the next launch; none holds user work.
-const DISPOSABLE_DIRS: [&str; 14] = [
+const DISPOSABLE_DIRS: [&str; 15] = [
     "logs",
     "crash-reports",
+    // ReplayMod's decoded-frame cache. The recordings themselves live in
+    // `replay_videos` and are never touched; this folder only accelerates a
+    // preview and is rebuilt from the recording on demand.
+    ".replay_cache",
     // Mod download caches (`downloads/log.json` and similar). Every file is
     // fetched again on demand; none is user content.
     "downloads",
@@ -68,11 +72,17 @@ const DISPOSABLE_DIRS: [&str; 14] = [
 ];
 
 /// Root-level files that only ever hold diagnostics, caches, or OS noise.
-const ROOT_JUNK: [&str; 14] = [
+const ROOT_JUNK: [&str; 17] = [
     ".DS_Store",
     "Thumbs.db",
+    "ehthumbs.db",
     "desktop.ini",
     "launcher_log.txt",
+    // Forge and NeoForge write these next to the instance instead of inside
+    // `logs`; the next launch starts a fresh pair, so the old ones are only
+    // diagnostics nobody reads again.
+    "fml-client-latest.log",
+    "fml-server-latest.log",
     // Chat and slash-command history written by the client or a mod. It is a
     // local trace of what the player typed, not a setting, and the next launch
     // starts a fresh one.
@@ -355,6 +365,7 @@ mod tests {
         );
         write(&root.join(".kaelis-mrpack-1"), b"stage");
         write(&root.join(".cache/iris/pipeline.bin"), b"cache");
+        write(&root.join(".replay_cache/decoded.bin"), b"frames");
         write(&root.join(".mixin.out/audit.txt"), b"mixin");
         write(&root.join(".fabric/remapClasspath.txt"), b"classes");
         write(&root.join(".quilt/remapClasspath.txt"), b"classes");
@@ -365,6 +376,8 @@ mod tests {
         write(&root.join("cache/sodium.bin"), b"cache");
         write(&root.join("debug/profiler.txt"), b"debug");
         write(&root.join("hs_err_pid4242.log"), b"jvm crash");
+        write(&root.join("fml-client-latest.log"), b"loader log");
+        write(&root.join("ehthumbs.db"), b"noise");
         write(&root.join("java_pid4242.hprof"), b"heap dump");
         write(&root.join("session.replay"), b"replay");
         write(&root.join("usercache.json"), b"[]");
@@ -377,10 +390,11 @@ mod tests {
 
         let report = clean_instance(&root).expect("clean");
         // Two logs, one crash report, two staging files, one root stage, two
-        // cache files, one mixin audit, three loader scratch files, one debug
-        // file, one JVM dump, one heap dump, one replay capture, one UUID
-        // cache, one server pack, one OS metadata file.
-        assert_eq!(report.files, 19);
+        // cache files, one replay-frame cache, one mixin audit, three loader
+        // scratch files, one debug file, one JVM dump, one loader log, one
+        // heap dump, one replay capture, one UUID cache, one server pack, two
+        // OS metadata files.
+        assert_eq!(report.files, 22);
         assert!(report.bytes > 0);
         assert!(!root.join("logs/2026-10-20-1.log").exists());
         assert!(!root.join("crash-reports/crash-2026-10-20.txt").exists());
@@ -392,6 +406,7 @@ mod tests {
         assert!(root.join("config/sodium.json").is_file());
         assert!(root.join("defaultconfigs/sodium.json").is_file());
         assert!(!root.join(".cache/iris/pipeline.bin").exists());
+        assert!(!root.join(".replay_cache/decoded.bin").exists());
         assert!(!root.join(".mixin.out/audit.txt").exists());
         assert!(!root.join(".fabric/remapClasspath.txt").exists());
         assert!(!root.join(".quilt/remapClasspath.txt").exists());
@@ -403,6 +418,8 @@ mod tests {
         assert!(!root.join("cache/sodium.bin").exists());
         assert!(!root.join("debug/profiler.txt").exists());
         assert!(!root.join("hs_err_pid4242.log").exists());
+        assert!(!root.join("fml-client-latest.log").exists());
+        assert!(!root.join("ehthumbs.db").exists());
         assert!(!root.join("java_pid4242.hprof").exists());
         assert!(!root.join("session.replay").exists());
         assert!(!root.join("usercache.json").exists());

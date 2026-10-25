@@ -7908,7 +7908,9 @@ impl KaelisApp {
                                 ui.label(egui::RichText::new(&card.detail).size(11.0));
                                 ui.horizontal(|ui| {
                                     chip(ui, &card.content, accent());
-                                    chip(ui, &card.last_played, MUTED);
+                                    if !card.last_played.is_empty() {
+                                        chip(ui, &card.last_played, MUTED);
+                                    }
                                 });
                                 if !card.notes_preview.is_empty() {
                                     ui.label(
@@ -12308,7 +12310,23 @@ fn instance_content_summary(root: &Path) -> String {
         .flatten()
         .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
         .count();
-    format!("{mods} mods · {packs} packs · {shaders} shaders · {worlds} worlds")
+    format!(
+        "{} · {} · {} · {}",
+        count_noun(mods, "mod", "mods"),
+        count_noun(packs, "pack", "packs"),
+        count_noun(shaders, "shader", "shaders"),
+        count_noun(worlds, "world", "worlds")
+    )
+}
+
+/// `1 mod` and `31 mods`, never `1 mods`. The card line is the first thing on
+/// an instance, so a plural that only fits zero or many is a visible typo.
+fn count_noun(count: usize, one: &str, many: &str) -> String {
+    if count == 1 {
+        format!("1 {one}")
+    } else {
+        format!("{count} {many}")
+    }
 }
 
 fn count_dir_files(directory: &Path, suffixes: &[&str]) -> usize {
@@ -12338,8 +12356,10 @@ fn note_preview(notes: &str) -> String {
 }
 
 fn relative_last_played(unix_seconds: i64) -> String {
+    // An instance nobody has started yet has nothing to say about its history.
+    // An empty string keeps the card free of a chip that only repeats "never".
     if unix_seconds <= 0 {
-        return "Never played".to_owned();
+        return String::new();
     }
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -13669,13 +13689,13 @@ mod tests {
         ARTWORK_EDGE, CheckState, HandoffRequest, InstalledFile, InstalledScan, InstanceHealth,
         KaelisApp, ModFilter, ModSort, ModView, StatusKind, Tab, apply_pack_artwork,
         auto_scale_for, auto_scale_for_settled, build_mod_rows, center_square, clipboard_picture,
-        content_list_text, decode_image_payload, decode_instance_icon, decode_mod_icon,
+        content_list_text, count_noun, decode_image_payload, decode_instance_icon, decode_mod_icon,
         draw_instance_avatar, draw_mod_icon, expand_dropped, filter_tokens, has_extension,
-        https_icon_url, install_state_key, instance_matches, instance_name_conflict,
-        looks_like_svg, merge_launch_command, mod_item_key, note_preview, parse_handoff,
-        parse_instance_json, parse_jvm_args, scan_installed, significant_tokens, slugify,
-        store_instance_artwork, tab_from_shortcuts, valid_instance_version, visible_mod_indices,
-        window_icon,
+        https_icon_url, install_state_key, instance_content_summary, instance_matches,
+        instance_name_conflict, looks_like_svg, merge_launch_command, mod_item_key, note_preview,
+        parse_handoff, parse_instance_json, parse_jvm_args, relative_last_played, scan_installed,
+        significant_tokens, slugify, store_instance_artwork, tab_from_shortcuts,
+        valid_instance_version, visible_mod_indices, window_icon,
     };
     use kaelis_api::accounts::LauncherSettings;
     use kaelis_api::mods::{ContentKind, ModProvider, ModSearchItem};
@@ -13693,6 +13713,38 @@ mod tests {
             icon_url: None,
             ..ModSearchItem::default()
         }
+    }
+
+    #[test]
+    fn instance_content_counts_read_naturally() {
+        assert_eq!(count_noun(0, "mod", "mods"), "0 mods");
+        assert_eq!(count_noun(1, "mod", "mods"), "1 mod");
+        assert_eq!(count_noun(2, "world", "worlds"), "2 worlds");
+
+        let root = scratch_dir("content-summary");
+        std::fs::create_dir_all(root.join("mods")).unwrap();
+        std::fs::create_dir_all(root.join("resourcepacks")).unwrap();
+        std::fs::create_dir_all(root.join("shaderpacks")).unwrap();
+        std::fs::create_dir_all(root.join("saves/one")).unwrap();
+        std::fs::write(root.join("mods/sodium.jar"), b"jar").unwrap();
+        std::fs::write(root.join("resourcepacks/a.zip"), b"zip").unwrap();
+        std::fs::write(root.join("resourcepacks/b.zip.disabled"), b"zip").unwrap();
+        std::fs::write(root.join("mods/notes.txt"), b"not content").unwrap();
+        assert_eq!(
+            instance_content_summary(&root),
+            "1 mod · 2 packs · 0 shaders · 1 world"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_unplayed_instance_has_no_played_label() {
+        // A brand-new instance stays visually quiet: the card shows its content
+        // and nothing about a session that never happened.
+        assert!(relative_last_played(0).is_empty());
+        assert!(relative_last_played(-1).is_empty());
+        // Once it has been played the relative label is still there.
+        assert!(!relative_last_played(1).is_empty());
     }
 
     fn search_item(

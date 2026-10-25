@@ -40,7 +40,7 @@
         "applicationSubCategory": "Minecraft launcher",
         "operatingSystem": "Windows 10, Windows 11, macOS 11, Linux",
         "processorRequirements": "x86_64 or arm64",
-        "softwareVersion": "0.2.10",
+        "softwareVersion": "0.2.11",
         "softwareRequirements": "Rust 1.85+ to build from source; Java is provisioned automatically",
         "downloadUrl": "https://fuvji.github.io/kaelis/downloads/Kaelis-Portable.zip",
         "installUrl": "https://fuvji.github.io/kaelis/#downloads",
@@ -424,7 +424,7 @@
     <div class="shell" id="top">
       <section class="hero" aria-labelledby="hero-title">
         <div>
-          <span class="eyebrow"><i></i>v0.2.10 · Windows · macOS · Linux</span>
+          <span class="eyebrow"><i></i>v0.2.11 · Windows · macOS · Linux</span>
           <h1 id="hero-title">Minecraft,<br><em>composed.</em></h1>
           <p class="lede">Instances, mods, packs, shaders, and accounts in one native workspace. Files stay local. Nothing runs in the background.</p>
           <div class="hero-actions">
@@ -598,7 +598,7 @@
         </div>
 
         <div class="downloads-foot">
-          <span><b style="color:var(--text)">New in 0.2.10</b> · The footer's <b style="color:var(--text)">Update</b> action is Windows-only, and a swap that cannot complete now starts the existing build rather than leaving no window. On Windows it installs the next release itself: the Windows build is checksum-verified against the same release while it downloads, the old executable is backed up, and a failed swap rolls back; protected installs, macOS and Linux keep the release-page link. The tray icon now toggles the window, including one minimized to the taskbar, and the detected-loader badge has the exact height of the controls beside it. Content results are two-line rows that fit roughly twice as many mods per screen. Auto Erase Junk also clears generic and Architectury caches while still keeping every unfamiliar folder. A background, anonymous check links the footer to a newer release; nothing installs silently. The tray is dark with three actions, the minimize button moves Kaelis to the tray, an optional sign-in entry starts it hidden, and a reopened launcher still shows Quit for a running game. Instances share one copy of every game file, and the interface keeps its event-driven 0.00% idle cost.</span>
+          <span><b style="color:var(--text)">New in 0.2.11</b> · Instance cards no longer say <b style="color:var(--text)">Never played</b>: an unstarted instance shows only what it contains, with counts that read naturally (<b style="color:var(--text)">1 pack · 1 world</b>, never <i>1 packs</i>). Auto Erase Junk also clears ReplayMod's frame cache, the stray Forge and NeoForge root logs, and Windows' <code>ehthumbs.db</code> thumbnail cache — while saves, recordings, mods, configs, screenshots, and unknown folders always survive. The freed chip keeps the content row on one baseline, so a long instance list scans faster. Everything from 0.2.10 remains: one-click checksum-verified self-update on Windows, the dark three-action tray, tray minimize, the shared file store, and an event-driven 0.00% idle cost.</span>
           <span>Every tag builds all three platforms in CI and publishes checksums.</span>
           <a href="downloads/KAELIS-LINKS.txt">URL &amp; install index ↗</a>
           <a href="https://github.com/fuvji/kaelis/releases/latest" rel="noreferrer">All releases ↗</a>
@@ -609,9 +609,9 @@
           <summary>Checksums and build provenance</summary>
           <div class="body">
             <p style="margin:0;color:var(--muted);font-size:13px">Every artifact is hashed at release time. Published files: <a href="downloads/SHA256SUMS.txt" style="color:var(--accent-soft)">SHA256SUMS.txt</a> and the generated <a href="downloads/KAELIS-LINKS.txt" style="color:var(--accent-soft)">URL &amp; installation index</a>.</p>
-            <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">352db486999b24365a80e27a01a30aa88a85d471340af28afb634599a4ede299</code></div>
-            <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">0531de90da63c622d31e1ef7addbfd02f0b90f048bda98c81e6e1efb5498e9c4</code></div>
-            <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">2d207b69dede940c9eb8fd34a15420002d4d112fa67e04fae96ed7308ae25306</code></div>
+            <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">15ea4d6505b189e4ee75a15dd7a868bddb08be9b38e12c2e8545ac21684ea774</code></div>
+            <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">8a7ef656bf09739b5de220ffb85283f774595f1100ceb7baddb48e01fc4ae123</code></div>
+            <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">4d005733339bc8d126c4c8d69f086a7b02a19a5b700ba7075a86290593b5e079</code></div>
             <div class="hash"><span>Verify on Linux / macOS</span><code>shasum -a 256 -c SHA256SUMS.txt</code></div>
           </div>
         </details>

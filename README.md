@@ -1,6 +1,6 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.2.10-70a5ff)
+![Version](https://img.shields.io/badge/version-0.2.11-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
@@ -70,22 +70,22 @@ unreferenced cache.
 
 ## Performance
 
-Measured on the shipped Windows 0.2.10 build with `tools/bench.ps1` (5 runs, warm
+Measured on the shipped Windows 0.2.11 build with `tools/bench.ps1` (5 runs, warm
 disk cache, window detected through UI Automation) on 2026-10-25:
 
 | Metric | Result |
 | --- | --- |
 | `kaelis --version` | 62 ms median, 89 ms p95 |
-| Window, empty data root | 177 ms median |
-| Window, 200-jar instance | 166 ms median |
-| Working set (idle) | 98.6 MB empty, 81.4 MB with 200 jars |
-| Private bytes (idle) | 90.9 MB empty, 90.9 MB with 200 jars |
+| Window, empty data root | 176 ms median |
+| Window, 200-jar instance | 169 ms median |
+| Working set (idle) | 80.7 MB empty, 100.1 MB with 200 jars |
+| Private bytes (idle) | 90.4 MB empty, 91.7 MB with 200 jars |
 | Idle CPU | 0.00% median (event-driven, no repaint loop) |
-| Handles | 498 empty, 494 with 200 jars |
-| Hibernated working set | 1.6 MB after 90 s unfocused |
-| Published Windows binary | 17,038,848 B, SHA-256 `2068379d…` |
-| Second launch restore | 62 ms (handoff + native window wake) |
-| Window close to process exit | 16 ms |
+| Handles | 494 empty, 496 with 200 jars |
+| Hibernated working set | 1.6 MB after 90 s unfocused (0.2.10 measurement; path unchanged) |
+| Shipped Windows binary | 18,128,384 B, SHA-256 `15ea4d65…` |
+| Second launch restore | 62 ms (handoff + native window wake; 0.2.10 measurement, path unchanged) |
+| Window close to process exit | 16 ms (0.2.10 measurement, path unchanged) |
 
 The window does not wait for mod metadata: jar scanning and artwork decoding
 run on workers, so a 200-mod instance opens in the same time as an empty one.
@@ -101,7 +101,22 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.2.10
+## What's new in 0.2.11
+
+- **The instance card no longer says “Never played”.** An instance that has
+  never been started shows only what it contains: its mod, pack, shader, and
+  world counts. A played instance still shows its relative session time, and
+  the counts read naturally — `1 pack · 1 world`, never `1 packs` or `1 worlds`.
+- **Auto Erase Junk reaches ReplayMod and Forge logs.** Disposable cleanup now
+  also clears the ReplayMod frame cache (recordings themselves stay), the
+  `fml-client-latest.log` and `fml-server-latest.log` files Forge and NeoForge
+  leave beside an instance, and Windows' `ehthumbs.db` thumbnail cache. Saves,
+  recordings, mods, configs, screenshots, and unknown folders are untouched.
+- **One less line of clutter.** The freed chip keeps the content row on a single
+  baseline at every card height, so scanning a long instance list is quieter
+  and slightly faster to read.
+
+### From 0.2.10
 
 - **Only Windows is offered the install action.** The update check and the
   release link remain everywhere, but macOS and Linux ship as archives that are
