@@ -1,5 +1,5 @@
-# Kaelis 0.2.11 - released 2026-10-25
-# Verify: shasum -a 256 -c SHA256SUMS.txt  |  certutil -hashfile <file> SHA256
-15ea4d6505b189e4ee75a15dd7a868bddb08be9b38e12c2e8545ac21684ea774  Kaelis.exe
-8a7ef656bf09739b5de220ffb85283f774595f1100ceb7baddb48e01fc4ae123  Kaelis-Portable.zip
-4d005733339bc8d126c4c8d69f086a7b02a19a5b700ba7075a86290593b5e079  Kaelis-Setup.exe
+725ff0282d289713174d6822ea9fb6ae69273e26aa83069ec6308791bb9c7a3f  Kaelis-linux-x64.tar.gz
+29c8183f0ae1a11fbda34a17e96c7502f30e29d665118eab1bcf54561dba20b9  Kaelis-macos-universal.zip
+5f77fa26e8a76642d182615512b6e98c6f26247766f7caab8d2373c6f443f369 *Kaelis-Portable.zip
+3c9e21f2734012efc7ba665b5e9e33a0a5dedad49faed685aabe102ba583791e *Kaelis-Setup.exe
+15af84ec3e408603e0c8ec0dea1c7094c1f7ff12473bed1340028996b8d4c39a *Kaelis.exe
