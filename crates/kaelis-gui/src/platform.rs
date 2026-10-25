@@ -268,6 +268,7 @@ pub(crate) fn set_startup(_enabled: bool) -> Result<(), String> {
     Err("starting with the system is available on Windows only".to_owned())
 }
 
+#[cfg(windows)]
 fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
 }

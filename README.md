@@ -83,7 +83,7 @@ disk cache, window detected through UI Automation) on 2026-10-25:
 | Idle CPU | 0.00% median (event-driven, no repaint loop) |
 | Handles | 499 empty, 496 with 200 jars |
 | Hibernated working set | 1.6 MB after 90 s unfocused |
-| Release binary | 18,066,944 B, SHA-256 `822df3f9…` |
+| Published Windows binary | 16,978,432 B, SHA-256 `c31c7d51…` |
 | Second launch restore | 62 ms (handoff + native window wake) |
 | Window close to process exit | 16 ms |
 
