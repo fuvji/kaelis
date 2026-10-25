@@ -143,6 +143,16 @@ pub struct LauncherSettings {
     /// user's Ctrl +/- (or the Settings control) replaces it.
     #[serde(default)]
     pub ui_scale: f32,
+    /// The title-bar minimize button hides the window to the notification
+    /// area instead of the taskbar. On by default: a launcher is a background
+    /// app and does not need a taskbar slot while it is not in use.
+    #[serde(default = "default_auto_repair")]
+    pub minimize_to_tray: bool,
+    /// Start Kaelis when the user signs in, already hidden in the tray. The
+    /// shortcut is a per-user registry value, so no service or elevation is
+    /// involved and login is not delayed by a task scheduler.
+    #[serde(default)]
+    pub launch_at_startup: bool,
 }
 
 fn default_auto_repair() -> bool {
@@ -161,6 +171,8 @@ impl Default for LauncherSettings {
             account_mode: None,
             accounts: Vec::new(),
             ui_scale: 0.0,
+            minimize_to_tray: true,
+            launch_at_startup: false,
         }
     }
 }
@@ -421,6 +433,19 @@ mod tests {
         assert_eq!(accounts[1].name, "Notch");
         // The two kinds never collide, even with the same display name.
         assert_ne!(accounts[0].key(), accounts[1].key());
+    }
+
+    #[test]
+    fn window_preferences_default_to_tray_and_no_startup() {
+        let defaults = LauncherSettings::default();
+        assert!(defaults.minimize_to_tray);
+        assert!(!defaults.launch_at_startup);
+        // Files written by earlier versions have neither field. Missing must
+        // mean "tray on, sign-in off", not "reset the user's window habits".
+        let legacy: LauncherSettings =
+            serde_json::from_str("{\"last_account\":\"\"}").expect("legacy settings");
+        assert!(legacy.minimize_to_tray);
+        assert!(!legacy.launch_at_startup);
     }
 
     #[test]

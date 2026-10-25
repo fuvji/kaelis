@@ -43,6 +43,8 @@ pub enum LaunchError {
     InvalidQuickJoin(String),
     #[error("{0}")]
     InstanceBusy(#[from] kaelis_core::instance_guard::InstanceGuardError),
+    #[error("another launch of this instance is already running (pid {1})")]
+    AlreadyRunning(String, u32),
     #[error(
         "{0} is not provisioned for this instance yet; Kaelis installs Fabric and Quilt automatically, but {0} must be added before playing"
     )]
@@ -868,6 +870,13 @@ pub async fn run_instance<F>(
 where
     F: FnOnce(u32) + Send + 'static,
 {
+    let instance_id = instance.id.clone();
+    // A launcher restart releases the named guard while the game keeps
+    // running. The durable record is the surviving claim, so a second start
+    // after a crash is refused instead of opening the same world twice.
+    if let Some(existing) = kaelis_core::running::find(&instance_id) {
+        return Err(LaunchError::AlreadyRunning(instance_id, existing.pid));
+    }
     // One instance, one JVM. Different instances are independent, so the lock
     // is per instance rather than per launcher.
     let _guard = kaelis_core::instance_guard::InstanceGuard::claim(&instance.id)?;
@@ -906,6 +915,10 @@ where
     // monitor forgets the pid instead of polling a dead process forever.
     let pid = child.id().unwrap_or_default();
     let _power = (pid != 0).then(|| crate::power::track(pid));
+    // Publish the pid and its creation time before the game is visible, so a
+    // launcher that dies right now still leaves a recoverable record. The
+    // guard deletes it on every return path.
+    let _running = (pid != 0).then(|| kaelis_core::running::mark(&instance_id, pid));
     on_spawn(pid);
 
     let stdout_task = child
@@ -973,6 +986,37 @@ mod tests {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
         command.spawn().expect("a long-running child starts")
+    }
+
+    /// A record from an earlier launcher must block a second JVM even though
+    /// the per-instance OS guard died with that launcher.
+    #[tokio::test]
+    async fn a_recorded_game_blocks_a_second_launch() {
+        let mut instance = test_instance();
+        instance.id = format!("launch-running-probe-{}", std::process::id());
+        let maybe_mark = kaelis_core::running::mark(&instance.id, std::process::id());
+        let identity = LaunchIdentity::offline(
+            "Probe".to_owned(),
+            "00000000-0000-0000-0000-000000000000".to_owned(),
+        );
+        let error = run_instance(
+            instance.clone(),
+            identity,
+            EphemeralLog::new(1024),
+            |_| {},
+            None,
+        )
+        .await
+        .expect_err("a running game must refuse the second start");
+        match error {
+            LaunchError::AlreadyRunning(id, pid) => {
+                assert_eq!(id, instance.id);
+                assert_eq!(pid, std::process::id());
+            }
+            other => panic!("unexpected error: {other}"),
+        }
+        drop(maybe_mark);
+        assert!(kaelis_core::running::find(&instance.id).is_none());
     }
 
     /// A real child that exits successfully on its own shortly.

@@ -492,13 +492,18 @@ mod tests {
     use std::path::PathBuf;
 
     fn temp_path(extension: &str) -> PathBuf {
+        // Tests run in parallel and the system clock is not fine-grained
+        // enough to promise distinct names on its own; a counter makes each
+        // fixture file unique even when two tests start in the same tick.
+        static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         std::env::temp_dir().join(format!(
-            "kaelis-modmeta-{}-{}.{extension}",
+            "kaelis-modmeta-{}-{}-{}.{extension}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ))
     }
 

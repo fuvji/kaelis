@@ -1,10 +1,10 @@
 //! Native tray icon and event bridge. The receiver blocks while idle, so it
 //! does not poll while the launcher is hidden.
 //!
-//! The menu stays three actions and one separator: Show, Play, Quit. Anything
-//! longer turns a tray back into a second application window, and every extra
-//! item is a string the shell has to lay out and an id the event thread has to
-//! compare on every click.
+//! The menu stays three actions and one separator: Show / Minimize, Play, and
+//! Quit. Anything longer turns a tray back into a second application window,
+//! and every extra item is a string the shell has to lay out and an id the
+//! event thread has to compare on every click.
 
 use crate::GuiEvent;
 use eframe::egui;
@@ -21,8 +21,12 @@ impl TrayController {
         context: egui::Context,
         events: UnboundedSender<GuiEvent>,
     ) -> Result<Self, String> {
+        // Windows paints this menu itself, so ask the theme layer for dark
+        // menus before the first one exists.
+        crate::platform::enable_dark_menus();
+
         let menu = Menu::new();
-        let show = MenuItem::new("Show Kaelis", true, None);
+        let show = MenuItem::new("Show / Minimize", true, None);
         let launch = MenuItem::new("Play last instance", true, None);
         let quit = MenuItem::new("Quit", true, None);
         let separator = PredefinedMenuItem::separator();
@@ -40,7 +44,14 @@ impl TrayController {
             .spawn(move || {
                 while let Ok(event) = receiver.recv() {
                     let action = if event.id == show_id {
-                        Some(TrayAction::Show)
+                        // Decide from the live window state before waking it:
+                        // waking marks the window shown, and asking afterwards
+                        // would always choose the wrong direction.
+                        Some(if crate::platform::window_is_shown() {
+                            TrayAction::Hide
+                        } else {
+                            TrayAction::Show
+                        })
                     } else if event.id == launch_id {
                         Some(TrayAction::LaunchLast)
                     } else if event.id == quit_id {
@@ -49,11 +60,13 @@ impl TrayController {
                         None
                     };
                     if let Some(action) = action {
-                        // The window may be hidden for a running game, and a
-                        // hidden window paints no frame — so the event alone
-                        // would never be processed. Wake the real window first
-                        // from this thread; the event then syncs the toolkit.
-                        crate::platform::wake(&context);
+                        // A hidden window paints no frame, so it would never
+                        // process a queued event. Restoring actions wake the
+                        // native window first; minimising only needs the
+                        // event loop to run one frame on the visible window.
+                        if !matches!(action, TrayAction::Hide) {
+                            crate::platform::wake(&context);
+                        }
                         let _ = events.send(GuiEvent::Tray(action));
                         context.request_repaint();
                     }
@@ -88,7 +101,10 @@ impl TrayController {
 
         let icon = brand_icon().map_err(|error| error.to_string())?;
         let tray = TrayIconBuilder::new()
-            .with_tooltip("Kaelis Minecraft Launcher")
+            .with_tooltip(format!(
+                "Kaelis {} — left-click to show",
+                env!("CARGO_PKG_VERSION")
+            ))
             .with_icon(icon)
             .with_menu(Box::new(menu))
             // Left click is the direct gesture; the menu stays on right click.
@@ -103,7 +119,10 @@ impl TrayController {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum TrayAction {
+    /// Restore the window from the menu or the icon.
     Show,
+    /// Hide a visible window to the tray.
+    Hide,
     LaunchLast,
     Quit,
 }

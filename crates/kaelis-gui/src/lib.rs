@@ -907,6 +907,14 @@ impl Drop for LiveGame {
     }
 }
 
+/// Change the per-user sign-in entry from the CLI or a diagnostic tool.
+///
+/// One implementation behind both the Settings checkbox and `--startup`, so
+/// the two can never disagree about the registry value.
+pub fn set_launch_at_startup(enabled: bool) -> Result<(), String> {
+    platform::set_startup(enabled)
+}
+
 pub struct KaelisApp {
     http: reqwest::Client,
     platforms: ModPlatformClient,
@@ -1100,6 +1108,13 @@ pub struct KaelisApp {
     modpack_generation: u64,
     /// Remove logs, crash reports, and staging files at every launch.
     auto_clean_junk: bool,
+    /// The title-bar minimize button hides the window to the tray.
+    minimize_to_tray: bool,
+    /// A per-user sign-in entry starts Kaelis hidden in the tray.
+    launch_at_startup: bool,
+    /// The window is hidden because a game started, not by the user. Only this
+    /// case restores the window automatically when the last game exits.
+    hidden_for_game: bool,
     /// Latest mod-update report and the instance it belongs to, so switching
     /// instances can never show another instance's updates.
     update_report: Option<(String, UpdateReport)>,
@@ -1229,10 +1244,21 @@ impl KaelisApp {
         runtime: Handle,
         sweeper: tokio::task::JoinHandle<()>,
         handoff: Option<HandoffServer>,
+        start_hidden: bool,
     ) -> Self {
         // Settings no longer asks for a CurseForge key, so any key an older
         // build stored is removed once instead of sitting unused.
         kaelis_api::secrets::forget_legacy_curseforge_key();
+        // Windows paints the tray menu itself, so the dark preference has to
+        // be installed before that menu is created.
+        platform::enable_dark_menus();
+        let launcher_settings = load_settings();
+        platform::set_minimize_to_tray(launcher_settings.minimize_to_tray);
+        if launcher_settings.launch_at_startup {
+            // A portable folder that was moved leaves the old path behind;
+            // rewriting it at start keeps the sign-in entry pointing here.
+            let _ = platform::set_startup(true);
+        }
         let (sender, receiver) = mpsc::unbounded_channel();
         if let Some(server) = handoff {
             let events = sender.clone();
@@ -1252,10 +1278,15 @@ impl KaelisApp {
                 });
         }
         let tray = tray::TrayController::install(creation.egui_ctx.clone(), sender.clone()).ok();
+        if start_hidden {
+            platform::begin_hidden_start(creation.egui_ctx.clone());
+        }
+        // The minimize-button hook is attached to the real window; the first
+        // frame retries if the handle is not published yet.
+        platform::install_window_hooks();
         // Windows listens for real foreground changes rather than expecting a
         // frame after focus loss, which an idle launcher never schedules.
         platform::start_idle_guard();
-        let launcher_settings = load_settings();
         install_style(&creation.egui_ctx);
 
         let instances = Instance::load_all().unwrap_or_default();
@@ -1469,6 +1500,7 @@ impl KaelisApp {
             account_head_retry: HashMap::new(),
             steve_head_texture: None,
             running_instances: std::collections::HashSet::new(),
+            hidden_for_game: false,
             stop_signals: HashMap::new(),
             live_games: Arc::new(AtomicUsize::new(0)),
             settings_ram_mb: 4096,
@@ -1492,6 +1524,8 @@ impl KaelisApp {
             modpack_task: None,
             modpack_generation: 0,
             auto_clean_junk: launcher_settings.auto_clean,
+            minimize_to_tray: launcher_settings.minimize_to_tray,
+            launch_at_startup: launcher_settings.launch_at_startup,
             update_report: None,
             updates_busy: false,
             updating_mods: HashSet::new(),
@@ -1503,6 +1537,9 @@ impl KaelisApp {
             automation_editing: None,
             automation_started: false,
         };
+        // A game outlives a launcher that was closed, so recover the running
+        // set from its process records before the first frame paints.
+        app.adopt_running_games(&creation.egui_ctx);
         // First run on this computer: pick up the identities another launcher
         // already has, so setup is a click instead of retyping a name. The
         // scan is silent when there is nothing to find.
@@ -3629,6 +3666,8 @@ impl KaelisApp {
             auto_repair: self.auto_repair_before_launch,
             auto_resolve_duplicates: self.auto_resolve_duplicates,
             auto_clean: self.auto_clean_junk,
+            minimize_to_tray: self.minimize_to_tray,
+            launch_at_startup: self.launch_at_startup,
             content_kind: self.content_kind,
             offline_account: self
                 .offline_account
@@ -4311,6 +4350,53 @@ impl KaelisApp {
         }
     }
 
+    /// Recover games that outlived the launcher window.
+    ///
+    /// A record is written when the JVM spawns and is checked against the live
+    /// process table here. A watcher thread turns the eventual exit into the
+    /// same event an in-window launch sends, so the card, the session cleanup,
+    /// and the tray all agree — and Quit works on a game this window never
+    /// spawned itself.
+    fn adopt_running_games(&mut self, context: &egui::Context) {
+        self.running_instances.clear();
+        let mut adopted = 0_usize;
+        for (id, game) in kaelis_core::running::live() {
+            if !self.instances.iter().any(|instance| instance.id == id) {
+                // The instance was erased while its game ran; do not keep a
+                // record for a folder that no longer exists.
+                kaelis_core::running::clear(&id);
+                continue;
+            }
+            self.running_instances.insert(id.clone());
+            adopted += 1;
+            let sender = self.sender.clone();
+            let repaint = context.clone();
+            let _ = std::thread::Builder::new()
+                .name("kaelis-adopted-game".to_owned())
+                .spawn(move || {
+                    kaelis_core::running::wait_until_gone(&game);
+                    kaelis_core::running::clear(&id);
+                    send_event(
+                        &sender,
+                        &repaint,
+                        GuiEvent::GameExited {
+                            instance_id: id,
+                            message: "Minecraft exited.".to_owned(),
+                        },
+                    );
+                });
+        }
+        if adopted > 0 {
+            self.set_status(
+                StatusKind::Info,
+                format!(
+                    "{adopted} game{} still running after the launcher closed.",
+                    if adopted == 1 { " is" } else { "s are" }
+                ),
+            );
+        }
+    }
+
     fn instance_running(&self, id: &str) -> bool {
         self.running_instances.contains(id)
     }
@@ -4324,6 +4410,24 @@ impl KaelisApp {
     /// kept and applied the instant the process exists.
     fn stop_instance(&mut self, id: &str, context: &egui::Context) {
         let Some(stop) = self.stop_signals.get(id) else {
+            // The game predates this window: the launcher was closed and
+            // reopened while Minecraft kept playing. Its process record is the
+            // authority, so Quit still ends it.
+            let Some(game) = kaelis_core::running::find(id) else {
+                return;
+            };
+            let name = self
+                .instances
+                .iter()
+                .find(|instance| instance.id == id)
+                .map(|instance| instance.name.clone())
+                .unwrap_or_else(|| id.to_owned());
+            if kaelis_core::running::terminate(&game) {
+                self.set_status(StatusKind::Busy, format!("Quitting {name}…"));
+            } else {
+                self.set_status(StatusKind::Warning, format!("{name} has already exited."));
+            }
+            context.request_repaint();
             return;
         };
         if stop.send(true).is_err() {
@@ -5390,6 +5494,7 @@ impl KaelisApp {
                 // A second launch happens from a window the user restored to
                 // the tray; let it stay visible rather than fighting them.
                 if count == 1 {
+                    self.hidden_for_game = true;
                     platform::hide_for_game(context);
                     // The launcher now has no visible frame: give its pages
                     // back while the game owns the screen. They fault back in
@@ -5415,7 +5520,13 @@ impl KaelisApp {
                 if self.running_instances.is_empty() {
                     self.restart_sweeper();
                     self.restore_avatar(context);
-                    show_window(context);
+                    // Only a window that hid itself for the game returns by
+                    // itself. A launcher the user hid, or started at sign-in
+                    // in the tray, stays hidden when the game ends.
+                    if self.hidden_for_game {
+                        self.hidden_for_game = false;
+                        show_window(context);
+                    }
                 }
             }
             GuiEvent::GameFailed { instance_id, error } => {
@@ -5426,7 +5537,10 @@ impl KaelisApp {
                 if self.running_instances.is_empty() {
                     self.restart_sweeper();
                     self.restore_avatar(context);
-                    show_window(context);
+                    if self.hidden_for_game {
+                        self.hidden_for_game = false;
+                        show_window(context);
+                    }
                 }
             }
             GuiEvent::InstanceDuplicated(result) => match *result {
@@ -5519,7 +5633,16 @@ impl KaelisApp {
             }
             GuiEvent::Handoff(arguments) => self.apply_handoff(context, &arguments),
             GuiEvent::Tray(action) => match action {
-                tray::TrayAction::Show => show_window(context),
+                tray::TrayAction::Show => {
+                    self.hidden_for_game = false;
+                    show_window(context);
+                }
+                tray::TrayAction::Hide => {
+                    // A deliberate hide is not a game hand-off, so a later
+                    // game exit must not pop the window back up.
+                    self.hidden_for_game = false;
+                    platform::hide_to_tray(context);
+                }
                 tray::TrayAction::LaunchLast => self.launch_selected(context.clone()),
                 tray::TrayAction::Quit => self.quit_now(),
             },
@@ -5529,6 +5652,7 @@ impl KaelisApp {
     fn apply_handoff(&mut self, context: &egui::Context, arguments: &[String]) {
         match parse_handoff(arguments) {
             HandoffRequest::Activate => {
+                self.hidden_for_game = false;
                 self.set_status(
                     StatusKind::Info,
                     "Kaelis is already running; window restored.",
@@ -5609,6 +5733,16 @@ impl KaelisApp {
             .stroke(egui::Stroke::new(1.0_f32, BORDER))
             .rounding(egui::Rounding::same(CORNER_MD))
             .inner_margin(egui::Margin::symmetric(10.0, 7.0))
+    }
+
+    /// Search-result rows: the card surface with tighter gutters, so more
+    /// results fit on one screen without changing the visual language.
+    fn list_frame() -> egui::Frame {
+        egui::Frame::none()
+            .fill(SURFACE_ALT)
+            .stroke(egui::Stroke::new(1.0_f32, BORDER))
+            .rounding(egui::Rounding::same(CORNER_MD))
+            .inner_margin(egui::Margin::symmetric(9.0, 5.0))
     }
 
     fn paint_backdrop(context: &egui::Context) {
@@ -8294,17 +8428,24 @@ impl KaelisApp {
                         && !instance.loader.eq_ignore_ascii_case("vanilla")
                         && !instance.loader.eq_ignore_ascii_case(&self.mod_loader)
                     {
-                        chip(
+                        inline_status(
                             ui,
                             &format!("Instance is {}", instance.loader),
                             StatusKind::Warning.color(),
+                        )
+                        .on_hover_text(
+                            "Choose the instance's loader here, or change it in the instance properties.",
                         );
                     } else if let Some(detected) = self.detected_loader.as_deref() {
-                        chip(
+                        // Plain inline status instead of a pill: a framed chip
+                        // is shorter than the combo box beside it, which is
+                        // what made this row look misaligned.
+                        inline_status(
                             ui,
                             &format!("Detected {detected}"),
                             StatusKind::Success.color(),
-                        );
+                        )
+                        .on_hover_text("Every installed mod declares this loader.");
                     }
                 } else if self.content_kind == ContentKind::Modpack {
                     chip(ui, "Pack includes its loader", MUTED);
@@ -8968,12 +9109,15 @@ impl KaelisApp {
                     };
                     let mut clicked = false;
                     let mut preview_clicked = false;
-                    Self::card_frame().show(ui, |ui| {
+                    Self::list_frame().show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.horizontal_top(|ui| {
                             draw_mod_icon(ui, icon, item);
                             ui.add_space(6.0);
-                            let text_width = (ui.available_width() - 96.0).max(120.0);
+                            // Reserve the real width of Install + Details; a
+                            // 96 px reservation let long metadata run under
+                            // the action buttons.
+                            let text_width = (ui.available_width() - 172.0).max(120.0);
                             ui.vertical(|ui| {
                                 ui.set_max_width(text_width);
                                 ui.horizontal(|ui| {
@@ -9004,7 +9148,15 @@ impl KaelisApp {
                                     .size(9.5)
                                     .color(MUTED),
                                 );
-                                ui.label(egui::RichText::new(&item.description).size(10.5));
+                                // One line keeps a long description from
+                                // doubling a row; hovering and Details show the
+                                // full text.
+                                ui.label(
+                                    egui::RichText::new(one_line(&item.description, 72))
+                                        .size(10.0)
+                                        .color(MUTED),
+                                )
+                                .on_hover_text(&item.description);
                                 ui.horizontal_wrapped(|ui| {
                                     chip(ui, &row.compatibility_line, MUTED);
                                     if !item.client_side.is_empty()
@@ -9096,7 +9248,7 @@ impl KaelisApp {
                             });
                         });
                     });
-                    ui.add_space(4.0);
+                    ui.add_space(2.0);
                     if clicked {
                         install_request = Some(index);
                     }
@@ -10656,6 +10808,49 @@ impl KaelisApp {
         ui.add_space(6.0);
         Self::glass_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
+            section_label(ui, "WINDOW");
+            if cfg!(windows) {
+                if ui
+                    .checkbox(&mut self.minimize_to_tray, "Minimize to the tray")
+                    .on_hover_text(
+                        "The title-bar minimize button hides Kaelis to the notification area and gives its pages back. Turn this off to minimize to the taskbar instead.",
+                    )
+                    .changed()
+                {
+                    platform::set_minimize_to_tray(self.minimize_to_tray);
+                    save_automation = true;
+                }
+                if ui
+                    .checkbox(&mut self.launch_at_startup, "Start Kaelis when I sign in")
+                    .on_hover_text(
+                        "Adds one per-user startup entry. Kaelis opens hidden in the tray, so signing in never shows a window or a splash screen.",
+                    )
+                    .changed()
+                {
+                    match platform::set_startup(self.launch_at_startup) {
+                        Ok(()) => save_automation = true,
+                        Err(error) => {
+                            self.launch_at_startup = !self.launch_at_startup;
+                            self.set_status(
+                                StatusKind::Error,
+                                format!("Could not change startup: {error}"),
+                            );
+                        }
+                    }
+                }
+            } else {
+                ui.label(
+                    egui::RichText::new(
+                        "Tray minimize and sign-in startup are Windows features; on this host the window uses the system tray and login items.",
+                    )
+                    .size(9.5)
+                    .color(MUTED),
+                );
+            }
+        });
+        ui.add_space(6.0);
+        Self::glass_frame().show(ui, |ui| {
+            ui.set_width(ui.available_width());
             section_label(ui, "AUTOMATION");
             if ui
                 .checkbox(
@@ -10682,12 +10877,9 @@ impl KaelisApp {
                 save_automation = true;
             }
             if ui
-                .checkbox(
-                    &mut self.auto_clean_junk,
-                    "Auto-clean at launch",
-                )
+                .checkbox(&mut self.auto_clean_junk, "Auto-clean junk")
                 .on_hover_text(
-                    "Clears logs, caches, crash dumps, and staging files at launch and after every game. Saves, mods, and configs stay.",
+                    "Clears logs, crash dumps, loader caches, interrupted downloads, launcher leftovers, and typed-command history at launch and after every game. Saves, mods, configs, screenshots, and folders Kaelis does not recognise are never touched.",
                 )
                 .changed()
             {
@@ -10699,7 +10891,9 @@ impl KaelisApp {
                 }
                 if ui
                     .button("Clean junk now")
-                    .on_hover_text("Clear logs, caches, crash dumps, and staging leftovers.")
+                    .on_hover_text(
+                        "Clear known junk now. Unknown folders are kept.",
+                    )
                     .clicked()
                 {
                     self.clean_junk_now(ui.ctx().clone());
@@ -10868,6 +11062,9 @@ impl eframe::App for KaelisApp {
         if context.input(|input| input.viewport().close_requested()) {
             self.quit_now();
         }
+        // A no-op after the first successful attach; retries if the window
+        // handle was not published when the app was constructed.
+        platform::install_window_hooks();
         self.apply_interface_scale(context);
         self.handle_keyboard_navigation(context);
         if self.editing.is_none()
@@ -12418,6 +12615,50 @@ fn added_summary(counts: &[(ContentKind, usize)]) -> String {
         parts.push(format!("{count} {noun}"));
     }
     format!("Added {}", parts.join(", "))
+}
+
+/// Inline status text that shares the baseline of the controls in its row.
+///
+/// A chip carries its own padding and is typically shorter than a combo box
+/// or a button, so mixing the two makes a toolbar look ragged. This keeps the
+/// same colour language without adding a box to misalign.
+fn inline_status(ui: &mut egui::Ui, text: &str, color: egui::Color32) -> egui::Response {
+    ui.add(
+        egui::Label::new(egui::RichText::new(text).size(10.0).strong().color(color))
+            .selectable(false),
+    )
+}
+
+/// Collapse whitespace and clip a description to one line. Reading a row
+/// should take one glance; the preview dialog is where the whole paragraph
+/// belongs.
+fn one_line(text: &str, limit: usize) -> String {
+    let mut out = String::with_capacity(limit + 1);
+    let mut written = 0_usize;
+    let mut pending_space = false;
+    for character in text.chars() {
+        if character.is_whitespace() {
+            pending_space = !out.is_empty();
+            continue;
+        }
+        // The space between words counts against the limit too; counting only
+        // glyphs let a clipped line end one character over budget.
+        if std::mem::take(&mut pending_space) {
+            if written >= limit {
+                out.push('…');
+                break;
+            }
+            out.push(' ');
+            written += 1;
+        }
+        if written >= limit {
+            out.push('…');
+            break;
+        }
+        out.push(character);
+        written += 1;
+    }
+    out
 }
 
 fn chip(ui: &mut egui::Ui, text: &str, color: egui::Color32) -> egui::Response {
@@ -14358,6 +14599,18 @@ mod tests {
         assert!(parse_instance_json("hello").is_none());
         // A record missing required fields is not an instance.
         assert!(parse_instance_json("{\"id\":\"x\"}").is_none());
+    }
+
+    #[test]
+    fn descriptions_are_collapsed_to_one_line() {
+        assert_eq!(
+            super::one_line("  Sodium   makes\nrendering fast.  ", 80),
+            "Sodium makes rendering fast."
+        );
+        let clipped = super::one_line(&"word ".repeat(50), 20);
+        assert!(clipped.ends_with('…'));
+        assert!(clipped.chars().count() <= 21);
+        assert!(!clipped.contains('\n'));
     }
 
     #[test]

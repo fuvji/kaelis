@@ -8,6 +8,266 @@
 //! which is what makes the tray item work while Minecraft owns the screen.
 
 use eframe::egui;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Whether the launcher window is on screen. Kept in sync by every native
+/// show/hide path, including the taskbar's minimize button, so the tray toggle
+/// never has to enumerate windows just to answer one question.
+static WINDOW_SHOWN: AtomicBool = AtomicBool::new(true);
+
+/// Honour the title-bar minimize button by moving the window to the tray.
+/// The setting is applied live; the window procedure reads this atomic.
+static MINIMIZE_TO_TRAY: AtomicBool = AtomicBool::new(true);
+
+/// Set while a sign-in launch is trying to stay invisible; any user restore
+/// clears it so the startup watcher cannot hide the window again.
+static STARTUP_SUPPRESS: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn window_is_shown() -> bool {
+    // On Windows the real handle is the truth, including a window the shell
+    // hid without a minimize command. The atomic covers toolkits where the
+    // window is merely an invisible viewport.
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible;
+        if let Some(window) = main_window() {
+            // SAFETY: the handle belongs to this process.
+            return unsafe { IsWindowVisible(window) } != 0;
+        }
+    }
+    WINDOW_SHOWN.load(Ordering::Relaxed)
+}
+
+/// Keep a sign-in launch invisible.
+///
+/// eframe deliberately shows the window after its first painted frame (the
+/// white-flash fix), so a hidden viewport alone becomes visible a moment later.
+/// This watches for that first show and hides the native window again, usually
+/// within one poll interval. `wake` cancels the watcher, so a tray click during
+/// start-up is never undone.
+#[cfg(windows)]
+pub(crate) fn begin_hidden_start(context: egui::Context) {
+    STARTUP_SUPPRESS.store(true, Ordering::SeqCst);
+    let _ = std::thread::Builder::new()
+        .name("kaelis-hidden-start".to_owned())
+        .spawn(move || {
+            let Some(window) = main_window() else {
+                STARTUP_SUPPRESS.store(false, Ordering::SeqCst);
+                return;
+            };
+            // Five seconds is far longer than the first frame; the loop exits
+            // as soon as the window is hidden or the user asks for it. Caching
+            // the handle keeps each poll to one cheap visibility check.
+            for _ in 0..500 {
+                if !STARTUP_SUPPRESS.load(Ordering::SeqCst) {
+                    return;
+                }
+                // SAFETY: the handle belongs to this process.
+                if unsafe { windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible(window) }
+                    != 0
+                {
+                    hide_for_game(&context);
+                    STARTUP_SUPPRESS.store(false, Ordering::SeqCst);
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            STARTUP_SUPPRESS.store(false, Ordering::SeqCst);
+        });
+}
+
+#[cfg(not(windows))]
+pub(crate) fn begin_hidden_start(context: egui::Context) {
+    let _ = context;
+}
+
+pub(crate) fn set_minimize_to_tray(enabled: bool) {
+    MINIMIZE_TO_TRAY.store(enabled, Ordering::Relaxed);
+}
+
+/// Dark native menus.
+///
+/// Windows draws its own tray menu, and the documented theming APIs do not
+/// cover popup menus. The two undocumented `uxtheme` ordinals below are what
+/// every dark Windows application uses: 135 selects the process-wide app mode
+/// (`2` = force dark) and 136 flushes cached menu themes so a menu created
+/// afterwards is painted dark. Both are optional at runtime — on a build that
+/// does not export them the call is a silent no-op and the menu keeps the
+/// system theme instead of breaking.
+pub(crate) fn enable_dark_menus() {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
+
+        type SetPreferredAppMode = unsafe extern "system" fn(i32) -> i32;
+        type FlushMenuThemes = unsafe extern "system" fn();
+
+        // SAFETY: uxtheme.dll is already loaded in every process that draws
+        // windows. Ordinals are resolved by number because the exports are
+        // undocumented; a missing export yields a null pointer that is checked
+        // before use.
+        unsafe {
+            let module = GetModuleHandleW(wide("uxtheme.dll").as_ptr());
+            if module.is_null() {
+                return;
+            }
+            let set_mode = std::mem::transmute::<
+                windows_sys::Win32::Foundation::FARPROC,
+                Option<SetPreferredAppMode>,
+            >(GetProcAddress(module, 135 as *const u8));
+            if let Some(set_mode) = set_mode {
+                set_mode(2);
+            }
+            let flush = std::mem::transmute::<
+                windows_sys::Win32::Foundation::FARPROC,
+                Option<FlushMenuThemes>,
+            >(GetProcAddress(module, 136 as *const u8));
+            if let Some(flush) = flush {
+                flush();
+            }
+        }
+    }
+}
+
+/// Route the title-bar minimize button to the tray.
+///
+/// egui only learns about a minimize after the toolkit has already minimized
+/// the window, which means a repaint (and a visible animation) before the
+/// launcher could hide itself. A window subclass sees `WM_SYSCOMMAND` before
+/// `DefWindowProc` and hides the real handle instead, so the button costs one
+/// message and no frame. `SetWindowSubclass` chains to the toolkit's own
+/// procedure, so restore, resize, and painting keep working unchanged.
+#[cfg(windows)]
+pub(crate) fn install_window_hooks() {
+    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+    use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SC_MINIMIZE, SW_HIDE, ShowWindow, WM_SYSCOMMAND,
+    };
+
+    static INSTALLED: AtomicBool = AtomicBool::new(false);
+
+    if INSTALLED.load(Ordering::Relaxed) {
+        return;
+    }
+    let Some(window) = main_window() else {
+        // The window may not exist during the first construction step; the
+        // next frame retries because the flag stays false.
+        return;
+    };
+
+    unsafe extern "system" fn minimized(
+        window: HWND,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+        _id: usize,
+        _data: usize,
+    ) -> LRESULT {
+        if message == WM_SYSCOMMAND
+            && (wparam as u32 & 0xFFF0) == SC_MINIMIZE
+            && MINIMIZE_TO_TRAY.load(Ordering::Relaxed)
+        {
+            // SAFETY: `window` is the handle this subclass was attached to.
+            unsafe { ShowWindow(window, SW_HIDE) };
+            WINDOW_SHOWN.store(false, Ordering::Relaxed);
+            return 0;
+        }
+        // SAFETY: the same arguments arrived from the window manager; the
+        // default procedure owns every message this hook does not consume.
+        unsafe { DefSubclassProc(window, message, wparam, lparam) }
+    }
+
+    // SAFETY: the callback has the documented `SUBCLASSPROC` signature, the
+    // window belongs to this process, and the id is private to Kaelis.
+    let installed = unsafe { SetWindowSubclass(window, Some(minimized), 0x4b41_454c, 0) } != 0;
+    INSTALLED.store(installed, Ordering::Relaxed);
+}
+
+#[cfg(not(windows))]
+pub(crate) fn install_window_hooks() {}
+
+/// Register or remove the per-user sign-in entry.
+///
+/// A value under `HKCU\…\Run` is the lightest possible startup hook: Windows
+/// starts the executable directly, with no service, scheduled task, helper
+/// process, or delayed launch. `--tray` keeps the window hidden so signing in
+/// never flashes a launcher over the desktop.
+#[cfg(windows)]
+pub(crate) fn set_startup(enabled: bool) -> Result<(), String> {
+    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+    use windows_sys::Win32::System::Registry::{
+        HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ, RegCloseKey,
+        RegCreateKeyExW, RegDeleteValueW, RegSetValueExW,
+    };
+
+    const RUN_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+    const VALUE_NAME: &str = "Kaelis";
+
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    let command = format!("\"{}\" --tray", executable.display());
+    let subkey = wide(RUN_KEY);
+    let value_name = wide(VALUE_NAME);
+    let mut data: Vec<u16> = command.encode_utf16().collect();
+    data.push(0);
+
+    let mut key: HKEY = std::ptr::null_mut();
+    let mut disposition = 0_u32;
+    // SAFETY: both strings are NUL terminated and the out-pointers are valid.
+    let opened = unsafe {
+        RegCreateKeyExW(
+            HKEY_CURRENT_USER,
+            subkey.as_ptr(),
+            0,
+            std::ptr::null(),
+            REG_OPTION_NON_VOLATILE,
+            KEY_SET_VALUE,
+            std::ptr::null(),
+            &mut key,
+            &mut disposition,
+        )
+    };
+    if opened != ERROR_SUCCESS {
+        return Err(format!("could not open the startup key ({opened})"));
+    }
+
+    let result = if enabled {
+        // SAFETY: `key` is an open writable key and `data` outlives the call.
+        let written = unsafe {
+            RegSetValueExW(
+                key,
+                value_name.as_ptr(),
+                0,
+                REG_SZ,
+                data.as_ptr().cast::<u8>(),
+                (data.len() * std::mem::size_of::<u16>()) as u32,
+            )
+        };
+        if written == ERROR_SUCCESS {
+            Ok(())
+        } else {
+            Err(format!("could not write the startup entry ({written})"))
+        }
+    } else {
+        // A missing value already means "off"; its absence is the goal.
+        // SAFETY: the key is open and the name is NUL terminated.
+        unsafe { RegDeleteValueW(key, value_name.as_ptr()) };
+        Ok(())
+    };
+
+    // SAFETY: the key came from RegCreateKeyExW and is owned here.
+    unsafe { RegCloseKey(key) };
+    result
+}
+
+#[cfg(not(windows))]
+pub(crate) fn set_startup(_enabled: bool) -> Result<(), String> {
+    Err("starting with the system is available on Windows only".to_owned())
+}
+
+fn wide(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(std::iter::once(0)).collect()
+}
 
 /// Put the launcher to sleep while Minecraft runs.
 ///
@@ -33,6 +293,15 @@ pub(crate) fn hide_for_game(context: &egui::Context) {
         let _ = context;
         context.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
     }
+    WINDOW_SHOWN.store(false, Ordering::Relaxed);
+}
+
+/// The tray's Show / Minimize action: hide a visible launcher and give its
+/// pages back, or restore a hidden one. One entry point so the menu never
+/// disagrees with the window state.
+pub(crate) fn hide_to_tray(context: &egui::Context) {
+    hide_for_game(context);
+    trim_working_set();
 }
 
 /// Give back the pages the hidden launcher no longer needs.
@@ -179,8 +448,10 @@ pub(crate) fn start_idle_guard() {}
 /// agreement, and the final repaint produces a frame immediately instead of
 /// waiting for the next input event.
 pub(crate) fn wake(context: &egui::Context) {
+    STARTUP_SUPPRESS.store(false, Ordering::Relaxed);
     #[cfg(windows)]
     restore_windows_window();
+    WINDOW_SHOWN.store(true, Ordering::Relaxed);
     context.send_viewport_cmd(egui::ViewportCommand::Visible(true));
     context.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
     context.send_viewport_cmd(egui::ViewportCommand::Focus);
@@ -192,8 +463,10 @@ pub(crate) fn wake(context: &egui::Context) {
 /// Kept separate from [`wake`] for callers that have no egui context (the game
 /// exit worker restores the real window, and the next frame paints it).
 pub(crate) fn restore_now() {
+    STARTUP_SUPPRESS.store(false, Ordering::Relaxed);
     #[cfg(windows)]
     restore_windows_window();
+    WINDOW_SHOWN.store(true, Ordering::Relaxed);
 }
 
 #[cfg(windows)]

@@ -10,6 +10,7 @@ pub mod instance;
 pub mod instance_guard;
 pub mod junk;
 pub mod jvm_flags;
+pub mod running;
 pub mod single_instance;
 pub mod stream;
 pub mod sweeper;

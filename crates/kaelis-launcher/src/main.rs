@@ -16,7 +16,10 @@ use std::process::ExitCode;
 
 #[derive(Debug)]
 enum Action {
-    Gui,
+    Gui {
+        /// A sign-in launch: create the window hidden, tray icon only.
+        hidden: bool,
+    },
     Help,
     Version {
         json: bool,
@@ -77,6 +80,11 @@ enum Action {
     Accounts {
         json: bool,
     },
+    /// Read or change the per-user sign-in entry (Windows).
+    Startup {
+        enabled: bool,
+        json: bool,
+    },
     /// Choose the saved identity the next launch uses.
     UseAccount {
         name: String,
@@ -104,7 +112,7 @@ fn main() -> ExitCode {
     };
     // A double-clicked GUI binary gets its own console window; hide it before
     // the first expensive step so it never flashes over the desktop.
-    if matches!(&action, Action::Gui) {
+    if matches!(&action, Action::Gui { .. }) {
         hide_own_console();
     }
     // Screenshot mode is a development-only visual check. It must be able to
@@ -114,13 +122,20 @@ fn main() -> ExitCode {
     // Headless commands (help, offline profile, version list, mod install) are
     // safe to run beside an open launcher. Only GUI and game launches use the
     // single-instance guard and forward into the primary window.
-    let interactive = matches!(&action, Action::Gui | Action::Play { .. });
+    let interactive = matches!(&action, Action::Gui { .. } | Action::Play { .. });
     let _single_instance = if interactive && !screenshot_mode {
         match SingleInstance::claim() {
             Ok(guard) => Some(guard),
             // The primary binds its channel moments after this guard exists, so
             // the forwarder retries for long enough to cover a cold start.
-            Err(SingleInstanceError::AlreadyRunning(_)) => return forward_to_primary(),
+            Err(SingleInstanceError::AlreadyRunning(_)) => {
+                // A sign-in launch when Kaelis is already open is a no-op; it
+                // must never pull the window in front of the user at login.
+                if matches!(&action, Action::Gui { hidden: true }) {
+                    return ExitCode::SUCCESS;
+                }
+                return forward_to_primary();
+            }
             Err(error) => {
                 eprintln!("[Kaelis] could not claim single-instance guard: {error}");
                 return ExitCode::FAILURE;
@@ -131,7 +146,7 @@ fn main() -> ExitCode {
     };
     // The primary process hosts one bounded local channel so a second launch
     // can hand its arguments over instead of silently exiting.
-    let handoff = if matches!(&action, Action::Gui) && !screenshot_mode {
+    let handoff = if matches!(&action, Action::Gui { .. }) && !screenshot_mode {
         match HandoffServer::bind() {
             Ok(server) => Some(server),
             Err(error) => {
@@ -190,6 +205,7 @@ fn main() -> ExitCode {
         Action::Clean { json } => clean_junk(json),
         Action::Accounts { json } => list_accounts(json),
         Action::UseAccount { name, json } => use_account(&name, json),
+        Action::Startup { enabled, json } => set_startup(enabled, json),
         Action::CheckUpdates { instance_id, json } => check_mod_updates(&instance_id, json, false),
         Action::UpdateMods { instance_id, json } => check_mod_updates(&instance_id, json, true),
         Action::ListVersions {
@@ -218,7 +234,7 @@ fn main() -> ExitCode {
             saves,
             json,
         } => duplicate_instance(&instance_id, saves, json),
-        Action::Gui => run_gui(handoff),
+        Action::Gui { hidden } => run_gui(handoff, hidden),
     }
 }
 
@@ -304,6 +320,23 @@ fn activate_existing_window() -> bool {
 
 /// Erase disposable files from every instance, share what predates the store,
 /// and prune cache entries no instance references.
+fn set_startup(enabled: bool, json: bool) -> ExitCode {
+    match kaelis_gui::set_launch_at_startup(enabled) {
+        Ok(()) => {
+            if json {
+                print_json(serde_json::json!({ "startup": enabled }));
+            } else {
+                println!(
+                    "Start with the system: {}.",
+                    if enabled { "on" } else { "off" }
+                );
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => fail(error),
+    }
+}
+
 fn clean_junk(json: bool) -> ExitCode {
     let instances = Instance::load_all().unwrap_or_default();
     let mut junk = kaelis_core::junk::JunkReport::default();
@@ -373,6 +406,8 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Action, String> {
     let mut list_instances = false;
     let mut status = false;
     let mut clean = false;
+    let mut tray_only = false;
+    let mut startup = None;
     let mut accounts_report = false;
     let mut use_account = None;
     let mut check_updates = None;
@@ -390,7 +425,17 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Action, String> {
             "--json" => json = true,
             "--status" => status = true,
             "--clean" => clean = true,
+            // Used by the per-user sign-in entry. It is accepted on its own:
+            // opening the launcher hidden is the whole request.
+            "--tray" | "--minimized" => tray_only = true,
             "--accounts" => accounts_report = true,
+            "--startup" => {
+                startup = Some(match args.next().as_deref() {
+                    Some("on" | "enable" | "enabled") => true,
+                    Some("off" | "disable" | "disabled") => false,
+                    _ => return Err("--startup requires on or off".to_owned()),
+                });
+            }
             "--check-updates" => {
                 check_updates = Some(
                     args.next()
@@ -727,16 +772,19 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Action, String> {
     if let Some(name) = offline_name {
         return Ok(Action::Offline { name, json });
     }
+    if let Some(enabled) = startup {
+        return Ok(Action::Startup { enabled, json });
+    }
     if show_alpha || show_beta || !show_snapshots {
         return Err("version filters require --list-versions".to_owned());
     }
-    Ok(Action::Gui)
+    Ok(Action::Gui { hidden: tray_only })
 }
 
 fn usage() -> &'static str {
     "Kaelis — Rust Minecraft Java launcher\n\
      Usage:\n\
-       kaelis [--help | --version]\n\
+       kaelis [--tray | --help | --version]\n\
        kaelis --list-versions [--show-alpha] [--show-beta] [--hide-snapshots]\n\
        kaelis --offline <username>\n\
        kaelis --play <instance-id> [--offline <username>]\n\
@@ -751,9 +799,11 @@ fn usage() -> &'static str {
        kaelis --clean [--json]\n\
        kaelis --accounts [--json]\n\
        kaelis --use-account <name> [--json]\n\
+       kaelis --startup <on|off> [--json]\n\
        kaelis --check-updates <instance-id> [--json]\n\
        kaelis --update-mods <instance-id> [--json]\n\
-     With no arguments, open the Kaelis desktop launcher.\n\
+     With no arguments, open the Kaelis desktop launcher. --tray opens it\n\
+     hidden in the notification area, which is how the sign-in shortcut starts.\n\
      --play without --offline uses the saved offline account that is active, so\n\
      a command-line launch and the desktop launch agree.\n\
      --use-account switches the identity the next launch uses; an unknown but\n\
@@ -774,7 +824,9 @@ fn usage() -> &'static str {
      the shared store, and prunes cache no instance references any more. It never\n\
      touches saves, mods, configs, resource packs, shaders, or screenshots.\n\
      --json prints one machine-readable document instead of prose; every report\n\
-     is stable across versions so scripts and MCP servers can parse it."
+     is stable across versions so scripts and MCP servers can parse it.\n\
+     --startup on adds one per-user sign-in entry that opens Kaelis in the tray;\n\
+     --startup off removes it."
 }
 
 fn effective_loader(instance: &Instance) -> String {
@@ -1547,7 +1599,7 @@ fn play_instance(instance_id: &str, username: Option<&str>) -> ExitCode {
     }
 }
 
-fn run_gui(handoff: Option<HandoffServer>) -> ExitCode {
+fn run_gui(handoff: Option<HandoffServer>, start_hidden: bool) -> ExitCode {
     let runtime = match runtime() {
         Ok(runtime) => runtime,
         Err(error) => return fail(error),
@@ -1592,7 +1644,7 @@ fn run_gui(handoff: Option<HandoffServer>) -> ExitCode {
     let requested = std::env::var("KAELIS_RENDERER").ok();
     let mut failures = Vec::new();
     for (renderer, label) in renderer_attempts(requested.as_deref()) {
-        let options = native_options(renderer, window_size);
+        let options = native_options(renderer, window_size, start_hidden);
         let handoff = std::sync::Arc::clone(&handoff);
         let sweeper = std::sync::Arc::clone(&sweeper);
         let client = client.clone();
@@ -1609,7 +1661,12 @@ fn run_gui(handoff: Option<HandoffServer>) -> ExitCode {
                     None => handle.spawn(async {}),
                 };
                 Ok(Box::new(kaelis_gui::KaelisApp::new(
-                    creation, client, handle, sweeper, handoff,
+                    creation,
+                    client,
+                    handle,
+                    sweeper,
+                    handoff,
+                    start_hidden,
                 )))
             }),
         ) {
@@ -1651,10 +1708,17 @@ fn renderer_attempts(requested: Option<&str>) -> Vec<(eframe::Renderer, &'static
     }
 }
 
-fn native_options(renderer: eframe::Renderer, window_size: [f32; 2]) -> eframe::NativeOptions {
+fn native_options(
+    renderer: eframe::Renderer,
+    window_size: [f32; 2],
+    start_hidden: bool,
+) -> eframe::NativeOptions {
     eframe::NativeOptions {
         renderer,
         viewport: eframe::egui::ViewportBuilder::default()
+            // A sign-in launch shows only the tray icon: no window flash, no
+            // taskbar entry, and no first-frame cost until the user asks.
+            .with_visible(!start_hidden)
             // Fits a 1366×768 laptop with the taskbar visible; eframe restores
             // the last size and position once the window has been moved.
             .with_inner_size(window_size)

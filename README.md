@@ -1,10 +1,10 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.2.6-70a5ff)
+![Version](https://img.shields.io/badge/version-0.2.7-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
-![Tests](https://img.shields.io/badge/tests-253%20passing-3fb950)
+![Tests](https://img.shields.io/badge/tests-260%20passing-3fb950)
 
 <img width="1080" height="700" alt="accounts" src="https://github.com/user-attachments/assets/48041394-24b6-4a1c-8885-ad04ca1db913" />
 
@@ -19,7 +19,7 @@ keep that library clean, correct, and fast on their own.
 
 | Feature | What it does |
 | --- | --- |
-| **Auto Erase Junk** | Clears logs, crash dumps, loader caches, mod download caches, typed command history, extracted natives, stale server packs, heap dumps, crashed-loader `tmp*` folders, interrupted downloads even when they keep their real name, and stale official-launcher state (including its saved Microsoft credential) at every start and after every game — capped so it can never stall startup |
+| **Auto Erase Junk** | Clears logs, crash dumps, loader caches, mod download caches, typed command history, extracted natives, stale server packs, heap dumps, interrupted downloads even when they keep their real name, OS thumbnail files inside content folders, and stale official-launcher state (including its saved Microsoft profile and credential) at every start and after every game — capped so it can never stall startup. Folders it does not recognise are always kept |
 | **One copy of the game** | Every verified download — libraries, assets, client jar, Java runtime — is hard-linked into a content-addressed store, so a second instance of the same version occupies a few extra MB instead of another 600 MB. Store entries no instance references are pruned automatically |
 | **Auto-repair before launch** | Scans the instance's mods and installs missing required mods (for example `ukulib` for uku's Armor HUD) before the JVM starts |
 | **Auto-disable duplicates** | Keeps the newest jar when two files provide the same mod id, so the older copy cannot crash the game first |
@@ -31,20 +31,26 @@ keep that library clean, correct, and fast on their own.
 | **Runs in parallel, quietly** | Per-instance OS guards let different instances launch together; a smart power governor drops every unfocused game to idle priority within 1.5 s and restores it the moment it is focused, so the game being played owns the CPU |
 | **Reopens, never doubles** | One process, one tray icon: a second launch, a Start-menu click, or the tray icon restores the running window in ~120 ms instead of starting another launcher — including over a fullscreen game |
 | **Hibernates while you play** | Starting a game hides the window and empties its working set, and 90 s unfocused does the same while the window stays open; one tray click restores it, mid-game included |
+| **Tray-first window** | The title-bar minimize button and **Show / Minimize** in the tray hide the launcher to the notification area and give its pages back; one click restores it. The native menu is forced dark and is three actions plus one separator |
+| **Starts with Windows** | One optional per-user sign-in entry opens Kaelis hidden in the tray, with no service, scheduled task, splash, or focus steal. Enable or disable it in Settings or with `kaelis --startup on\|off` |
+| **Survives a launcher restart** | A game's process id and creation time are recorded when it spawns, so reopening Kaelis still shows Quit for a game that is running, keeps a second JVM off the same world, and can end that game from the card |
 | **Private by default** | RAM-only instance logs, no telemetry, no analytics, no background daemon, nothing stored that the OS credential store can hold instead |
 
 **Auto Erase Junk never guesses.** It removes only what Minecraft or Kaelis
 regenerates on the next launch: `logs`, `crash-reports`, `.cache`, `.mixin.out`,
 `.fabric`, `.quilt`, `.connector`, `debug`, `temp`, `natives`, and
 `server-resource-packs`; staging files ending `.part`, `.tmp`, or `.download`
-with or without a leading dot, in the root and in every content folder; crashed
-loader/JVM scratch folders (`tmp` plus a generated suffix); and root-level noise
-(`Thumbs.db`, `usercache.json`, `hs_err_pid*`, `java_pid*`, `.attach_pid*`,
-`.hprof`, `.replay`, `realms_persistence.json`, `servers.dat_old`, and the
-official launcher's UI state and saved credential file). Saves, mods,
-configuration, resource packs, shaders, screenshots, and options are never
-touched, a symlinked instance root is refused rather than followed, and a
-hostile folder cannot slow startup past 50,000 inspected entries.
+with or without a leading dot, in the root and in every content folder; OS
+folder noise (`Thumbs.db`, `.DS_Store`, `desktop.ini`) wherever it lands; and
+root-level files that only hold diagnostics, caches, history, or another
+launcher's leftovers (`command_history.txt`, `usercache.json`, `hs_err_pid*`,
+`java_pid*`, `.attach_pid*`, `.hprof`, `.replay`, `realms_persistence.json`,
+`servers.dat_old`, `launcher_ui_state.json`, and the official launcher's saved
+profiles and credential files). Saves, mods, configuration, resource packs,
+shaders, screenshots, options, and every folder whose name it does not
+recognise — such as a leftover `tmpmkzllels1` — are never touched. A symlinked
+instance root is refused rather than followed, and a hostile folder cannot slow
+startup past 50,000 inspected entries.
 
 **The same bytes are stored once.** A verified file is hard-linked into
 `<data>/content`, keyed by its SHA-1, before any later instance can ask for it:
@@ -63,21 +69,22 @@ unreferenced cache.
 
 ## Performance
 
-Measured on the shipped Windows 0.2.6 build with `tools/bench.ps1` (3 runs, warm
+Measured on the shipped Windows 0.2.7 build with `tools/bench.ps1` (3 runs, warm
 disk cache, window detected through UI Automation) on 2026-10-25:
 
 | Metric | Result |
 | --- | --- |
-| `kaelis --version` | 79 ms median, 110 ms p95 |
-| Window, empty data root | 365 ms median |
-| Window, 200-jar instance | 327 ms median |
-| Working set (idle) | 80.4 MB empty, 80.9 MB with 200 jars |
-| Private bytes (idle) | 90.1 MB empty, 90.9 MB with 200 jars |
+| `kaelis --version` | 73 ms median, 74 ms p95 |
+| Window, empty data root | 164 ms median |
+| Window, 200-jar instance | 155 ms median |
+| Working set (idle) | 80.0 MB empty, 80.8 MB with 200 jars |
+| Private bytes (idle) | 89.9 MB empty, 90.8 MB with 200 jars |
 | Idle CPU | 0.00% (event-driven, no repaint loop) |
-| Handles | 491 empty, 491 with 200 jars |
-| Hibernated working set | 1.6 MB after 90 s unfocused (from 80.9 MB) |
-| Release binary | 18,021,888 B, SHA-256 `82d0aaac…` |
-| Second launch restore | 160 ms (handoff + native window wake) |
+| Handles | 490 empty, 490 with 200 jars |
+| Hibernated working set | 1.6 MB after 90 s unfocused (from 80.8 MB) |
+| Release binary | 18,050,560 B, SHA-256 `287b7229…` |
+| Second launch restore | 62 ms (handoff + native window wake) |
+| Window close to process exit | 16 ms |
 
 The window does not wait for mod metadata: jar scanning and artwork decoding
 run on workers, so a 200-mod instance opens in the same time as an empty one.
@@ -93,7 +100,35 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.2.6
+## What's new in 0.2.7
+
+- **The tray is dark and one click.** Windows paints tray menus itself, so
+  Kaelis now sets the process-wide dark menu mode before the menu exists. The
+  menu is **Show / Minimize**, **Play last instance**, one separator, and
+  **Quit** — three actions, no submenus.
+- **Minimize means tray.** The title-bar minimize button hides the window and
+  trims its working set instead of adding a taskbar button. **Show / Minimize**
+  in the tray does the same, and a single click restores the window. A new
+  Settings toggle, **Minimize to the tray**, turns the title-bar behavior off.
+- **Start with Windows, silently.** A Settings toggle adds one per-user
+  sign-in entry that opens Kaelis hidden in the tray. It is a plain registry
+  value — no service, no scheduled task, no splash, no window over the desktop —
+  and it can also be changed with `kaelis --startup on` or `off`.
+- **A reopened launcher still knows what is running.** Each game writes its
+  process id and creation time when it spawns. On the next start those records
+  are checked against the live process table, so the card shows Quit (not Play),
+  a second JVM cannot open the same world, and Quit ends the adopted game.
+  A normal launch still clears its record when the JVM exits.
+- **Auto-clean is broader and safer.** It now also clears OS thumbnail files in
+  content folders and the official launcher's account/profile files, and it no
+  longer deletes a `tmp…` folder it merely guesses at. Saves, mods, configs,
+  screenshots, and unknown folders always survive.
+- **Content browsing is denser.** Result rows use tighter gutters and a
+  one-line summary, the action area no longer overlaps long metadata, and the
+  detected-loader status is plain text that shares the baseline of the combo
+  box beside it instead of a smaller pill.
+
+### From 0.2.6
 
 - **Quit ends the process now.** The tray's Quit and the title-bar close drop
   the tray icon and exit immediately instead of queuing a frame on a hidden
@@ -113,8 +148,8 @@ launcher. The working set and handle count are the figures that stay stable.
   pack that ever embedded a project — so CurseForge can no longer outrank an
   exact Modrinth match. Duplicate projects still collapse to the Modrinth card.
 - **A three-action tray.** Show Kaelis, Play last instance, and Quit, with one
-  separator for a single glance. The interface stays dark; Windows draws native
-  tray menus in the system theme, so the shell never fights it.
+  separator for a single glance. (0.2.7 forces the native menu dark and turns
+  the first action into Show / Minimize.)
 
 ### From 0.2.5
 
@@ -166,12 +201,14 @@ launcher. The working set and handle count are the figures that stay stable.
   to the running window and exits in about 80 ms; the channel is retried for two
   seconds so a double-click during a cold start still lands, and a native window
   wake covers a lost channel. Clicking the tray icon itself restores the window,
-  exactly like **Show Kaelis**, including while a game is running.
+  exactly like the tray action (now **Show / Minimize**), including while a game
+  is running.
 - **Auto Erase Junk found the rest.** Staging files are removed even when they
-  keep their real name (`sodium.jar.part`), a crashed loader's `tmp…` folder is
-  gone, and the official launcher's UI state and saved Microsoft credential file
-  no longer survive in an instance. `kaelis --clean [--json]` runs the whole pass
-  headlessly.
+  keep their real name (`sodium.jar.part`), and the official launcher's UI state
+  and saved Microsoft credential file no longer survive in an instance.
+  `kaelis --clean [--json]` runs the whole pass headlessly. (0.2.5 also removed a
+  crashed loader's `tmp…` folder by name; 0.2.7 no longer guesses and keeps every
+  unfamiliar folder.)
 
 ### From 0.2.2
 

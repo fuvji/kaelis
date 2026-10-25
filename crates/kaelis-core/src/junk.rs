@@ -66,7 +66,7 @@ const DISPOSABLE_DIRS: [&str; 12] = [
 ];
 
 /// Root-level files that only ever hold diagnostics, caches, or OS noise.
-const ROOT_JUNK: [&str; 11] = [
+const ROOT_JUNK: [&str; 14] = [
     ".DS_Store",
     "Thumbs.db",
     "desktop.ini",
@@ -80,11 +80,14 @@ const ROOT_JUNK: [&str; 11] = [
     "usercache.json",
     // Official-launcher leftovers: UI state, stale Microsoft credentials, and
     // the realm session cache. The official launcher writes them again on its
-    // next start, and the credential file is the one piece of junk that is also
-    // a privacy risk.
+    // next start, and the credential files are the one piece of junk that is
+    // also a privacy risk.
     "launcher_ui_state.json",
     "launcher_msa_credentials.bin",
     "launcher_accounts_microsoft_store.json",
+    "launcher_accounts.json",
+    "launcher_profiles.json",
+    "launcher_profiles_microsoft_store.json",
     "realms_persistence.json",
     // Vanilla's pre-save backup and the server list's older copy.
     "servers.dat_old",
@@ -154,11 +157,12 @@ pub fn clean_instance(root: &Path) -> std::io::Result<JunkReport> {
                 return Ok(report);
             }
             let file_name = entry.file_name().to_string_lossy().to_string();
-            let scratch = name.is_empty()
-                && entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false)
-                && is_scratch_dir(&entry.path(), &file_name);
-            let junk = scratch
-                || is_staging_name(&file_name)
+            // Only names that are junk everywhere are removed inside a content
+            // folder. A folder with an unfamiliar name is never touched: the
+            // user may have put it there deliberately, and a launcher cannot
+            // know what it means.
+            let junk = is_staging_name(&file_name)
+                || is_os_metadata(&file_name)
                 || (name.is_empty() && is_root_junk(&file_name));
             if junk && let Some(removed) = remove_entry(&entry) {
                 report.add(removed);
@@ -202,27 +206,10 @@ fn is_staging_name(name: &str) -> bool {
     name.ends_with(".part") || name.ends_with(".tmp") || name.ends_with(".download")
 }
 
-/// Loader or JVM scratch directories left in the instance root.
-///
-/// Fabric's datafixer pre-flight and a few mod loaders create `tmp…` folders
-/// next to the game and normally delete them on exit. A crash leaves one behind
-/// containing only generated files; nothing a user creates is named `tmp` plus
-/// a random suffix inside a game directory.
-fn is_scratch_dir(path: &Path, name: &str) -> bool {
-    // `tmp` plus a generated suffix: long, alphanumeric, and carrying at least
-    // one digit. A deliberate folder (`tmpnotes`) keeps its name.
-    if name.len() < 8
-        || !name.starts_with("tmp")
-        || !name.bytes().all(|b| b.is_ascii_alphanumeric())
-        || !name.bytes().any(|b| b.is_ascii_digit())
-    {
-        return false;
-    }
-    let Ok(mut entries) = std::fs::read_dir(path) else {
-        return false;
-    };
-    let _ = entries.next();
-    true
+/// Files the operating system writes when it browses a folder. They hold no
+/// game data and are recreated on the next visit.
+fn is_os_metadata(name: &str) -> bool {
+    matches!(name, ".DS_Store" | "Thumbs.db" | "desktop.ini")
 }
 
 fn remove_entry(entry: &std::fs::DirEntry) -> Option<JunkReport> {
@@ -446,6 +433,10 @@ mod tests {
         // Download cache and the client's typed-command history.
         write(&root.join("downloads/log.json"), b"{}");
         write(&root.join("command_history.txt"), b"/help");
+        write(&root.join("launcher_profiles.json"), b"{}");
+        // OS noise inside content folders, which is junk wherever it lands.
+        write(&root.join("mods/Thumbs.db"), b"noise");
+        write(&root.join("resourcepacks/.DS_Store"), b"noise");
         // User content that must survive every rule above.
         write(&root.join("saves/world/level.dat"), b"level");
         write(&root.join("mods/sodium.jar"), b"jar");
@@ -453,17 +444,23 @@ mod tests {
         write(&root.join("config/sodium.json"), b"{}");
 
         let report = clean_instance(&root).expect("clean");
-        // Three staging files, the scratch folder's one file, three launcher
-        // state files, the download log, and the command history; the scratch
-        // folder itself counts as a directory.
-        assert_eq!(report.files, 9);
-        assert_eq!(report.dirs, 1);
+        // Three staging files, three launcher state files, the download log,
+        // the command history, and two OS metadata files. The unknown `tmp…`
+        // folder is not a known junk name, so it stays.
+        assert_eq!(report.files, 11);
+        assert_eq!(report.dirs, 0);
         assert!(!root.join("mods/sodium.jar.part").exists());
-        assert!(!root.join("tmpmkzllels1").exists());
         assert!(!root.join("launcher_ui_state.json").exists());
         assert!(!root.join("launcher_msa_credentials.bin").exists());
+        assert!(!root.join("launcher_profiles.json").exists());
         assert!(!root.join("downloads/log.json").exists());
         assert!(!root.join("command_history.txt").exists());
+        assert!(!root.join("mods/Thumbs.db").exists());
+        assert!(!root.join("resourcepacks/.DS_Store").exists());
+        assert!(
+            root.join("tmpmkzllels1/SystemPropertyEnvironment.json")
+                .is_file()
+        );
         assert!(root.join("mods/sodium.jar").is_file());
         assert!(root.join("saves/world/level.dat").is_file());
         assert!(root.join("tmpnotes/readme.txt").is_file());
