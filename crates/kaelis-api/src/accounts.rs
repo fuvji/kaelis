@@ -116,11 +116,6 @@ pub struct LauncherSettings {
     /// cleanup is provably safe.
     #[serde(default = "default_auto_repair")]
     pub auto_resolve_duplicates: bool,
-    /// Delete logs, caches, crash dumps, extracted natives, and staging files
-    /// from every instance at launch and after each game exits. Saves, mods,
-    /// and configuration are never included.
-    #[serde(default = "default_auto_repair")]
-    pub auto_clean: bool,
     /// Last Content channel, so the tab reopens where the user left it.
     #[serde(default)]
     pub content_kind: ContentKind,
@@ -143,11 +138,6 @@ pub struct LauncherSettings {
     /// user's Ctrl +/- (or the Settings control) replaces it.
     #[serde(default)]
     pub ui_scale: f32,
-    /// The title-bar minimize button hides the window to the notification
-    /// area instead of the taskbar. On by default: a launcher is a background
-    /// app and does not need a taskbar slot while it is not in use.
-    #[serde(default = "default_auto_repair")]
-    pub minimize_to_tray: bool,
     /// Start Kaelis when the user signs in, already hidden in the tray. The
     /// shortcut is a per-user registry value, so no service or elevation is
     /// involved and login is not delayed by a task scheduler.
@@ -165,13 +155,11 @@ impl Default for LauncherSettings {
             last_account: String::new(),
             auto_repair: default_auto_repair(),
             auto_resolve_duplicates: default_auto_repair(),
-            auto_clean: default_auto_repair(),
             content_kind: ContentKind::Mod,
             offline_account: String::new(),
             account_mode: None,
             accounts: Vec::new(),
             ui_scale: 0.0,
-            minimize_to_tray: true,
             launch_at_startup: false,
         }
     }
@@ -436,16 +424,17 @@ mod tests {
     }
 
     #[test]
-    fn window_preferences_default_to_tray_and_no_startup() {
+    fn retired_window_flags_do_not_break_old_settings() {
         let defaults = LauncherSettings::default();
-        assert!(defaults.minimize_to_tray);
         assert!(!defaults.launch_at_startup);
-        // Files written by earlier versions have neither field. Missing must
-        // mean "tray on, sign-in off", not "reset the user's window habits".
-        let legacy: LauncherSettings =
-            serde_json::from_str("{\"last_account\":\"\"}").expect("legacy settings");
-        assert!(legacy.minimize_to_tray);
-        assert!(!legacy.launch_at_startup);
+        // Files written before tray minimize and junk cleanup became core
+        // behaviour still carry both keys. They must load and be ignored, so
+        // an old "off" cannot disable either one.
+        let legacy: LauncherSettings = serde_json::from_str(
+            "{\"auto_clean\":false,\"minimize_to_tray\":false,\"launch_at_startup\":true}",
+        )
+        .expect("legacy settings");
+        assert!(legacy.launch_at_startup);
     }
 
     #[test]

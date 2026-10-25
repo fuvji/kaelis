@@ -1,6 +1,6 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.2.11-70a5ff)
+![Version](https://img.shields.io/badge/version-0.2.12-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
@@ -19,7 +19,7 @@ keep that library clean, correct, and fast on their own.
 
 | Feature | What it does |
 | --- | --- |
-| **Auto Erase Junk** | Clears logs, crash dumps, loader caches (including Architectury Transformer scratch), mod download caches, typed command history, extracted natives, stale server packs, heap dumps, interrupted downloads even when they keep their real name, OS thumbnail files inside content folders, and stale official-launcher state (including its saved Microsoft profile and credential) at every start and after every game — capped so it can never stall startup. Folders it does not recognise are always kept |
+| **Auto Erase Junk** | Clears logs, crash dumps, loader caches (including Architectury Transformer scratch), mod download caches, typed command history, extracted natives, stale server packs, heap dumps, interrupted downloads even when they keep their real name, OS thumbnail files inside content folders, and stale official-launcher state (including its saved Microsoft profile and credential) at every start and after every game — capped so it can never stall startup. Always on; an old settings file cannot disable it. Folders it does not recognise are always kept |
 | **One copy of the game** | Every verified download — libraries, assets, client jar, Java runtime — is hard-linked into a content-addressed store, so a second instance of the same version occupies a few extra MB instead of another 600 MB. Store entries no instance references are pruned automatically |
 | **Auto-repair before launch** | Scans the instance's mods and installs missing required mods (for example `ukulib` for uku's Armor HUD) before the JVM starts |
 | **Auto-disable duplicates** | Keeps the newest jar when two files provide the same mod id, so the older copy cannot crash the game first |
@@ -31,7 +31,7 @@ keep that library clean, correct, and fast on their own.
 | **Runs in parallel, quietly** | Per-instance OS guards let different instances launch together; a smart power governor drops every unfocused game to idle priority within 1.5 s and restores it the moment it is focused, so the game being played owns the CPU |
 | **Reopens, never doubles** | One process, one tray icon: a second launch, a Start-menu click, or the tray icon restores the running window in ~120 ms instead of starting another launcher — including over a fullscreen game |
 | **Hibernates while you play** | Starting a game hides the window and empties its working set, and 90 s unfocused does the same while the window stays open; one tray click restores it, mid-game included |
-| **Tray-first window** | The title-bar minimize button and **Show / Minimize** in the tray hide the launcher to the notification area and give its pages back. The tray icon itself toggles: a click restores a hidden or taskbar-minimised window, and hides a visible one. The native menu is forced dark and is three actions plus one separator |
+| **Tray-first window** | On Windows, the title-bar minimize button and **Show / Minimize** in the tray hide the launcher to the notification area and give its pages back. Always on; there is no switch to turn it off. The tray icon itself toggles: a click restores a hidden or taskbar-minimised window, and hides a visible one. The native menu is forced dark and is three actions plus one separator |
 | **Updates in one click** | One anonymous GitHub request runs in the background after the window is up. When a newer release exists, the footer version links to it and an **Update** action installs the build right there: the download is SHA-256-verified against the same release, the old executable is backed up, and a failed swap rolls back. Nothing downloads or installs on its own |
 | **Starts with Windows** | One optional per-user sign-in entry opens Kaelis hidden in the tray, with no service, scheduled task, splash, or focus steal. Enable or disable it in Settings or with `kaelis --startup on\|off` |
 | **Survives a launcher restart** | A game's process id and creation time are recorded when it spawns, so reopening Kaelis still shows Quit for a game that is running, keeps a second JVM off the same world, and can end that game from the card |
@@ -106,7 +106,22 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.2.11
+## What's new in 0.2.12
+
+- **Tray minimize and junk cleanup are no longer optional.** Both are core
+  Kaelis behaviour, so Settings no longer offers a switch that can turn either
+  one off. On Windows, minimize always hides to the tray; junk is erased at
+  every start and after every game on every platform. A saved `false` in an
+  older settings file is ignored, so an old file cannot re-enable the clutter.
+- **“Erase” sits in the middle of its capsule.** The content action row used a
+  top-aligned layout, which pushed the label above the button's centre while
+  **Install** sat centred. The row now centres every action, and the destructive
+  button's label is exactly 12 px from each side.
+- **Shorter Settings copy.** The startup entry stands alone under **Startup**,
+  automation labels fit one line, and the service note is one sentence. The
+  retired window and cleanup switches leave no empty card behind.
+
+### From 0.2.11
 
 - **The instance card no longer says “Never played”.** An instance that has
   never been started shows only what it contains: its mod, pack, shader, and
@@ -149,8 +164,9 @@ launcher. The working set and handle count are the figures that stay stable.
   including a window that is minimised to the taskbar.
 - **Minimize means tray.** The title-bar minimize button hides the window and
   trims its working set instead of adding a taskbar button. **Show / Minimize**
-  in the tray does the same, and a single click restores the window. A new
-  Settings toggle, **Minimize to the tray**, turns the title-bar behavior off.
+  in the tray does the same, and a single click restores the window. 0.2.10
+  added a Settings toggle for this; 0.2.12 retired it, so minimize always uses
+  the tray.
 - **The detected loader is a real control-height pill.** Its height is the same
   as the combo box and every button beside it, with the text on the row's
   centre line, so Content no longer shows a short box floating above a toolbar.

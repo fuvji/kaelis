@@ -15,10 +15,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// never has to enumerate windows just to answer one question.
 static WINDOW_SHOWN: AtomicBool = AtomicBool::new(true);
 
-/// Honour the title-bar minimize button by moving the window to the tray.
-/// The setting is applied live; the window procedure reads this atomic.
-static MINIMIZE_TO_TRAY: AtomicBool = AtomicBool::new(true);
-
 /// Set while a sign-in launch is trying to stay invisible; any user restore
 /// clears it so the startup watcher cannot hide the window again.
 static STARTUP_SUPPRESS: AtomicBool = AtomicBool::new(false);
@@ -82,10 +78,6 @@ pub(crate) fn begin_hidden_start(context: egui::Context) {
 #[cfg(not(windows))]
 pub(crate) fn begin_hidden_start(context: egui::Context) {
     let _ = context;
-}
-
-pub(crate) fn set_minimize_to_tray(enabled: bool) {
-    MINIMIZE_TO_TRAY.store(enabled, Ordering::Relaxed);
 }
 
 /// Dark native menus.
@@ -167,10 +159,7 @@ pub(crate) fn install_window_hooks() {
         _id: usize,
         _data: usize,
     ) -> LRESULT {
-        if message == WM_SYSCOMMAND
-            && (wparam as u32 & 0xFFF0) == SC_MINIMIZE
-            && MINIMIZE_TO_TRAY.load(Ordering::Relaxed)
-        {
+        if message == WM_SYSCOMMAND && (wparam as u32 & 0xFFF0) == SC_MINIMIZE {
             // SAFETY: `window` is the handle this subclass was attached to.
             unsafe { ShowWindow(window, SW_HIDE) };
             WINDOW_SHOWN.store(false, Ordering::Relaxed);

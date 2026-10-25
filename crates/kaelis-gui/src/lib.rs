@@ -1112,10 +1112,6 @@ pub struct KaelisApp {
     modpack_task: Option<tokio::task::JoinHandle<()>>,
     /// Invalidates progress and completion events from a cancelled import.
     modpack_generation: u64,
-    /// Remove logs, crash reports, and staging files at every launch.
-    auto_clean_junk: bool,
-    /// The title-bar minimize button hides the window to the tray.
-    minimize_to_tray: bool,
     /// A per-user sign-in entry starts Kaelis hidden in the tray.
     launch_at_startup: bool,
     /// The window is hidden because a game started, not by the user. Only this
@@ -1268,7 +1264,6 @@ impl KaelisApp {
         // be installed before that menu is created.
         platform::enable_dark_menus();
         let launcher_settings = load_settings();
-        platform::set_minimize_to_tray(launcher_settings.minimize_to_tray);
         if launcher_settings.launch_at_startup {
             // A portable folder that was moved leaves the old path behind;
             // rewriting it at start keeps the sign-in entry pointing here.
@@ -1538,8 +1533,6 @@ impl KaelisApp {
             modpack_detail: String::new(),
             modpack_task: None,
             modpack_generation: 0,
-            auto_clean_junk: launcher_settings.auto_clean,
-            minimize_to_tray: launcher_settings.minimize_to_tray,
             launch_at_startup: launcher_settings.launch_at_startup,
             update_report: None,
             updates_busy: false,
@@ -1563,9 +1556,7 @@ impl KaelisApp {
         if app.accounts.is_empty() {
             app.scan_for_accounts(&creation.egui_ctx, false);
         }
-        if app.auto_clean_junk {
-            app.clean_junk_now(creation.egui_ctx.clone());
-        }
+        app.clean_junk_now(creation.egui_ctx.clone());
         app.refresh_instance_cards();
         if let Some(id) = app.selected_instance.clone() {
             app.select_instance(&id);
@@ -3239,9 +3230,6 @@ impl KaelisApp {
     /// Sweep one instance once its game has exited, so the session's logs,
     /// caches, and crash dumps never outlive the process that wrote them.
     fn clean_finished_instance(&self, instance_id: &str, context: &egui::Context) {
-        if !self.auto_clean_junk {
-            return;
-        }
         let Some(root) = self
             .instances
             .iter()
@@ -3763,8 +3751,6 @@ impl KaelisApp {
             account_mode: Some(self.account_mode),
             auto_repair: self.auto_repair_before_launch,
             auto_resolve_duplicates: self.auto_resolve_duplicates,
-            auto_clean: self.auto_clean_junk,
-            minimize_to_tray: self.minimize_to_tray,
             launch_at_startup: self.launch_at_startup,
             content_kind: self.content_kind,
             offline_account: self
@@ -9344,6 +9330,12 @@ impl KaelisApp {
                                 }
                             });
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                                // A top-aligned row places a button label four
+                                // pixels below its box top, which lifts every
+                                // action off the capsule's centre line. Six
+                                // pixels of vertical padding centre the ink in
+                                // the 26 px control without stretching the row.
+                                ui.spacing_mut().button_padding.y = 6.0;
                                 // One action per row: Install, or Erase once the
                                 // project is present. Erasing flips the row back
                                 // to Install on the next scan.
@@ -10968,25 +10960,15 @@ impl KaelisApp {
                 }
             }
         });
-        ui.add_space(6.0);
-        Self::glass_frame().show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            section_label(ui, "WINDOW");
-            if cfg!(windows) {
-                if ui
-                    .checkbox(&mut self.minimize_to_tray, "Minimize to the tray")
-                    .on_hover_text(
-                        "The title-bar minimize button hides Kaelis to the notification area and gives its pages back. Turn this off to minimize to the taskbar instead.",
-                    )
-                    .changed()
-                {
-                    platform::set_minimize_to_tray(self.minimize_to_tray);
-                    save_automation = true;
-                }
+        if cfg!(windows) {
+            ui.add_space(6.0);
+            Self::glass_frame().show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                section_label(ui, "STARTUP");
                 if ui
                     .checkbox(&mut self.launch_at_startup, "Start Kaelis when I sign in")
                     .on_hover_text(
-                        "Adds one per-user startup entry. Kaelis opens hidden in the tray, so signing in never shows a window or a splash screen.",
+                        "One per-user entry opens Kaelis hidden in the tray. No service and no delay.",
                     )
                     .changed()
                 {
@@ -11001,16 +10983,8 @@ impl KaelisApp {
                         }
                     }
                 }
-            } else {
-                ui.label(
-                    egui::RichText::new(
-                        "Tray minimize and sign-in startup are Windows features; on this host the window uses the system tray and login items.",
-                    )
-                    .size(9.5)
-                    .color(MUTED),
-                );
-            }
-        });
+            });
+        }
         ui.add_space(6.0);
         Self::glass_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -11018,32 +10992,16 @@ impl KaelisApp {
             if ui
                 .checkbox(
                     &mut self.auto_repair_before_launch,
-                    "Repair the mod environment before every launch",
+                    "Repair mods before launch",
                 )
-                .on_hover_text(
-                    "Scans the instance's mods, installs missing required mods (for example ukulib for uku's Armor HUD), then launches.",
-                )
+                .on_hover_text("Installs missing required mods before the JVM starts.")
                 .changed()
             {
                 save_automation = true;
             }
             if ui
-                .checkbox(
-                    &mut self.auto_resolve_duplicates,
-                    "Disable older duplicate mods automatically",
-                )
-                .on_hover_text(
-                    "Keeps the newest jar when a mod id is duplicated.",
-                )
-                .changed()
-            {
-                save_automation = true;
-            }
-            if ui
-                .checkbox(&mut self.auto_clean_junk, "Auto-clean junk")
-                .on_hover_text(
-                    "Clears logs, crash dumps, loader caches, interrupted downloads, launcher leftovers, and typed-command history at launch and after every game. Saves, mods, configs, screenshots, and folders Kaelis does not recognise are never touched.",
-                )
+                .checkbox(&mut self.auto_resolve_duplicates, "Disable duplicate mods")
+                .on_hover_text("Keeps the newest jar when two mods share an id.")
                 .changed()
             {
                 save_automation = true;
@@ -11053,10 +11011,8 @@ impl KaelisApp {
                     self.repair_mod_environment(ui.ctx().clone());
                 }
                 if ui
-                    .button("Clean junk now")
-                    .on_hover_text(
-                        "Clear known junk now. Unknown folders are kept.",
-                    )
+                    .button("Clean now")
+                    .on_hover_text("Erase known junk now. Unknown folders stay.")
                     .clicked()
                 {
                     self.clean_junk_now(ui.ctx().clone());
@@ -11075,7 +11031,7 @@ impl KaelisApp {
             section_label(ui, "ZERO-SETUP SERVICES");
             ui.label(
                 egui::RichText::new(
-                    "Microsoft sign-in and CurseForge both work without a key. Microsoft shows a short code once and keeps you signed in through the OS credential store; CurseForge search and downloads run through the public mirror of its v1 API.",
+                    "Microsoft sign-in and CurseForge need no key. Microsoft keeps you signed in through the OS credential store; CurseForge runs through the public v1 mirror.",
                 )
                 .small()
                 .weak(),
@@ -11243,6 +11199,17 @@ impl eframe::App for KaelisApp {
             && std::env::var_os("KAELIS_SCREENSHOT_PASTE").is_some()
         {
             self.paste_clipboard_artwork(context);
+        }
+        // Development-only fixture: a capture window cannot reliably own
+        // keyboard focus, so a Content query can be requested here and still
+        // travel the real search path.
+        if self.screenshot_path.is_some()
+            && self.screenshot_frame == 1
+            && let Ok(query) = std::env::var("KAELIS_SCREENSHOT_QUERY")
+            && !query.trim().is_empty()
+        {
+            self.mod_query = query;
+            self.start_mod_search(context.clone());
         }
         // Development-only fixture: a native file picker cannot be scripted
         // from a capture run, so the icon it would return can be supplied here
@@ -14160,7 +14127,6 @@ mod tests {
             with_zoom.content_kind,
             kaelis_api::mods::ContentKind::Modpack
         );
-        assert!(!with_zoom.auto_clean);
     }
 
     #[test]
