@@ -6739,29 +6739,34 @@ impl KaelisApp {
                         ));
                         // One click replaces this build: the download is
                         // checksum-verified first, then the launcher restarts
-                        // itself into the new version. The version label above
-                        // stays the manual path for installs that cannot write
-                        // to their own folder.
-                        ui.add_space(6.0);
-                        if self.update_busy {
-                            ui.add(egui::Spinner::new().size(9.0));
-                        } else if ui
-                            .add(
-                                egui::Label::new(
-                                    egui::RichText::new("Update")
-                                        .size(8.5)
-                                        .strong()
-                                        .color(accent_soft()),
-                                )
-                                .sense(egui::Sense::click())
-                                .selectable(false),
-                            )
-                            .on_hover_text(
-                                "Download the verified build, replace this copy, and restart",
-                            )
-                            .clicked()
+                        // itself into the new version. Installing in place is a
+                        // Windows behavior; the macOS and Linux archives are
+                        // unpacked deliberately, so those builds keep only the
+                        // release link above instead of offering an action that
+                        // could not replace them.
+                        #[cfg(windows)]
                         {
-                            self.start_self_update(context.clone());
+                            ui.add_space(6.0);
+                            if self.update_busy {
+                                ui.add(egui::Spinner::new().size(9.0));
+                            } else if ui
+                                .add(
+                                    egui::Label::new(
+                                        egui::RichText::new("Update")
+                                            .size(8.5)
+                                            .strong()
+                                            .color(accent_soft()),
+                                    )
+                                    .sense(egui::Sense::click())
+                                    .selectable(false),
+                                )
+                                .on_hover_text(
+                                    "Download the verified build, replace this copy, and restart",
+                                )
+                                .clicked()
+                            {
+                                self.start_self_update(context.clone());
+                            }
                         }
                     } else {
                         ui.label(

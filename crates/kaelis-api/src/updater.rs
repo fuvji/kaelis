@@ -251,6 +251,8 @@ fn swap_script(update: &PreparedUpdate, pid: u32) -> String {
          :rollback\r\n\
          move /Y \"%KAELIS_OLD%\" \"%KAELIS_EXE%\" >nul 2>&1\r\n\
          :fail\r\n\
+         rem A failed swap must not leave the user without a launcher.\r\n\
+         start \"\" \"%KAELIS_EXE%\"\r\n\
          exit /b 1\r\n"
     )
 }
@@ -464,6 +466,10 @@ cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc  Kaelis-Portabl
         let backup_at = script.find(":rollback").expect("rollback label");
         assert!(script[backup_at..].contains("move /Y \"%KAELIS_OLD%\" \"%KAELIS_EXE%\""));
         assert!(script.contains("start \"\" \"%KAELIS_EXE%\""));
+        // A failed swap still restarts the launcher, so the window cannot
+        // simply vanish and leave the user without one.
+        let fail_at = script.find(":fail").expect("fail label");
+        assert!(script[fail_at..].contains("start \"\" \"%KAELIS_EXE%\""));
     }
 
     #[cfg(windows)]

@@ -1,6 +1,6 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.2.9-70a5ff)
+![Version](https://img.shields.io/badge/version-0.2.10-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
@@ -70,7 +70,7 @@ unreferenced cache.
 
 ## Performance
 
-Measured on the shipped Windows 0.2.9 build with `tools/bench.ps1` (5 runs, warm
+Measured on the shipped Windows 0.2.10 build with `tools/bench.ps1` (5 runs, warm
 disk cache, window detected through UI Automation) on 2026-10-25:
 
 | Metric | Result |
@@ -101,8 +101,16 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.2.9
+## What's new in 0.2.10
 
+- **Only Windows is offered the install action.** The update check and the
+  release link remain everywhere, but macOS and Linux ship as archives that are
+  unpacked deliberately, so they no longer show an **Update** label that could
+  only answer "already up to date".
+- **A failed swap restores the launcher.** If the verified build cannot be
+  copied into place — an antivirus lock that outlasts the retry window, a file
+  that vanished mid-swap — the script starts the existing executable instead of
+  exiting silently, so a failed install never leaves the user with no window.
 - **Updates install themselves.** The footer already said when a newer Kaelis
   existed; the version now carries an **Update** action. One click downloads
   the published Windows build, hashes it while it streams in, and refuses it
