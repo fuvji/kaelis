@@ -820,6 +820,7 @@ pub(crate) enum GuiEvent {
     /// A newer published launcher build, if GitHub has one.
     LauncherRelease(Option<LauncherRelease>),
     /// A verified update finished downloading, or the reason it could not.
+    #[cfg(windows)]
     UpdatePrepared(Result<Option<kaelis_api::updater::PreparedUpdate>, String>),
     ModSearch {
         generation: u64,
@@ -1621,6 +1622,7 @@ impl KaelisApp {
     /// it can replace this executable; a failed download or a checksum mismatch
     /// leaves the running build untouched and keeps the footer link as the
     /// manual fallback.
+    #[cfg(windows)]
     fn start_self_update(&mut self, context: egui::Context) {
         if self.update_busy {
             return;
@@ -1642,6 +1644,7 @@ impl KaelisApp {
     ///
     /// Exiting is part of installing: the script waits for this pid to vanish
     /// before renaming the executable, so lingering here would stall the swap.
+    #[cfg(windows)]
     fn install_prepared_update(
         &mut self,
         update: Option<kaelis_api::updater::PreparedUpdate>,
@@ -5040,9 +5043,11 @@ impl KaelisApp {
             GuiEvent::LauncherRelease(release) => {
                 self.launcher_release = release;
             }
+            #[cfg(windows)]
             GuiEvent::UpdatePrepared(Ok(update)) => {
                 self.install_prepared_update(update, context);
             }
+            #[cfg(windows)]
             GuiEvent::UpdatePrepared(Err(error)) => {
                 self.update_busy = false;
                 self.set_status(
