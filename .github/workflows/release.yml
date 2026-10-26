@@ -54,7 +54,10 @@ jobs:
 
   macos:
     name: macOS universal
-    runs-on: macos-latest
+    # Pin the image: `macos-latest` sat queued for half an hour twice and was
+    # cancelled before a runner picked it up. macos-14 is the current stable
+    # arm64 image and still cross-builds the Intel half of the universal app.
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
