@@ -1,8 +1,8 @@
 KAELIS - URL, INSTALLATION, AND LINK INDEX
 ==========================================
-Launcher      Kaelis 0.2.12
+Launcher      Kaelis 0.3.0
 Platform      windows-x86_64
-Packaged      10/25/2026 12:59:26
+Packaged      2026-10-26T12:59:59Z
 Generator     tools/links.ps1 (run again after any endpoint or release change)
 Repository    https://github.com/fuvji/kaelis
 Website       https://fuvji.github.io/kaelis/
@@ -37,9 +37,18 @@ link files, and refreshes the hashes after the build.
   This index, published
     https://fuvji.github.io/kaelis/downloads/KAELIS-LINKS.txt
     Same generated content as dist/KAELIS-LINKS.txt.
+  macOS universal disk image
+    https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.dmg
+    Drag Kaelis.app to Applications; ad-hoc signed.
   macOS universal build
     https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.zip
     Built and signed ad hoc by packaging/macos/bundle.sh.
+  Linux Debian package
+    https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.deb
+    apt install ./Kaelis-linux-x64.deb; desktop entry and uninstall included.
+  Linux AppImage
+    https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.AppImage
+    One executable, no root, runs from any folder.
   Linux x64 build
     https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.tar.gz
     Binary, desktop entry, icon, LICENSE, README.
@@ -76,17 +85,23 @@ link files, and refreshes the hashes after the build.
     The installer carries the same Kaelis.exe build as the download page.
 
   2.3 macOS
-    Prebuilt: Kaelis-macos-universal.zip from the latest release; drag
-    Kaelis.app to /Applications.
+    Prebuilt: Kaelis-macos-universal.dmg from the latest release; open the
+    image and drag Kaelis.app to /Applications. The ZIP holds the same
+    bundle if you prefer to unpack it yourself.
     From source: ./packaging/macos/bundle.sh [--universal]
-    Output: dist/Kaelis.app
+                 ./packaging/macos/dmg.sh
+    Output: dist/Kaelis.app, dist/Kaelis-macos-universal.dmg
     Data: ~/Library/Application Support/gg.kaelis.Kaelis/instances
 
   2.4 Linux
-    Prebuilt: Kaelis-linux-x64.tar.gz from the latest release; extract and
-    run ./kaelis, or install the binary and desktop entry.
+    Prebuilt: Kaelis-linux-x64.deb (apt), .AppImage (portable), or
+    Kaelis-linux-x64.tar.gz (plain binary).
+    Debian / Ubuntu: sudo apt install ./Kaelis-linux-x64.deb
+    AppImage:        chmod +x Kaelis-linux-x64.AppImage && ./Kaelis-linux-x64.AppImage
     From source: ./packaging/linux/install.sh
-    Installs: ~/.local/bin/kaelis
+                 ./packaging/linux/package.sh --no-build
+    Installs: ~/.local/bin/kaelis (install.sh)
+              /usr/bin/kaelis (deb)
               ~/.local/share/applications/kaelis.desktop
               ~/.local/share/icons/hicolor/scalable/apps/kaelis.svg
     Data: ~/.local/share/kaelis/instances
@@ -333,16 +348,16 @@ link files, and refreshes the hashes after the build.
   Paths are relative to the repository root. Hashes are SHA-256.
 
   site/downloads/Kaelis.exe
-    17034240 bytes (16.2 MB)
-    15af84ec3e408603e0c8ec0dea1c7094c1f7ff12473bed1340028996b8d4c39a
+    18127360 bytes (17.3 MB)
+    9c70d22ddb05df71841a8a2c78e23a68d2c49a50d13b220a5add5004dd5378ab
 
   site/downloads/Kaelis-Portable.zip
-    8267232 bytes (7.9 MB)
-    5f77fa26e8a76642d182615512b6e98c6f26247766f7caab8d2373c6f443f369
+    8531258 bytes (8.1 MB)
+    ac4aa4cf880c1413d3316f70d19f70d90fd8a141d6f8e330b943f40f58ea8eb8
 
   site/downloads/Kaelis-Setup.exe
-    6072138 bytes (5.8 MB)
-    3c9e21f2734012efc7ba665b5e9e33a0a5dedad49faed685aabe102ba583791e
+    6342217 bytes (6.0 MB)
+    942d3a9fd637f17e94a46e98c8c5b9c7b49c763882a6eeaa1f8aa4b889aa8c19
 
   dist/Kaelis.exe and dist/Kaelis-Setup.exe are local scratch copies;
   site/downloads is the published set. The portable ZIP contains the same

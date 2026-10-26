@@ -1718,7 +1718,13 @@ fn native_options(
         viewport: eframe::egui::ViewportBuilder::default()
             // A sign-in launch shows only the tray icon: no window flash, no
             // taskbar entry, and no first-frame cost until the user asks.
+            // Keeping `taskbar` off in that mode means restoring the window
+            // from the tray never adds a second taskbar button: at login the
+            // tray is the app's only handle. An ordinary launch keeps its
+            // taskbar entry so a desktop without tray support can still
+            // switch to the window.
             .with_visible(!start_hidden)
+            .with_taskbar(!start_hidden)
             // Fits a 1366×768 laptop with the taskbar visible; eframe restores
             // the last size and position once the window has been moved.
             .with_inner_size(window_size)

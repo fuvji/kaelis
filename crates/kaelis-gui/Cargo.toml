@@ -1,6 +1,6 @@
 [package]
 name = "kaelis-gui"
-version = "0.2.12"
+version = "0.3.0"
 edition.workspace = true
 description = "Kaelis desktop interface: content studio, instances, and accounts"
 homepage = "https://github.com/fuvji/kaelis"

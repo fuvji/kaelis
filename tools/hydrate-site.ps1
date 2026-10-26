@@ -28,16 +28,27 @@ function Format-Size([long]$bytes) {
     return "$bytes B"
 }
 
+# Windows is packaged by the local release script, so its three artifacts are
+# required. The Linux and macOS artifacts are built only by the release
+# workflow; the page keeps its last-known fallback when they are not fetched.
 $artifacts = [ordered]@{
-    "exe"   = "Kaelis.exe"
-    "zip"   = "Kaelis-Portable.zip"
-    "setup" = "Kaelis-Setup.exe"
+    "exe"      = "Kaelis.exe"
+    "zip"      = "Kaelis-Portable.zip"
+    "setup"    = "Kaelis-Setup.exe"
+    "dmg"      = "Kaelis-macos-universal.dmg"
+    "deb"      = "Kaelis-linux-x64.deb"
+    "appimage" = "Kaelis-linux-x64.AppImage"
 }
+$required = @("exe", "zip", "setup")
 
 foreach ($key in $artifacts.Keys) {
     $name = $artifacts[$key]
     $path = Join-Path $downloadPath $name
-    if (-not (Test-Path $path)) { throw "missing artifact: $path" }
+    if (-not (Test-Path $path)) {
+        if ($required -contains $key) { throw "missing artifact: $path" }
+        Write-Host "$name`: not fetched, keeping the page fallback"
+        continue
+    }
     $item = Get-Item $path
     $size = Format-Size $item.Length
     $hash = (Get-FileHash $item.FullName -Algorithm SHA256).Hash.ToLower()

@@ -40,7 +40,7 @@
         "applicationSubCategory": "Minecraft launcher",
         "operatingSystem": "Windows 10, Windows 11, macOS 11, Linux",
         "processorRequirements": "x86_64 or arm64",
-        "softwareVersion": "0.2.12",
+        "softwareVersion": "0.3.0",
         "softwareRequirements": "Rust 1.85+ to build from source; Java is provisioned automatically",
         "downloadUrl": "https://fuvji.github.io/kaelis/downloads/Kaelis-Portable.zip",
         "installUrl": "https://fuvji.github.io/kaelis/#downloads",
@@ -424,7 +424,7 @@
     <div class="shell" id="top">
       <section class="hero" aria-labelledby="hero-title">
         <div>
-          <span class="eyebrow"><i></i>v0.2.12 · Windows · macOS · Linux</span>
+          <span class="eyebrow"><i></i>v0.3.0 · Windows · macOS · Linux</span>
           <h1 id="hero-title">Minecraft,<br><em>composed.</em></h1>
           <p class="lede">Instances, mods, packs, shaders, and accounts in one native workspace. Files stay local. Nothing runs in the background.</p>
           <div class="hero-actions">
@@ -540,8 +540,8 @@
             <h3>Windows portable ZIP</h3>
             <p>One executable. Extract anywhere and run. Instances stay in your profile.</p>
             <div class="facts">
-              <span><b data-release="exe-size">16.2 MB</b> app</span>
-              <span><b data-release="zip-size">7.9 MB</b> zip</span>
+              <span><b data-release="exe-size">17.3 MB</b> app</span>
+              <span><b data-release="zip-size">8.1 MB</b> zip</span>
               <span>Windows 10 / 11 · x64</span>
               <span>No install</span>
             </div>
@@ -557,7 +557,7 @@
             <h3>Windows installer</h3>
             <p>Per-user install, Start menu shortcut, clean uninstaller.</p>
             <div class="facts">
-              <span><b data-release="setup-size">5.8 MB</b> setup</span>
+              <span><b data-release="setup-size">6.0 MB</b> setup</span>
               <span>No admin rights</span>
               <span>Clean uninstaller</span>
             </div>
@@ -566,39 +566,40 @@
 
           <article class="download">
             <span class="tag" style="margin:0">macOS 11+</span>
-            <h3>macOS app bundle</h3>
-            <p>Universal binary. Ad-hoc signed, so the first launch is right-click → Open.</p>
-            <ul class="steps">
-              <li><b>1</b> Install Xcode command line tools</li>
-              <li><b>2</b> Run the bundler</li>
-              <li><b>3</b> Drag Kaelis.app to Applications</li>
-            </ul>
-            <div class="cmd">
-              <code id="build-macos">git clone https://github.com/fuvji/kaelis && cd kaelis && ./packaging/macos/bundle.sh --universal</code>
-              <button type="button" data-copy="build-macos">Copy</button>
+            <h3>macOS disk image</h3>
+            <p>Universal binary in one drag-to-Applications image. Ad-hoc signed, so the first launch is right-click → Open.</p>
+            <div class="facts">
+              <span><b data-release="dmg-size">9.0 MB</b> dmg</span>
+              <span>Apple silicon + Intel</span>
+              <span>No installer</span>
             </div>
-            <a class="button button-secondary" href="https://github.com/fuvji/kaelis/releases/latest" rel="noreferrer">Prebuilt from Releases ↗</a>
+            <a class="button button-primary" href="downloads/Kaelis-macos-universal.dmg" download>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5M5 19h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Download Kaelis-macos-universal.dmg
+            </a>
+            <a class="button button-secondary" href="downloads/Kaelis-macos-universal.zip" download>ZIP bundle ↗</a>
           </article>
 
           <article class="download">
-            <span class="tag" style="margin:0">Linux</span>
-            <h3>Linux install</h3>
-            <p>Per-user install with a desktop entry and icon. X11 and Wayland.</p>
-            <div class="deps">
-              <span>Debian / Ubuntu: libgtk-3-dev libayatana-appindicator3-dev</span>
-              <span>Fedora: gtk3-devel libappindicator-gtk3-devel</span>
-              <span>Arch: gtk3 libayatana-appindicator</span>
+            <span class="tag" style="margin:0">Linux x64</span>
+            <h3>Linux packages</h3>
+            <p>Install with apt, run one AppImage, or unpack the tarball. X11 and Wayland.</p>
+            <div class="facts">
+              <span><b data-release="deb-size">6.0 MB</b> deb</span>
+              <span><b data-release="appimage-size">18 MB</b> AppImage</span>
+              <span>Desktop entry included</span>
             </div>
-            <div class="cmd">
-              <code id="build-linux">git clone https://github.com/fuvji/kaelis && cd kaelis && ./packaging/linux/install.sh</code>
-              <button type="button" data-copy="build-linux">Copy</button>
-            </div>
-            <a class="button button-secondary" href="https://github.com/fuvji/kaelis/releases/latest" rel="noreferrer">Kaelis-linux-x64.tar.gz ↗</a>
+            <a class="button button-primary" href="downloads/Kaelis-linux-x64.deb" download>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5M5 19h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Download Kaelis-linux-x64.deb
+            </a>
+            <a class="button button-secondary" href="downloads/Kaelis-linux-x64.AppImage" download>AppImage ↗</a>
+            <a class="button button-secondary" href="downloads/Kaelis-linux-x64.tar.gz" download>tar.gz ↗</a>
           </article>
         </div>
 
         <div class="downloads-foot">
-          <span><b style="color:var(--text)">New in 0.2.12</b> · Tray minimize and <b style="color:var(--text)">Auto Erase Junk</b> are now permanent parts of Kaelis: the Settings switches are gone, an old saved “off” is ignored, and both always run. On Windows, minimize hides to the tray; junk is erased at every start and after every game. The Mod Browse <b style="color:var(--text)">Erase</b> label now sits exactly in the centre of its capsule, the action row centres Install and Erase together, and Settings copy is shorter. Everything from 0.2.11 remains: quieter instance cards, ReplayMod and Forge log cleanup, one-click checksum-verified Windows updates, the dark tray, the shared file store, and 0.00% idle cost.</span>
+          <span><b style="color:var(--text)">New in 0.3.0</b> · Every platform now ships an installable build. macOS gets a <b style="color:var(--text)">drag-to-Applications .dmg</b>; Linux gets an <b style="color:var(--text)">apt .deb</b> and a one-file <b style="color:var(--text)">AppImage</b> beside the tarball. All three are built from the same tag, hashed in CI, and served from this page. Everything from 0.2.12 remains: permanent tray minimize and Auto Erase Junk, the centred Erase capsule, one-click checksum-verified Windows updates, the dark tray, the shared file store, and 0.00% idle cost.</span>
           <span>Every tag builds all three platforms in CI and publishes checksums.</span>
           <a href="downloads/KAELIS-LINKS.txt">URL &amp; install index ↗</a>
           <a href="https://github.com/fuvji/kaelis/releases/latest" rel="noreferrer">All releases ↗</a>
@@ -609,9 +610,12 @@
           <summary>Checksums and build provenance</summary>
           <div class="body">
             <p style="margin:0;color:var(--muted);font-size:13px">Every artifact is hashed at release time. Published files: <a href="downloads/SHA256SUMS.txt" style="color:var(--accent-soft)">SHA256SUMS.txt</a> and the generated <a href="downloads/KAELIS-LINKS.txt" style="color:var(--accent-soft)">URL &amp; installation index</a>.</p>
-            <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">15af84ec3e408603e0c8ec0dea1c7094c1f7ff12473bed1340028996b8d4c39a</code></div>
-            <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">5f77fa26e8a76642d182615512b6e98c6f26247766f7caab8d2373c6f443f369</code></div>
-            <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">3c9e21f2734012efc7ba665b5e9e33a0a5dedad49faed685aabe102ba583791e</code></div>
+            <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">9c70d22ddb05df71841a8a2c78e23a68d2c49a50d13b220a5add5004dd5378ab</code></div>
+            <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">ac4aa4cf880c1413d3316f70d19f70d90fd8a141d6f8e330b943f40f58ea8eb8</code></div>
+            <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">942d3a9fd637f17e94a46e98c8c5b9c7b49c763882a6eeaa1f8aa4b889aa8c19</code></div>
+            <div class="hash"><span>Kaelis-macos-universal.dmg</span><code data-release="dmg-hash">0000000000000000000000000000000000000000000000000000000000000000</code></div>
+            <div class="hash"><span>Kaelis-linux-x64.deb</span><code data-release="deb-hash">0000000000000000000000000000000000000000000000000000000000000000</code></div>
+            <div class="hash"><span>Kaelis-linux-x64.AppImage</span><code data-release="appimage-hash">0000000000000000000000000000000000000000000000000000000000000000</code></div>
             <div class="hash"><span>Verify on Linux / macOS</span><code>shasum -a 256 -c SHA256SUMS.txt</code></div>
           </div>
         </details>

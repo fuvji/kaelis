@@ -1,10 +1,10 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.2.12-70a5ff)
+![Version](https://img.shields.io/badge/version-0.3.0-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
-![Tests](https://img.shields.io/badge/tests-260%20passing-3fb950)
+![Tests](https://img.shields.io/badge/tests-269%20passing-3fb950)
 
 <img width="1080" height="700" alt="Accounts tab: the active identity and every saved offline or Microsoft account" src="site/assets/app-accounts.png" />
 
@@ -83,7 +83,7 @@ window detected through UI Automation) on 2026-10-25:
 | Idle CPU | 0.00% median (event-driven, no repaint loop) |
 | Handles | 507 empty, 510 with 200 jars |
 | Hibernated working set | 1.6 MB after 90 s unfocused (path unchanged since 0.2.10) |
-| Published Windows binary | 17,034,240 B, SHA-256 `15af84ec…` |
+| Current Windows binary (0.3.0) | 18,127,360 B, SHA-256 `9c70d22d…` |
 | Second launch restore | 62 ms (handoff + native window wake; path unchanged since 0.2.10) |
 | Window close to process exit | 16 ms (path unchanged since 0.2.10) |
 
@@ -107,7 +107,25 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.2.12
+## What's new in 0.3.0
+
+- **Every platform has an installable build.** Windows keeps the portable ZIP
+  and per-user setup. macOS now ships `Kaelis-macos-universal.dmg`, one image
+  that holds the universal app and an Applications shortcut. Linux now ships
+  `Kaelis-linux-x64.deb` for `apt install ./…` and
+  `Kaelis-linux-x64.AppImage` for a single portable file; the tarball remains
+  for a plain binary and desktop entry.
+- **One tag builds, hashes, and serves all of them.** The release workflow
+  produces every artifact from the same commit, writes one combined
+  `SHA256SUMS.txt`, and the Pages deploy fetches all platforms before hydrating
+  the page. The download cards show real sizes and hashes, and CI fails if any
+  artifact link stops resolving.
+- **No new runtime or daemon.** The DMG and `.deb` carry the same binary the
+  tarball does. The AppImage adds only its `AppRun` wrapper and icon; it uses the
+  desktop's GTK and app-indicator libraries instead of duplicating them, so the
+  package stays the smallest form that still installs cleanly.
+
+### From 0.2.12
 
 - **Tray minimize and junk cleanup are no longer optional.** Both are core
   Kaelis behaviour, so Settings no longer offers a switch that can turn either
@@ -328,11 +346,13 @@ kaelis --play fabric-1-21
 Install it like a desktop app:
 
 ```bash
-# macOS: Kaelis.app in dist/, ad-hoc signed and ready to drag to Applications
+# macOS: Kaelis.app in dist/, ad-hoc signed, then a drag-to-Applications DMG
 ./packaging/macos/bundle.sh              # add --universal for Intel + Apple silicon
+./packaging/macos/dmg.sh
 
-# Linux: per-user install, no root
+# Linux: per-user install, or tarball + .deb + AppImage in dist/
 ./packaging/linux/install.sh
+./packaging/linux/package.sh --no-build
 ```
 
 The Linux build needs `libgtk-3-dev` and `libayatana-appindicator3-dev` because
@@ -522,9 +542,11 @@ a `v*` tag builds Windows, macOS (universal), and Linux, publishes one release
 with every artifact, the generated `KAELIS-LINKS.txt`, and a combined
 `SHA256SUMS.txt`. The Windows job installs NSIS, so `Kaelis-Setup.exe` is rebuilt
 from the same fresh binary as the portable download rather than reusing an old
-local setup, and the publish job dispatches the site deploy so the page can never
-serve the previous release under a new version number. `tools/release.ps1` is the
-same Windows path used locally.
+local setup. The macOS job produces both the ZIP and the DMG; the Linux job
+smoke-tests the tarball, the `.deb`, and the AppImage before publishing. The
+publish job dispatches the site deploy so the page can never serve the previous
+release under a new version number. `tools/release.ps1` is the same Windows path
+used locally.
 
 <img width="1080" height="700" alt="Overview" src="site/assets/app-overview.png" />
 

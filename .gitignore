@@ -14,6 +14,10 @@
 /dist/
 /site/downloads/*.exe
 /site/downloads/*.zip
+/site/downloads/*.deb
+/site/downloads/*.AppImage
+/site/downloads/*.dmg
+/site/downloads/*.tar.gz
 
 # Scratch renders and captures
 /media/tmp/

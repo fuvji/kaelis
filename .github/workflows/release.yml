@@ -68,9 +68,10 @@ jobs:
       - name: Package
         run: |
           set -euo pipefail
+          ./packaging/macos/dmg.sh
           ditto -c -k --keepParent dist/Kaelis.app dist/Kaelis-macos-universal.zip
           cd dist
-          shasum -a 256 Kaelis-macos-universal.zip > SHA256SUMS-macos.txt
+          shasum -a 256 Kaelis-macos-universal.zip Kaelis-macos-universal.dmg > SHA256SUMS-macos.txt
           cat SHA256SUMS-macos.txt
 
       - uses: actions/upload-artifact@v4
@@ -79,6 +80,7 @@ jobs:
           if-no-files-found: error
           path: |
             dist/Kaelis-macos-universal.zip
+            dist/Kaelis-macos-universal.dmg
             dist/SHA256SUMS-macos.txt
 
   linux:
@@ -98,20 +100,16 @@ jobs:
         run: cargo build --release -p kaelis-launcher
 
       - name: Package
+        run: ./packaging/linux/package.sh --no-build
+
+      - name: Checksums
         run: |
           set -euo pipefail
-          stage="dist/kaelis-linux-x64"
-          rm -rf "$stage" && mkdir -p "$stage"
-          install -m 755 target/release/kaelis "$stage/kaelis"
-          install -m 644 packaging/linux/kaelis.desktop "$stage/kaelis.desktop"
-          install -m 644 site/assets/kaelis-mark.svg "$stage/kaelis.svg"
-          install -m 644 LICENSE "$stage/LICENSE"
-          install -m 644 site/downloads/README.md "$stage/README.md"
-          tar -C dist -czf dist/Kaelis-linux-x64.tar.gz kaelis-linux-x64
           cd dist
-          sha256sum Kaelis-linux-x64.tar.gz > SHA256SUMS-linux.txt
+          sha256sum Kaelis-linux-x64.tar.gz Kaelis-linux-x64.deb Kaelis-linux-x64.AppImage > SHA256SUMS-linux.txt
+          cat SHA256SUMS-linux.txt
 
-      - name: Smoke test the packaged binary
+      - name: Smoke test every packaged form
         shell: bash
         run: |
           set -euo pipefail
@@ -119,6 +117,11 @@ jobs:
           "$RUNNER_TEMP/kaelis-linux-x64/kaelis" --version --json
           KAELIS_DATA_DIR="$RUNNER_TEMP/kaelis-smoke" \
             "$RUNNER_TEMP/kaelis-linux-x64/kaelis" --status --json
+          dpkg-deb --info dist/Kaelis-linux-x64.deb >/dev/null
+          mkdir -p "$RUNNER_TEMP/appimage-smoke"
+          cd "$RUNNER_TEMP/appimage-smoke"
+          "$GITHUB_WORKSPACE/dist/Kaelis-linux-x64.AppImage" --appimage-extract >/dev/null
+          ./squashfs-root/AppRun --version --json
 
       - uses: actions/upload-artifact@v4
         with:
@@ -126,6 +129,8 @@ jobs:
           if-no-files-found: error
           path: |
             dist/Kaelis-linux-x64.tar.gz
+            dist/Kaelis-linux-x64.deb
+            dist/Kaelis-linux-x64.AppImage
             dist/SHA256SUMS-linux.txt
 
   publish:

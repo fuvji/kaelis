@@ -82,7 +82,7 @@ jobs:
             # EXE/ZIP/Setup are release assets served by the Pages hydrator,
             # not tracked build output. Their presence is checked below.
             case "$path" in
-              downloads/*.exe|downloads/*.zip) continue ;;
+              downloads/*.exe|downloads/*.zip|downloads/*.deb|downloads/*.AppImage|downloads/*.dmg|downloads/*.tar.gz) continue ;;
             esac
             target="site/${path%%#*}"
             if [[ ! -e "$target" ]]; then
@@ -96,7 +96,9 @@ jobs:
       - name: Check release download references
         run: |
           set -euo pipefail
-          for artifact in Kaelis.exe Kaelis-Portable.zip Kaelis-Setup.exe; do
+          for artifact in Kaelis.exe Kaelis-Portable.zip Kaelis-Setup.exe \
+                          Kaelis-macos-universal.dmg Kaelis-linux-x64.deb \
+                          Kaelis-linux-x64.AppImage Kaelis-linux-x64.tar.gz; do
             grep -q "downloads/$artifact" site/index.html || {
               echo "page does not link $artifact"
               exit 1

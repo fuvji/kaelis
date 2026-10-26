@@ -44,6 +44,11 @@ jobs:
             --pattern Kaelis.exe
             --pattern Kaelis-Portable.zip
             --pattern Kaelis-Setup.exe
+            --pattern Kaelis-macos-universal.zip
+            --pattern Kaelis-macos-universal.dmg
+            --pattern Kaelis-linux-x64.tar.gz
+            --pattern Kaelis-linux-x64.deb
+            --pattern Kaelis-linux-x64.AppImage
             --pattern SHA256SUMS.txt
             --pattern KAELIS-LINKS.txt
           )
