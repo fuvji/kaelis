@@ -20,9 +20,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS is pinned rather than `-latest`: the floating label can sit
-        # queued behind an image rollout and be cancelled before it starts.
-        os: [ubuntu-latest, windows-latest, macos-14]
+        # macOS is pinned to the supported Intel image: the arm64 pool is
+        # capacity-constrained, and macos-14 is being retired this month.
+        os: [ubuntu-latest, windows-latest, macos-15-intel]
     steps:
       - uses: actions/checkout@v4
 
