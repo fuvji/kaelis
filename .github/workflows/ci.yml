@@ -50,6 +50,30 @@ jobs:
       - name: Release build
         run: cargo build --release -p kaelis-launcher
 
+      # Build the actual installable artifact on every push, so a broken
+      # AppImage, .deb, or DMG fails CI instead of a tag.
+      - name: Package Linux artifacts
+        if: runner.os == 'Linux'
+        run: ./packaging/linux/package.sh --no-build
+
+      - name: Smoke test Linux packages
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dpkg-deb --info dist/Kaelis-linux-x64.deb >/dev/null
+          mkdir -p "$RUNNER_TEMP/appimage-smoke"
+          cd "$RUNNER_TEMP/appimage-smoke"
+          "$GITHUB_WORKSPACE/dist/Kaelis-linux-x64.AppImage" --appimage-extract >/dev/null
+          ./squashfs-root/AppRun --version --json
+
+      - name: Package macOS disk image
+        if: runner.os == 'macOS'
+        run: |
+          ./packaging/macos/bundle.sh
+          ./packaging/macos/dmg.sh
+          hdiutil verify dist/Kaelis-macos-universal.dmg
+
       - name: Headless smoke test
         shell: bash
         run: |
