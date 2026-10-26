@@ -83,7 +83,7 @@ window detected through UI Automation) on 2026-10-25:
 | Idle CPU | 0.00% median (event-driven, no repaint loop) |
 | Handles | 507 empty, 510 with 200 jars |
 | Hibernated working set | 1.6 MB after 90 s unfocused (path unchanged since 0.2.10) |
-| Current Windows binary (0.3.0) | 18,127,360 B, SHA-256 `9c70d22d…` |
+| Published Windows binary (0.3.0) | 17,034,240 B, SHA-256 `c17cb139…` |
 | Second launch restore | 62 ms (handoff + native window wake; path unchanged since 0.2.10) |
 | Window close to process exit | 16 ms (path unchanged since 0.2.10) |
 
