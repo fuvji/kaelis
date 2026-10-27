@@ -1,6 +1,6 @@
 [package]
 name = "kaelis-gui"
-version = "0.3.3"
+version = "0.3.4"
 edition.workspace = true
 description = "Kaelis desktop interface: content studio, instances, and accounts"
 homepage = "https://github.com/fuvji/kaelis"
@@ -52,6 +52,9 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_Registry",
     "Win32_System_Threading",
     "Win32_Security",
+    # Rounded window corners and a frame-less edge come from DWM at
+    # composition time, which costs the launcher nothing per frame.
+    "Win32_Graphics_Dwm",
     # The idle guard listens for foreground changes instead of polling.
     "Win32_UI_Accessibility",
     "Win32_UI_Shell",

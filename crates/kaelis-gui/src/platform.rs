@@ -297,6 +297,52 @@ pub(crate) fn hide_to_tray(context: &egui::Context) {
     trim_working_set();
 }
 
+/// Ask the compositor for smoothly rounded corners and no window border.
+///
+/// The launcher paints its own header, so it has no frame for the system to
+/// round. Windows 11 rounds a resizable window at composition time when asked,
+/// which costs the launcher nothing per frame — no transparent surface, no
+/// per-pixel alpha, no extra draw call. Windows 10 ignores the request and
+/// keeps its own default, so a failed call is not an error.
+///
+/// Returns `true` once the launcher's window was found and the request made,
+/// so a caller can retry while the handle does not exist yet and stop after it
+/// does — including on a system that answers with an error.
+#[cfg(windows)]
+pub(crate) fn round_window_corners() -> bool {
+    use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
+
+    /// `DWMWA_WINDOW_CORNER_PREFERENCE`.
+    const CORNER_PREFERENCE: u32 = 33;
+    /// `DWMWA_BORDER_COLOR`.
+    const BORDER_COLOR: u32 = 34;
+    /// `DWMWCP_ROUND`: the rounded-rectangle preference.
+    const ROUND: i32 = 2;
+    /// `DWMWA_COLOR_NONE`: draw no border at all.
+    const NO_BORDER: u32 = 0xFFFF_FFFE;
+
+    let Some(window) = main_window() else {
+        return false;
+    };
+    // SAFETY: `window` belongs to this process, and both pointers are valid
+    // for the four bytes the attribute expects.
+    unsafe {
+        DwmSetWindowAttribute(
+            window,
+            CORNER_PREFERENCE,
+            std::ptr::from_ref(&ROUND).cast(),
+            std::mem::size_of::<i32>() as u32,
+        );
+        DwmSetWindowAttribute(
+            window,
+            BORDER_COLOR,
+            std::ptr::from_ref(&NO_BORDER).cast(),
+            std::mem::size_of::<u32>() as u32,
+        );
+    }
+    true
+}
+
 /// The header's minimize control on an overlay with no native title bar.
 ///
 /// On Windows the launcher's own behaviour is the tray, so the custom button

@@ -1787,8 +1787,13 @@ fn native_options(
             .with_icon(kaelis_gui::window_icon())
             // Wayland/X11 use the app id to match the window to its desktop
             // entry, so the icon and name are right in the taskbar.
-            .with_app_id("kaelis")
-            .with_transparent(true),
+            //
+            //
+            // The surface stays opaque on purpose. The launcher paints every
+            // pixel it owns, so a transparent window would buy nothing and cost
+            // a full-surface alpha blend on every frame; the rounded corners
+            // come from the compositor instead (see platform::round_window_corners).
+            .with_app_id("kaelis"),
         ..Default::default()
     }
 }

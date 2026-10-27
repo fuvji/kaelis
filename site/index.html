@@ -40,7 +40,7 @@
         "applicationSubCategory": "Minecraft launcher",
         "operatingSystem": "Windows 10, Windows 11, macOS 11, Linux",
         "processorRequirements": "x86_64 or arm64",
-        "softwareVersion": "0.3.3",
+        "softwareVersion": "0.3.4",
         "softwareRequirements": "Rust 1.85+ to build from source; Java is provisioned automatically",
         "downloadUrl": "https://fuvji.github.io/kaelis/downloads/Kaelis-Portable.zip",
         "installUrl": "https://fuvji.github.io/kaelis/#downloads",
@@ -424,7 +424,7 @@
     <div class="shell" id="top">
       <section class="hero" aria-labelledby="hero-title">
         <div>
-          <span class="eyebrow"><i></i>v0.3.3 · Windows · macOS · Linux</span>
+          <span class="eyebrow"><i></i>v0.3.4 · Windows · macOS · Linux</span>
           <h1 id="hero-title">Minecraft,<br><em>composed.</em></h1>
           <p class="lede">Instances, mods, packs, shaders, and accounts in one native workspace. Files stay local. Nothing runs in the background.</p>
           <div class="hero-actions">
@@ -599,7 +599,7 @@
         </div>
 
         <div class="downloads-foot">
-          <span><b style="color:var(--text)">New in 0.3.3</b> · every third-party component sits at its <b style="color:var(--text)">newest patch release</b>, and <b style="color:var(--text)">the launcher remembers how it was left</b>: the window reopens at the size it was last settled on, and snapshots, alpha and beta versions, required dependencies, the search providers, and search-as-you-type all reopen where they were set. The window is now a <b style="color:var(--text)">frameless overlay</b> — drag its own header to move it, double-click to maximize or restore, one control each to minimize, maximize, and close, and resizing from every edge and corner. Descriptions across the launcher are one line each. Everything from 0.3.1 remains: Play repairs a missing JVM, client jar, library, or loader before it launches, Minecraft's own telemetry is forced off, and Auto Erase Junk keeps every instance clean at 0.00% idle cost.</span>
+          <span><b style="color:var(--text)">New in 0.3.4</b> · <b style="color:var(--text)">smoothly rounded corners</b> come from the compositor instead of a transparent surface, the window controls are drawn as strokes in the system's own shapes, and <b style="color:var(--text)">every drop shadow is gone</b> — flat surfaces and hairlines do the separating. The window surface is opaque now, which removes a full-surface alpha blend from every frame. <b style="color:var(--text)">The launcher remembers how it was left</b>: the window reopens at the size it was last settled on, and snapshots, alpha and beta versions, required dependencies, the search providers, and search-as-you-type all reopen where they were set. The window is now a <b style="color:var(--text)">frameless overlay</b> — drag its own header to move it, double-click to maximize or restore, one control each to minimize, maximize, and close, and resizing from every edge and corner. Descriptions across the launcher are one line each. Everything from 0.3.1 remains: Play repairs a missing JVM, client jar, library, or loader before it launches, Minecraft's own telemetry is forced off, and Auto Erase Junk keeps every instance clean at 0.00% idle cost.</span>
           <span>Every tag builds all three platforms in CI and publishes checksums.</span>
           <a href="downloads/KAELIS-LINKS.txt">URL &amp; install index ↗</a>
           <a href="https://github.com/fuvji/kaelis/releases/latest" rel="noreferrer">All releases ↗</a>
@@ -610,9 +610,9 @@
           <summary>Checksums and build provenance</summary>
           <div class="body">
             <p style="margin:0;color:var(--muted);font-size:13px">Every artifact is hashed at release time. Published files: <a href="downloads/SHA256SUMS.txt" style="color:var(--accent-soft)">SHA256SUMS.txt</a> and the generated <a href="downloads/KAELIS-LINKS.txt" style="color:var(--accent-soft)">URL &amp; installation index</a>.</p>
-            <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">bd7ddecd2f58aa4b230a11b8d54cde0018c59356f84c5c76777446fa92dcabb3</code></div>
-            <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">07df916b29a91ae8f7aaf59456f4900ca616f2d9672fa812b585221840e3eaac</code></div>
-            <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">b2dabfa4675c352c2ce0f992a9ff04eee36394de2ccab3e9529c4414aff8f948</code></div>
+            <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">f323426615ece54a4977a5f367b9f096a34cee6f3187633c9fbe0275c5e68444</code></div>
+            <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">071ccbcd7d067a83573c4ab04b655b1f0f26b1743e074de1c756b2181dcf6aac</code></div>
+            <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">732a9c026ee9544e8a338070ee098b20a81eea8e59c8b97be6545df47af4ab1a</code></div>
             <div class="hash"><span>Kaelis-macos-universal.dmg</span><code data-release="dmg-hash">6fa2fda1b93f2c01228da3073ce18f3722b7e650bbcd4703eabbe5e7a2b2e9f7</code></div>
             <div class="hash"><span>Kaelis-linux-x64.deb</span><code data-release="deb-hash">e2510545e116a6c29daa32eebc9da1629bff25c4fa14be307cd2de3a57ae3d0d</code></div>
             <div class="hash"><span>Kaelis-linux-x64.AppImage</span><code data-release="appimage-hash">0c34a7aaba346aeb68a284834321db24a72d3fc2fe1f172871d3921c289cea52</code></div>

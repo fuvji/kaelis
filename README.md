@@ -1,6 +1,6 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.3.3-70a5ff)
+![Version](https://img.shields.io/badge/version-0.3.4-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
@@ -31,7 +31,7 @@ keep that library clean, correct, and fast on their own.
 | **Runs in parallel, quietly** | Per-instance OS guards let different instances launch together; a smart power governor drops every unfocused game to idle priority within 1.5 s and restores it the moment it is focused, so the game being played owns the CPU |
 | **Reopens, never doubles** | One process, one tray icon: a second launch, a Start-menu click, or the tray icon restores the running window in ~120 ms instead of starting another launcher — including over a fullscreen game |
 | **Hibernates while you play** | Starting a game hides the window and empties its working set, and 90 s unfocused does the same while the window stays open; one tray click restores it, mid-game included |
-| **Frameless window, tray-first** | The launcher draws its own header instead of a native title bar: drag anywhere on the strip to move the window, double-click to maximize or restore, and one click each to minimize, maximize, or close — Close ends the process immediately. On Windows minimize still hides to the notification area and gives its pages back. Always on; there is no switch to turn it off. The tray icon itself toggles: a click restores a hidden or taskbar-minimised window, and hides a visible one. The native menu is forced dark and is three actions plus one separator |
+| **Frameless window, tray-first** | The launcher draws its own header instead of a native title bar: drag anywhere on the strip to move the window, double-click to maximize or restore, and one click each to minimize, maximize, or close — Close ends the process immediately. The corners are rounded by the compositor rather than by a transparent surface, and the three controls are painted strokes, so they keep the system's shapes at every scale factor. On Windows minimize still hides to the notification area and gives its pages back. Always on; there is no switch to turn it off. The tray icon itself toggles: a click restores a hidden or taskbar-minimised window, and hides a visible one. The native menu is forced dark and is three actions plus one separator |
 | **Remembers your setup** | Window size and every remembered switch reopen the way they were left: version-list snapshots, alpha and beta versions, required dependencies, the search providers, and search-as-you-type. A resize is written once the drag settles, and quitting right after one still keeps the newest size |
 | **Updates in one click** | One anonymous GitHub request runs in the background after the window is up. When a newer release exists, the footer version links to it and an **Update** action installs the build right there: the download is SHA-256-verified against the same release, the old executable is backed up, and a failed swap rolls back. Nothing downloads or installs on its own |
 | **Starts with Windows** | One optional per-user sign-in entry opens Kaelis hidden in the tray, with no service, scheduled task, splash, or focus steal. Enable or disable it in Settings or with `kaelis --startup on\|off` |
@@ -108,7 +108,27 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.3.3
+## What's new in 0.3.4
+
+- **Smoothly rounded corners, from the compositor.** The window asks Windows 11
+  for rounded corners and a border-less edge, so the rounding happens at
+  composition time and costs the launcher nothing per frame: no transparent
+  surface, no per-pixel alpha, no extra draw. Windows 10 ignores the request and
+  keeps its own default, as do macOS and Linux.
+- **The window controls are drawn as strokes.** Minimize, maximize or restore,
+  and close are painted lines in the system's own shapes instead of font
+  glyphs, so they stay crisp at every scale factor and no longer depend on the
+  icons a font happens to carry. Close keeps the system's red hover.
+- **Every drop shadow is gone.** Cards, menus, and popups are separated by flat
+  surfaces and hairlines only: fewer feathered shapes to tessellate, and no
+  pixels lit in a dark room that an OLED panel would otherwise switch off.
+- **The window surface is opaque.** The launcher paints every pixel it owns, so
+  requesting per-pixel transparency bought nothing and cost a full-surface
+  alpha blend on every frame. Measured on the development host, window time and
+  working set move within host noise either way; what changed is that work was
+  removed rather than added.
+
+### From 0.3.3
 
 - **Every component sits at its newest patch release.** `openssl-probe` 0.2.2,
   `roxmltree` 0.21.2, and `rustix` 1.1.6 replace their previous patch versions.

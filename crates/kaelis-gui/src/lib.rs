@@ -1149,6 +1149,12 @@ pub struct KaelisApp {
     /// The persisted switches as they were last written, compared once per
     /// frame so any checkbox can change them without its own save call.
     ui_switches_saved: UiSwitches,
+    /// Whether the compositor has been asked for rounded corners yet, and how
+    /// many frames the ask has been retried for.
+    #[cfg(windows)]
+    window_rounded: bool,
+    #[cfg(windows)]
+    window_round_tries: u8,
     /// The window is hidden because a game started, not by the user. Only this
     /// case restores the window automatically when the last game exits.
     hidden_for_game: bool,
@@ -1189,20 +1195,12 @@ fn install_style(context: &egui::Context) {
     visuals.window_rounding = egui::Rounding::same(CORNER_LG);
     visuals.menu_rounding = egui::Rounding::same(CORNER_MD);
     // Flat surfaces and hairline strokes do the separating. A drop shadow
-    // under every card is the fastest way to make a dark UI look muddy, and on
-    // an OLED panel it lights up pixels that would otherwise be off.
-    visuals.window_shadow = egui::epaint::Shadow {
-        offset: egui::vec2(0.0, 8.0),
-        blur: 24.0,
-        spread: 0.0,
-        color: egui::Color32::from_black_alpha(160),
-    };
-    visuals.popup_shadow = egui::epaint::Shadow {
-        offset: egui::vec2(0.0, 6.0),
-        blur: 20.0,
-        spread: 0.0,
-        color: egui::Color32::from_black_alpha(150),
-    };
+    // under every card is the fastest way to make a dark UI look muddy, it
+    // lights up pixels an OLED panel would otherwise switch off, and it is
+    // feathered geometry the painter has to tessellate on every open menu.
+    // Removing it costs nothing and saves all three.
+    visuals.window_shadow = egui::epaint::Shadow::NONE;
+    visuals.popup_shadow = egui::epaint::Shadow::NONE;
     // No global text override: egui derives placeholder/hint text from the
     // widget foreground, so an override would make every hint look like a
     // real value. Colour the widget states instead.
@@ -1570,6 +1568,10 @@ impl KaelisApp {
             launch_at_startup: launcher_settings.launch_at_startup,
             window_size: launcher_settings.window_size,
             window_size_due: None,
+            #[cfg(windows)]
+            window_rounded: false,
+            #[cfg(windows)]
+            window_round_tries: 0,
             ui_switches_saved: UiSwitches {
                 show_snapshots: launcher_settings.show_snapshots,
                 show_alpha: launcher_settings.show_alpha,
@@ -6877,19 +6879,21 @@ impl KaelisApp {
                             .strong(),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if header_button(ui, "✕", "Close").clicked() {
+                        if window_control(ui, WindowControl::Close, "Close").clicked() {
                             self.quit_now();
                         }
                         let maximized = context
                             .input(|input| input.viewport().maximized)
                             .unwrap_or(false);
-                        let glyph = if maximized { "❐" } else { "□" };
-                        if header_button(ui, glyph, if maximized { "Restore" } else { "Maximize" })
-                            .clicked()
-                        {
+                        let (control, tooltip) = if maximized {
+                            (WindowControl::Restore, "Restore")
+                        } else {
+                            (WindowControl::Maximize, "Maximize")
+                        };
+                        if window_control(ui, control, tooltip).clicked() {
                             context.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
                         }
-                        if header_button(ui, "—", "Minimize").clicked() {
+                        if window_control(ui, WindowControl::Minimize, "Minimize").clicked() {
                             platform::minimize_window(context);
                         }
                         let running = self.running_instances.len();
@@ -11644,6 +11648,18 @@ impl eframe::App for KaelisApp {
         // actually changed.
         self.persist_switches_if_changed();
         self.track_window_size(context);
+        #[cfg(windows)]
+        if !self.window_rounded {
+            // The compositor needs the real handle, which exists once the
+            // window does. A retry is bounded so a system that never answers
+            // cannot turn this into a repaint loop, and a system that answers
+            // with an error (Windows 10) is done on the first try.
+            self.window_rounded = platform::round_window_corners();
+            if !self.window_rounded && self.window_round_tries < 20 {
+                self.window_round_tries += 1;
+                context.request_repaint();
+            }
+        }
         Self::window_resize_grips(context);
         Self::paint_backdrop(context);
         self.show_header(context);
@@ -12835,15 +12851,86 @@ fn check_chip(
 /// neighbours and sat at the top of the row. Allocating the control height up
 /// front and painting the dot and text on its centre line keeps every toolbar
 /// on one baseline without adding another widget to the paint path.
-/// One glyph control on the header strip, sized like the rail's icons.
-fn header_button(ui: &mut egui::Ui, glyph: &str, tooltip: &str) -> egui::Response {
-    ui.add(
-        egui::Button::new(egui::RichText::new(glyph).size(12.0).color(MUTED))
-            .frame(false)
-            .min_size(egui::vec2(24.0, CONTROL_HEIGHT)),
-    )
-    .on_hover_text(tooltip)
-    .on_hover_cursor(egui::CursorIcon::PointingHand)
+/// Which window control a header button is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WindowControl {
+    Minimize,
+    Maximize,
+    Restore,
+    Close,
+}
+
+/// One window control on the header strip, drawn with strokes.
+///
+/// Strokes instead of glyphs: the last controls on the window should not depend
+/// on which icons a font happens to carry, and lines stay crisp at every scale
+/// factor. The shapes are the system's — a rule, a frame, two frames, and an
+/// X — so the strip reads like window chrome rather than app buttons. The
+/// close button keeps the system's red hover, which is the one place a window
+/// says “this ends me”.
+fn window_control(ui: &mut egui::Ui, control: WindowControl, tooltip: &str) -> egui::Response {
+    const WIDTH: f32 = 34.0;
+    /// Half the glyph's width: every shape below is drawn inside 12 × 12 points.
+    const HALF: f32 = 6.0;
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(WIDTH, CONTROL_HEIGHT), egui::Sense::click());
+    let hovered = response.hovered();
+    let painter = ui.painter();
+    if hovered {
+        let fill = if control == WindowControl::Close {
+            egui::Color32::from_rgb(150, 34, 26)
+        } else {
+            egui::Color32::from_rgb(25, 29, 36)
+        };
+        painter.rect_filled(rect, egui::Rounding::same(6.0), fill);
+    }
+    let color = if hovered {
+        egui::Color32::from_rgb(255, 255, 255)
+    } else {
+        MUTED
+    };
+    let stroke = egui::Stroke::new(1.25_f32, color);
+    let center = rect.center();
+    let size = egui::vec2(HALF * 2.0, HALF * 2.0);
+    match control {
+        WindowControl::Minimize => {
+            painter.hline(
+                (center.x - HALF)..=(center.x + HALF),
+                center.y + HALF - 1.0,
+                stroke,
+            );
+        }
+        WindowControl::Maximize => {
+            painter.rect_stroke(
+                egui::Rect::from_center_size(center, size),
+                egui::Rounding::same(1.5),
+                stroke,
+            );
+        }
+        WindowControl::Restore => {
+            // The system's restore shape: a near frame, then the front one.
+            let offset = egui::vec2(2.0, -2.0);
+            let front = egui::Rect::from_center_size(center + egui::vec2(-1.0, 1.0), size);
+            let back = front.translate(offset);
+            painter.line_segment([back.left_top(), back.right_top()], stroke);
+            painter.line_segment([back.right_top(), back.right_bottom()], stroke);
+            painter.rect_stroke(front, egui::Rounding::same(1.5), stroke);
+        }
+        WindowControl::Close => {
+            let half = egui::vec2(HALF, HALF);
+            painter.line_segment([center - half, center + half], stroke);
+            painter.line_segment(
+                [
+                    center + egui::vec2(-HALF, HALF),
+                    center + egui::vec2(HALF, -HALF),
+                ],
+                stroke,
+            );
+        }
+    }
+    response
+        .on_hover_text(tooltip)
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 fn status_pill(ui: &mut egui::Ui, text: &str, color: egui::Color32) -> egui::Response {
