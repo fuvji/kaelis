@@ -898,13 +898,26 @@ mod tests {
         std::fs::write(version_dir.join("1.21.1.jar"), b"jar").unwrap();
     }
 
-    #[test]
-    fn missing_install_files_names_the_gap_and_clears_when_filled() {
-        let root = std::env::temp_dir().join(format!(
-            "kaelis-health-{}-{:?}",
+    /// A scratch root the installer will accept.
+    ///
+    /// `safe_destination` refuses a root whose path passes through a symlink,
+    /// and macOS hands out `TMPDIR=/var/folders/…` where `/var` is a link to
+    /// `/private/var`. Canonicalizing first gives the test a real directory on
+    /// every platform without weakening the production rule, which protects
+    /// instance trees rather than the system temp folder.
+    fn safe_scratch(name: &str) -> PathBuf {
+        let base =
+            std::fs::canonicalize(std::env::temp_dir()).unwrap_or_else(|_| std::env::temp_dir());
+        base.join(format!(
+            "kaelis-{name}-{}-{:?}",
             std::process::id(),
             std::thread::current().id()
-        ));
+        ))
+    }
+
+    #[test]
+    fn missing_install_files_names_the_gap_and_clears_when_filled() {
+        let root = safe_scratch("health");
         let _ = std::fs::remove_dir_all(&root);
         // Nothing installed: the version metadata is the first gap.
         assert_eq!(
@@ -940,11 +953,7 @@ mod tests {
 
     #[test]
     fn a_marker_for_another_version_is_not_proof() {
-        let root = std::env::temp_dir().join(format!(
-            "kaelis-marker-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
+        let root = safe_scratch("marker");
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("versions/1.21.1")).unwrap();
         write_complete_marker(&root, "1.20.4").unwrap();
