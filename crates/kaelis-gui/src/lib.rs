@@ -96,7 +96,11 @@ const INSTANCE_ICON_BYTES: u64 = 8 * 1024 * 1024;
 /// Stored artwork edge. 256 px covers a 96 px card at 2x and stays small.
 const ARTWORK_EDGE: u32 = 256;
 /// Typing pauses this long before the mod browser queries both platforms.
-const MOD_SEARCH_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(450);
+///
+/// Long enough to fold a burst of keystrokes into one request, short enough
+/// that the first result does not feel like a wait; an explicit Enter still
+/// searches on the spot.
+const MOD_SEARCH_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(200);
 /// Results requested per provider per page. Paging, not truncation, is what
 /// keeps the catalogue browsable.
 const MOD_SEARCH_LIMIT: u32 = 30;
@@ -6188,7 +6192,17 @@ impl KaelisApp {
                     ui.add_space(1.0);
                 }
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                    if rail {
+                    // The identity block is chosen from what the tab list left
+                    // behind, not from a window height: a short window then
+                    // keeps every tab reachable instead of letting the card
+                    // paint over Settings. The rail always takes the compact
+                    // form because its labels do not fit at all.
+                    const FULL_IDENTITY_HEIGHT: f32 = 88.0;
+                    let room = ui.available_height();
+                    if room < 30.0 {
+                        // Not even one button fits; the Account tab above is
+                        // the same destination.
+                    } else if rail || room < FULL_IDENTITY_HEIGHT {
                         // One 30 px identity button: the same click target as
                         // the full card, without a label that cannot fit.
                         let (rect, response) = ui.allocate_exact_size(
@@ -6210,7 +6224,7 @@ impl KaelisApp {
                             ui.painter().text(
                                 rect.center(),
                                 egui::Align2::CENTER_CENTER,
-                                self.account_name().chars().next().unwrap_or('K'),
+                                self.account_initial(),
                                 egui::FontId::proportional(13.0),
                                 accent(),
                             );
@@ -6263,7 +6277,7 @@ impl KaelisApp {
                                     ui.painter().text(
                                         rect.center(),
                                         egui::Align2::CENTER_CENTER,
-                                        self.account_name().chars().next().unwrap_or('K'),
+                                        self.account_initial(),
                                         egui::FontId::proportional(13.5),
                                         accent(),
                                     );
@@ -6314,6 +6328,18 @@ impl KaelisApp {
 
     /// Short identity line for the sidebar card. The saved count makes a
     /// multi-account setup visible without opening the tab.
+    /// One letter for the avatar disc. Signed out there is no identity to
+    /// initial, and the first letter of "No account" read as an N, which looks
+    /// like a real profile; the brand mark is the honest placeholder.
+    fn account_initial(&self) -> char {
+        let signed_in = self.microsoft_session.is_some() || self.offline_account.is_some();
+        if signed_in {
+            self.account_name().chars().next().unwrap_or('K')
+        } else {
+            'K'
+        }
+    }
+
     fn account_kind(&self) -> String {
         let base = if self.microsoft_session.is_some() {
             "Microsoft · online"

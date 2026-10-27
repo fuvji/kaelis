@@ -1,6 +1,6 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.3.4-70a5ff)
+![Version](https://img.shields.io/badge/version-0.3.5-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
@@ -108,7 +108,25 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.3.4
+## What's new in 0.3.5
+
+- **The window can be made short again.** The minimum height drops from 520 to
+  320 points, and the restore check reads the same constant, so a window you
+  resize small reopens small instead of snapping back to 1080×700. The floor
+  is what the chrome actually needs: header, footer, margins, and the 220 pt
+  body floor the Content browser sets for its panes. Everything below that
+  scrolls. Read back from the running window, the drag limit is 760×320.
+- **The sidebar stops overlapping itself.** The identity card is replaced by the
+  30 px avatar button when the tab list leaves less than 88 pt below it, so a
+  short window still shows all five tabs. Signed out, that disc reads `K`
+  instead of the `N` it was taking from the words "No account".
+- **Two waits removed.** A typing pause in the Content browser now starts its
+  search after 200 ms instead of 450 ms, and on macOS and Linux the launcher
+  notices a finished game every 100 ms instead of every 300 ms (Windows was
+  already event-driven). Neither changes what is sent or how often a game is
+  polled while it runs.
+
+### From 0.3.4
 
 - **Smoothly rounded corners, from the compositor.** The window asks Windows 11
   for rounded corners and a border-less edge, so the rounding happens at

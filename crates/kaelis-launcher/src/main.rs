@@ -1743,6 +1743,15 @@ fn renderer_attempts(requested: Option<&str>) -> Vec<(eframe::Renderer, &'static
     }
 }
 
+/// Smallest window the launcher will let itself be dragged down to.
+///
+/// The height is what is left once the fixed chrome is removed: the header
+/// strip, the footer, the central margins, and the 220 pt floor the Content
+/// browse body sets for its two panes. Every page body outside that floor
+/// scrolls, so nothing has to grow to fit — the old 520 pt floor was inherited
+/// from the first-launch guess and only stopped the window being made short.
+const MIN_WINDOW_SIZE: [f32; 2] = [760.0, 320.0];
+
 /// The inner size to open the window at.
 ///
 /// Only a plausible saved size is restored: below the window's own minimum, or
@@ -1750,7 +1759,8 @@ fn renderer_attempts(requested: Option<&str>) -> Vec<(eframe::Renderer, &'static
 /// is used instead. `[0.0, 0.0]` means "never resized", so a first launch is
 /// never a guess.
 fn restored_window_size(saved: [f32; 2]) -> [f32; 2] {
-    if (760.0..=8192.0).contains(&saved[0]) && (520.0..=8192.0).contains(&saved[1]) {
+    let [min_width, min_height] = MIN_WINDOW_SIZE;
+    if (min_width..=8192.0).contains(&saved[0]) && (min_height..=8192.0).contains(&saved[1]) {
         saved
     } else {
         [1080.0, 700.0]
@@ -1777,7 +1787,7 @@ fn native_options(
             // Fits a 1366×768 laptop with the taskbar visible; eframe restores
             // the last size and position once the window has been moved.
             .with_inner_size(window_size)
-            .with_min_inner_size([760.0, 520.0])
+            .with_min_inner_size(MIN_WINDOW_SIZE)
             // The launcher draws its own header strip, drag handle, and window
             // controls, so the native title bar is redundant chrome: removing
             // it leaves the panel edge to edge and takes the OS frame's work
@@ -1839,8 +1849,8 @@ fn fail(message: String) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        Action, MAX_REDIRECTS, parse_args, redirect_chain_is_allowed, renderer_attempts,
-        restored_window_size,
+        Action, MAX_REDIRECTS, MIN_WINDOW_SIZE, parse_args, redirect_chain_is_allowed,
+        renderer_attempts, restored_window_size,
     };
     use reqwest::Url;
 
@@ -1851,10 +1861,17 @@ mod tests {
     #[test]
     fn a_saved_window_size_is_restored_only_when_it_is_plausible() {
         assert_eq!(restored_window_size([1440.0, 900.0]), [1440.0, 900.0]);
+        // A short window is a choice, not corruption: the height floor has to
+        // track the window's own minimum or a resize would be undone on restart.
+        assert_eq!(
+            restored_window_size([900.0, MIN_WINDOW_SIZE[1]]),
+            [900.0, MIN_WINDOW_SIZE[1]]
+        );
         // Never resized: the default that fits a 1366×768 laptop.
         assert_eq!(restored_window_size([0.0, 0.0]), [1080.0, 700.0]);
         // Below the window's own minimum, or nonsense from a corrupt file.
         assert_eq!(restored_window_size([320.0, 200.0]), [1080.0, 700.0]);
+        assert_eq!(restored_window_size([900.0, 200.0]), [1080.0, 700.0]);
         assert_eq!(restored_window_size([99_999.0, 10.0]), [1080.0, 700.0]);
         assert_eq!(restored_window_size([f32::NAN, 900.0]), [1080.0, 700.0]);
     }

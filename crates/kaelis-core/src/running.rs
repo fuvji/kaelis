@@ -286,10 +286,12 @@ mod imp {
     }
 
     pub(super) fn wait(pid: u32, started: u64) {
-        // Polling a gone-pid check costs one syscall per 300 ms and needs no
-        // /proc parsing; a game exits once, so the loop is short-lived.
+        // One syscall every 100 ms, no /proc parsing. The shorter step is what
+        // the user feels: it is the lag between quitting the game and the
+        // launcher coming back, and ten checks a second costs nothing while a
+        // game is running.
         while validate(pid, started) {
-            std::thread::sleep(std::time::Duration::from_millis(300));
+            std::thread::sleep(std::time::Duration::from_millis(100));
         }
     }
 }
