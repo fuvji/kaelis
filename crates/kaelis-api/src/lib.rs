@@ -8,6 +8,7 @@ pub mod curseforge;
 pub mod downloader;
 pub mod foreign;
 pub mod hash;
+pub mod health;
 pub mod launch;
 pub mod loader;
 pub mod modmeta;
@@ -31,6 +32,7 @@ pub use accounts::{
     load_settings, migrated_accounts, resolved_mode, save_settings, settings_path, switch_account,
 };
 pub use auth::{AuthSession, MicrosoftAuth, MinecraftProfile, offline_profile};
+pub use health::Readiness;
 pub use mods::{
     ContentKind, InstallReport, ModPlatformClient, ModProvider, ModSearchItem, ModSearchResults,
 };

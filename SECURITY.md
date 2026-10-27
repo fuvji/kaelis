@@ -2,7 +2,8 @@
 
 Kaelis stores credentials in the operating system keychain and contacts only the
 services it needs: Mojang, Modrinth, and CurseForge. There is no telemetry and no
-background service.
+background service, and every launch rewrites the instance's `options.txt` to
+`telemetryOptIn:false` so the game cannot send any either.
 
 ## Supported versions
 

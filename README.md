@@ -1,10 +1,10 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.3.0-70a5ff)
+![Version](https://img.shields.io/badge/version-0.3.1-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
-![Tests](https://img.shields.io/badge/tests-269%20passing-3fb950)
+![Tests](https://img.shields.io/badge/tests-278%20passing-3fb950)
 
 <img width="1080" height="700" alt="Accounts tab: the active identity and every saved offline or Microsoft account" src="site/assets/app-accounts.png" />
 
@@ -21,7 +21,7 @@ keep that library clean, correct, and fast on their own.
 | --- | --- |
 | **Auto Erase Junk** | Clears logs, crash dumps, loader caches (including Architectury Transformer scratch), mod download caches, typed command history, extracted natives, stale server packs, heap dumps, interrupted downloads even when they keep their real name, OS thumbnail files inside content folders, and stale official-launcher state (including its saved Microsoft profile and credential) at every start and after every game — capped so it can never stall startup. Always on; an old settings file cannot disable it. Folders it does not recognise are always kept |
 | **One copy of the game** | Every verified download — libraries, assets, client jar, Java runtime — is hard-linked into a content-addressed store, so a second instance of the same version occupies a few extra MB instead of another 600 MB. Store entries no instance references are pruned automatically |
-| **Auto-repair before launch** | Scans the instance's mods and installs missing required mods (for example `ukulib` for uku's Armor HUD) before the JVM starts |
+| **Auto-repair before launch** | Checks the JVM, version metadata, client jar, libraries, assets, and loader before every launch and fills whatever is missing from Mojang's own metadata, then starts the game — and scans the instance's mods, installing missing required mods (for example `ukulib` for uku's Armor HUD) before the JVM starts |
 | **Auto-disable duplicates** | Keeps the newest jar when two files provide the same mod id, so the older copy cannot crash the game first |
 | **Required dependencies** | Every install resolves and downloads the dependency graph — Modrinth and CurseForge alike |
 | **Verified mod updates** | Hash-matches installed jars, finds the newest compatible release for each, and replaces it only after SHA-1 verification; disabled jars stay disabled |
@@ -35,7 +35,7 @@ keep that library clean, correct, and fast on their own.
 | **Updates in one click** | One anonymous GitHub request runs in the background after the window is up. When a newer release exists, the footer version links to it and an **Update** action installs the build right there: the download is SHA-256-verified against the same release, the old executable is backed up, and a failed swap rolls back. Nothing downloads or installs on its own |
 | **Starts with Windows** | One optional per-user sign-in entry opens Kaelis hidden in the tray, with no service, scheduled task, splash, or focus steal. Enable or disable it in Settings or with `kaelis --startup on\|off` |
 | **Survives a launcher restart** | A game's process id and creation time are recorded when it spawns, so reopening Kaelis still shows Quit for a game that is running, keeps a second JVM off the same world, and can end that game from the card |
-| **Private by default** | RAM-only instance logs, no telemetry, no analytics, no background daemon, nothing stored that the OS credential store can hold instead |
+| **Private by default** | RAM-only instance logs, no telemetry, no analytics, no background daemon, nothing stored that the OS credential store can hold instead — and every instance's own Minecraft telemetry switch is forced off before the game can read it |
 
 **Auto Erase Junk never guesses.** It removes only what Minecraft or Kaelis
 regenerates on the next launch: `logs`, `crash-reports`, `.cache`, `.mixin.out`,
@@ -107,7 +107,30 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.3.0
+## What's new in 0.3.1
+
+- **Play repairs the instance before it launches.** Missing pieces are found
+  with filesystem checks only — no network round trip — and then filled from
+  Mojang's own metadata: the version-matched Java runtime, the version
+  metadata, the client jar, any missing library, the asset index, missing game
+  assets, and a Fabric-family loader. The launch continues by itself once the
+  gap is closed, so a fresh machine, a half-finished download, or a deleted
+  library is no longer a dead end. A gap Kaelis cannot fill on its own — a
+  Forge or NeoForge loader — is reported with the reason instead of failing
+  deep inside the game's log.
+- **Minecraft's own telemetry is forced off.** Every launch rewrites the
+  instance's `options.txt` to `telemetryOptIn:false` (and the legacy
+  `snooperEnabled`) while preserving every other line and its order. Kaelis
+  itself still collects nothing.
+- **A configured Java that moved no longer fails a launch.** The configured
+  path is tried first; when it no longer resolves, the instance runtime, the
+  `PATH`, and then an installed JDK are used, and only a machine with none of
+  those reports the problem by name.
+- **Quieter idle timers.** The temp sweep runs every 15 minutes over an hour of
+  grace instead of every 5, and a completed install writes a small marker so a
+  healthy instance starts without walking its asset tree.
+
+### From 0.3.0
 
 - **Every platform has an installable build.** Windows keeps the portable ZIP
   and per-user setup. macOS now ships `Kaelis-macos-universal.dmg`, one image

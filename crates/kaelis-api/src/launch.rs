@@ -154,13 +154,32 @@ fn platform_arch() -> &'static str {
 }
 
 fn resolve_java_executable(instance: &Instance) -> Result<OsString, LaunchError> {
-    match instance.java_path.as_deref() {
-        Some(path) => crate::runtime::java_from_setting(path)
-            .map(PathBuf::into_os_string)
-            .ok_or_else(|| LaunchError::MissingJavaExecutable(path.display().to_string())),
-        None => Ok(crate::runtime::managed_java(&instance.root)
-            .map(PathBuf::into_os_string)
-            .unwrap_or_else(|| OsString::from(crate::runtime::java_binary_name()))),
+    java_or_error(
+        instance.java_path.as_deref(),
+        crate::runtime::resolve_java(instance),
+    )
+}
+
+/// Resolve the JVM to start from the full search order, and only complain when
+/// the user pointed at a Java that is no longer there *and* nothing else on the
+/// machine can run the game.
+///
+/// The order is deliberate: a configured path wins when it is usable, its former
+/// location having moved or been upgraded falls through to the instance runtime,
+/// the `PATH`, and an installed JDK instead of failing a launch that the rest of
+/// the machine can serve.
+fn java_or_error(
+    configured: Option<&Path>,
+    resolved: Option<PathBuf>,
+) -> Result<OsString, LaunchError> {
+    if let Some(java) = resolved {
+        return Ok(java.into_os_string());
+    }
+    match configured {
+        Some(path) => Err(LaunchError::MissingJavaExecutable(
+            path.display().to_string(),
+        )),
+        None => Ok(OsString::from(crate::runtime::java_binary_name())),
     }
 }
 
@@ -397,6 +416,11 @@ fn prepare_launch_plan(
     instance: &Instance,
     identity: &LaunchIdentity,
 ) -> Result<LaunchPlan, LaunchError> {
+    // Minecraft's own online telemetry is switched off on every plan, so a
+    // hand-edited `true` or a pack that shipped one is corrected before the
+    // game can read it. Best-effort: an unwritable options file must not stop
+    // a launch.
+    let _ = kaelis_core::telemetry::enforce_disabled(&instance.root);
     let valid_version = !instance.mc_version.is_empty()
         && instance.mc_version.len() <= 64
         && instance
@@ -1185,13 +1209,27 @@ mod tests {
     }
 
     #[test]
-    fn missing_configured_java_executable_fails_clearly() {
-        let mut instance = test_instance();
-        instance.java_path = Some(std::env::temp_dir().join("kaelis-missing-java.exe"));
+    fn a_vanished_configured_java_falls_back_before_it_complains() {
+        let configured = std::env::temp_dir().join("kaelis-missing-java.exe");
+        // Nothing else on the machine can run the game: the configured path is
+        // named in the error instead of a vague spawn failure.
         assert!(matches!(
-            resolve_java_executable(&instance),
+            java_or_error(Some(&configured), None),
             Err(LaunchError::MissingJavaExecutable(_))
         ));
+        // A managed runtime, PATH java, or an installed JDK serves the launch
+        // even though the configured path is gone.
+        let fallback = std::env::temp_dir().join("kaelis-java.exe");
+        assert_eq!(
+            java_or_error(Some(&configured), Some(fallback.clone())).unwrap(),
+            fallback.into_os_string()
+        );
+        // No configured path and no discovery: the bare name defers to PATH,
+        // which is exactly what this launcher did before managed runtimes.
+        assert_eq!(
+            java_or_error(None, None).unwrap(),
+            OsString::from(crate::runtime::java_binary_name())
+        );
     }
 
     #[test]

@@ -859,6 +859,19 @@ pub(crate) enum GuiEvent {
         instance_id: String,
         result: Result<PathBuf, String>,
     },
+    /// One line of a pre-launch repair pass, plus a download count when a
+    /// phase has measurable progress.
+    InstanceRepairProgress {
+        instance_id: String,
+        message: String,
+        progress: Option<(usize, usize)>,
+    },
+    /// A pre-launch repair pass ended. `Ok` carries the summary; a launch the
+    /// user asked for continues on either answer.
+    InstanceRepaired {
+        instance_id: String,
+        result: Result<String, String>,
+    },
     Notice(String),
     /// Account files were read from another launcher or a picked file.
     AccountsImported(Result<ImportScan, String>),
@@ -938,8 +951,6 @@ pub struct KaelisApp {
     portable_busy: bool,
     /// Folder of the last export, so a second one starts where the first went.
     last_export_dir: Option<PathBuf>,
-    /// True when Play provisioned Java first and must continue into the game.
-    launch_after_java: bool,
     current_tab: Tab,
     status: String,
     status_kind: StatusKind,
@@ -1377,7 +1388,6 @@ impl KaelisApp {
             idle_trimmed: false,
             portable_busy: false,
             last_export_dir: None,
-            launch_after_java: false,
             current_tab,
             status,
             status_kind: StatusKind::Info,
@@ -4573,23 +4583,28 @@ impl KaelisApp {
             return;
         };
 
-        // First play on a machine without a system JDK: fetch the
-        // version-matched Mojang runtime now instead of failing later inside
-        // `Command::spawn` with "program not found".
-        if kaelis_api::runtime::resolve_java(&instance).is_none() {
+        self.continue_launch(instance, identity, context);
+    }
+
+    /// The last gate before Java: make the instance whole, settle mod
+    /// dependencies, then start the game.
+    fn continue_launch(
+        &mut self,
+        instance: Instance,
+        identity: LaunchIdentity,
+        context: egui::Context,
+    ) {
+        // A JVM, the client files, and the loader are what a launch cannot do
+        // without. They are repaired from Mojang's metadata and the launch
+        // continues, so Play is never a dead end on a fresh or damaged
+        // instance.
+        let readiness = kaelis_api::health::check(&instance);
+        if !readiness.ready() {
             self.pending_launch = Some((instance.clone(), identity));
-            self.launch_after_java = true;
-            self.set_status(
-                StatusKind::Busy,
-                format!(
-                    "No Java found — installing the runtime for {} first…",
-                    instance.name
-                ),
-            );
-            self.install_runtime_for_instance(context.clone(), instance);
+            self.set_status(StatusKind::Busy, readiness.summary());
+            self.begin_instance_repair(context, instance);
             return;
         }
-
         // A launch is the moment missing dependencies actually matter, so
         // resolve them first instead of failing inside the game's log.
         let missing = self
@@ -4612,6 +4627,48 @@ impl KaelisApp {
             return;
         }
         self.start_launch(instance, identity, context);
+    }
+
+    /// Fill an instance's missing pieces off the UI thread, reporting each step
+    /// to the status bar, then continue the launch that asked for it.
+    fn begin_instance_repair(&mut self, context: egui::Context, mut instance: Instance) {
+        let instance_id = instance.id.clone();
+        let client = self.http.clone();
+        let sender = self.sender.clone();
+        let repaint = context;
+        let progress_sender = sender.clone();
+        let progress_context = repaint.clone();
+        let progress_instance_id = instance_id.clone();
+        self.runtime.spawn(async move {
+            let result = kaelis_api::health::repair(&client, &mut instance, move |update| {
+                let (message, progress) = match update {
+                    kaelis_api::health::RepairProgress::Message(message) => (message, None),
+                    kaelis_api::health::RepairProgress::Download { completed, total } => (
+                        format!("Downloading ({completed}/{total})…"),
+                        Some((completed, total)),
+                    ),
+                };
+                send_event(
+                    &progress_sender,
+                    &progress_context,
+                    GuiEvent::InstanceRepairProgress {
+                        instance_id: progress_instance_id.clone(),
+                        message,
+                        progress,
+                    },
+                );
+            })
+            .await
+            .map(|report| report.summary());
+            send_event(
+                &sender,
+                &repaint,
+                GuiEvent::InstanceRepaired {
+                    instance_id,
+                    result,
+                },
+            );
+        });
     }
 
     fn start_launch(
@@ -5513,7 +5570,6 @@ impl KaelisApp {
                 if self.installing_runtime.as_deref() == Some(instance_id.as_str()) {
                     self.installing_runtime = None;
                     self.install_progress = None;
-                    let java_ready = result.is_ok();
                     let (kind, text) = match result {
                         Ok(path) => {
                             let save_result = self
@@ -5551,20 +5607,50 @@ impl KaelisApp {
                     };
                     self.set_status(kind, text);
                     self.refresh_instance_cards();
-                    if !java_ready && self.launch_after_java {
-                        self.launch_after_java = false;
-                        self.pending_launch = None;
-                    }
-                    // Play provisioned Java first; continue into the game now
-                    // that the runtime is on disk.
-                    if java_ready && self.launch_after_java {
-                        self.launch_after_java = false;
-                        if let Some((pending, identity)) = self
-                            .pending_launch
-                            .take_if(|(item, _)| item.id == instance_id)
-                        {
-                            self.start_launch(pending, identity, context.clone());
-                        }
+                }
+            }
+            GuiEvent::InstanceRepairProgress {
+                instance_id,
+                message,
+                progress,
+            } => {
+                // Only the instance waiting on a repair owns the status line;
+                // a late event from an erased instance is dropped.
+                if self
+                    .pending_launch
+                    .as_ref()
+                    .is_some_and(|(item, _)| item.id == instance_id)
+                {
+                    self.install_progress = progress;
+                    self.set_status(StatusKind::Busy, message);
+                }
+            }
+            GuiEvent::InstanceRepaired {
+                instance_id,
+                result,
+            } => {
+                self.install_progress = None;
+                match result {
+                    Ok(summary) => self.set_status(StatusKind::Success, summary),
+                    Err(error) => self.set_status(
+                        StatusKind::Error,
+                        format!("Could not repair the instance: {error}"),
+                    ),
+                }
+                let pending = self
+                    .pending_launch
+                    .take_if(|(item, _)| item.id == instance_id);
+                if let Some((pending, identity)) = pending {
+                    // Only a pass that actually filled every gap continues;
+                    // anything else is reported instead of looping.
+                    let readiness = kaelis_api::health::check(&pending);
+                    if readiness.ready() {
+                        self.continue_launch(pending, identity, context.clone());
+                    } else {
+                        self.set_status(
+                            StatusKind::Warning,
+                            format!("Still not launchable: {}", readiness.issues().join(", ")),
+                        );
                     }
                 }
             }
@@ -5793,7 +5879,9 @@ impl KaelisApp {
                     self.apply_offline_head(context, &profile.name);
                     self.request_offline_skin(context, &profile.name);
                     self.auth_status = format!("Offline profile ready: {}", profile.name);
-                    self.start_launch(instance, identity, context.clone());
+                    // A forwarded launch gets the same repair gate as the Play
+                    // button: the instance is made whole before Java starts.
+                    self.continue_launch(instance, identity, context.clone());
                     return;
                 }
                 self.launch_selected(context.clone());
@@ -5809,9 +5897,12 @@ impl KaelisApp {
 
     fn restart_sweeper(&mut self) {
         if self.sweeper.is_none() {
+            // 15-minute ticks over an hour of grace: the sweep almost always
+            // has nothing to remove, so it should not wake more often than the
+            // lifetime of the files it collects.
             self.sweeper = Some(kaelis_core::sweeper::spawn_background_sweeper(
                 &self.runtime,
-                300,
+                900,
                 3600,
             ));
         }

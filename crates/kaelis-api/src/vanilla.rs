@@ -496,6 +496,105 @@ fn asset_tasks(index: &AssetIndex, root: &Path) -> Result<Vec<DownloadTask>, Van
     Ok(tasks)
 }
 
+/// Marker written after a completed install.
+///
+/// The deep asset pass costs one filesystem lookup per game asset — fast on a
+/// warm cache, slow on a cold spinning disk. The marker records that the pass
+/// already ran to completion, so an installed instance pays for it once and
+/// only cheap checks after that.
+const COMPLETE_MARKER: &str = ".kaelis-complete.json";
+
+fn complete_marker_path(root: &Path, version_id: &str) -> PathBuf {
+    root.join("versions").join(version_id).join(COMPLETE_MARKER)
+}
+
+/// Whether [`install_vanilla`] already completed for this version here.
+pub fn install_complete(root: &Path, version_id: &str) -> bool {
+    let Ok(bytes) = std::fs::read(complete_marker_path(root, version_id)) else {
+        return false;
+    };
+    serde_json::from_slice::<Value>(&bytes)
+        .ok()
+        .and_then(|stamp| stamp.get("id").and_then(Value::as_str).map(str::to_owned))
+        .is_some_and(|id| id == version_id)
+}
+
+fn write_complete_marker(root: &Path, version_id: &str) -> Result<(), VanillaInstallError> {
+    let stamp = serde_json::json!({
+        "id": version_id,
+        "at": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|since| since.as_secs())
+            .unwrap_or(0),
+    });
+    write_version_metadata(
+        &complete_marker_path(root, version_id),
+        &serde_json::to_vec(&stamp)?,
+    )
+}
+
+/// Which files a launch needs but cannot see under `root`.
+///
+/// Cheap by design: the version JSON and client jar are two stats, the library
+/// list is checked by path, and the asset objects are only walked on an
+/// instance that has no completion marker (an import, or a manual copy). An
+/// empty result means the instance is launchable without touching the network.
+pub fn missing_install_files(
+    root: &Path,
+    version_id: &str,
+) -> Result<Vec<PathBuf>, VanillaInstallError> {
+    if !valid_version_id(version_id) {
+        return Err(VanillaInstallError::Invalid("version id"));
+    }
+    let version_dir = root.join("versions").join(version_id);
+    let metadata_path = version_dir.join(format!("{version_id}.json"));
+    if !metadata_path.is_file() {
+        return Ok(vec![metadata_path]);
+    }
+    let client_jar = version_dir.join(format!("{version_id}.jar"));
+    if !client_jar.is_file() {
+        return Ok(vec![client_jar]);
+    }
+    let metadata: Value = serde_json::from_slice(&std::fs::read(&metadata_path)?)?;
+    let mut missing = Vec::new();
+    for task in library_tasks(&metadata, root)? {
+        if !task.dest.is_file() {
+            missing.push(task.dest);
+        }
+    }
+    let Some(index_info) = metadata.get("assetIndex") else {
+        return Ok(missing);
+    };
+    let Some(index_id) = index_info.get("id").and_then(Value::as_str) else {
+        return Ok(missing);
+    };
+    if !valid_version_id(index_id) {
+        return Err(VanillaInstallError::Invalid("asset index id"));
+    }
+    let index_path = safe_destination(
+        &root.join("assets").join("indexes"),
+        &format!("{index_id}.json"),
+    )?;
+    if !index_path.is_file() {
+        missing.push(index_path);
+        return Ok(missing);
+    }
+    if install_complete(root, version_id) {
+        return Ok(missing);
+    }
+    let index_bytes = std::fs::read(&index_path)?;
+    if index_bytes.len() > MAX_METADATA_BYTES {
+        return Err(VanillaInstallError::Invalid("asset index size"));
+    }
+    let index: AssetIndex = serde_json::from_slice(&index_bytes)?;
+    for task in asset_tasks(&index, root)? {
+        if !task.dest.is_file() {
+            missing.push(task.dest);
+        }
+    }
+    Ok(missing)
+}
+
 fn throttled_progress<F>(
     callback: Arc<F>,
     last_reported: Arc<AtomicUsize>,
@@ -608,6 +707,9 @@ where
         return Err(VanillaInstallError::Invalid("HTTPS version metadata URL"));
     }
     std::fs::create_dir_all(&root)?;
+    // A marker from a previous, now-broken install must not survive into the
+    // new one; it is written again only after every file is in place.
+    let _ = std::fs::remove_file(complete_marker_path(&root, &version.id));
     let metadata_bytes = fetch_json(client, version_url.as_str()).await?;
     let metadata: Value = serde_json::from_slice(&metadata_bytes)?;
     let metadata_id = metadata
@@ -712,6 +814,9 @@ where
     )?;
     let metadata_bytes = serde_json::to_vec(&metadata)?;
     write_version_metadata(&metadata_path, &metadata_bytes)?;
+    // A completed install is recorded so the next launch only re-checks the
+    // cheap paths. A failure here costs one deep scan, never a repair.
+    let _ = write_complete_marker(&root, &version.id);
     progress(InstallProgress::Complete);
     Ok(())
 }
@@ -765,5 +870,85 @@ mod tests {
             cfg!(all(target_os = "windows", target_arch = "x86_64"))
         );
         assert!(!library_allowed(&windows_arm64));
+    }
+
+    fn health_fixture(root: &Path) {
+        let version_dir = root.join("versions").join("1.21.1");
+        std::fs::create_dir_all(&version_dir).unwrap();
+        std::fs::write(
+            version_dir.join("1.21.1.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "id": "1.21.1",
+                "libraries": [{
+                    "name": "org.ow2.asm:asm:9.7",
+                    "downloads": {
+                        "artifact": {
+                            "path": "org/ow2/asm/asm/9.7/asm-9.7.jar",
+                            "url": "https://libraries.minecraft.net/org/ow2/asm/asm/9.7/asm-9.7.jar",
+                            "sha1": "0000000000000000000000000000000000000000",
+                            "size": 1
+                        }
+                    }
+                }],
+                "assetIndex": {"id": "5", "url": "https://piston-meta.mojang.com/x.json"}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(version_dir.join("1.21.1.jar"), b"jar").unwrap();
+    }
+
+    #[test]
+    fn missing_install_files_names_the_gap_and_clears_when_filled() {
+        let root = std::env::temp_dir().join(format!(
+            "kaelis-health-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        // Nothing installed: the version metadata is the first gap.
+        assert_eq!(
+            missing_install_files(&root, "1.21.1").unwrap().len(),
+            1,
+            "an uninstalled version reports its metadata"
+        );
+        health_fixture(&root);
+        // Metadata and client jar exist, so the library and asset index show up.
+        let missing = missing_install_files(&root, "1.21.1").unwrap();
+        assert_eq!(
+            missing.len(),
+            2,
+            "library jar plus asset index: {missing:?}"
+        );
+        assert!(missing.iter().any(|path| path.ends_with("asm-9.7.jar")));
+        assert!(missing.iter().any(|path| path.ends_with("indexes/5.json")));
+        // Fill both, plus an empty object index: a clean install reports none.
+        let library = root.join("libraries/org/ow2/asm/asm/9.7/asm-9.7.jar");
+        std::fs::create_dir_all(library.parent().unwrap()).unwrap();
+        std::fs::write(&library, b"jar").unwrap();
+        let index = root.join("assets/indexes/5.json");
+        std::fs::create_dir_all(index.parent().unwrap()).unwrap();
+        std::fs::write(&index, br#"{"objects":{}}"#).unwrap();
+        assert!(missing_install_files(&root, "1.21.1").unwrap().is_empty());
+        // The completion marker is what makes the asset pass one-time work.
+        assert!(!install_complete(&root, "1.21.1"));
+        write_complete_marker(&root, "1.21.1").unwrap();
+        assert!(install_complete(&root, "1.21.1"));
+        assert!(missing_install_files(&root, "1.21.1").unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_marker_for_another_version_is_not_proof() {
+        let root = std::env::temp_dir().join(format!(
+            "kaelis-marker-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("versions/1.21.1")).unwrap();
+        write_complete_marker(&root, "1.20.4").unwrap();
+        assert!(!install_complete(&root, "1.21.1"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -40,7 +40,7 @@
         "applicationSubCategory": "Minecraft launcher",
         "operatingSystem": "Windows 10, Windows 11, macOS 11, Linux",
         "processorRequirements": "x86_64 or arm64",
-        "softwareVersion": "0.3.0",
+        "softwareVersion": "0.3.1",
         "softwareRequirements": "Rust 1.85+ to build from source; Java is provisioned automatically",
         "downloadUrl": "https://fuvji.github.io/kaelis/downloads/Kaelis-Portable.zip",
         "installUrl": "https://fuvji.github.io/kaelis/#downloads",
@@ -82,7 +82,7 @@
           {
             "@type": "Question",
             "name": "Does Kaelis collect telemetry?",
-            "acceptedAnswer": { "@type": "Answer", "text": "No telemetry, no analytics, and no background services. The launcher only contacts the providers you use." }
+            "acceptedAnswer": { "@type": "Answer", "text": "No telemetry, no analytics, and no background services. Kaelis also rewrites each instance's options.txt to telemetryOptIn:false before launch, so the game itself cannot send any either." }
           },
           {
             "@type": "Question",
@@ -424,7 +424,7 @@
     <div class="shell" id="top">
       <section class="hero" aria-labelledby="hero-title">
         <div>
-          <span class="eyebrow"><i></i>v0.3.0 · Windows · macOS · Linux</span>
+          <span class="eyebrow"><i></i>v0.3.1 · Windows · macOS · Linux</span>
           <h1 id="hero-title">Minecraft,<br><em>composed.</em></h1>
           <p class="lede">Instances, mods, packs, shaders, and accounts in one native workspace. Files stay local. Nothing runs in the background.</p>
           <div class="hero-actions">
@@ -540,8 +540,8 @@
             <h3>Windows portable ZIP</h3>
             <p>One executable. Extract anywhere and run. Instances stay in your profile.</p>
             <div class="facts">
-              <span><b data-release="exe-size">16.2 MB</b> app</span>
-              <span><b data-release="zip-size">7.9 MB</b> zip</span>
+              <span><b data-release="exe-size">17.5 MB</b> app</span>
+              <span><b data-release="zip-size">8.2 MB</b> zip</span>
               <span>Windows 10 / 11 · x64</span>
               <span>No install</span>
             </div>
@@ -557,7 +557,7 @@
             <h3>Windows installer</h3>
             <p>Per-user install, Start menu shortcut, clean uninstaller.</p>
             <div class="facts">
-              <span><b data-release="setup-size">5.8 MB</b> setup</span>
+              <span><b data-release="setup-size">6.1 MB</b> setup</span>
               <span>No admin rights</span>
               <span>Clean uninstaller</span>
             </div>
@@ -599,7 +599,7 @@
         </div>
 
         <div class="downloads-foot">
-          <span><b style="color:var(--text)">New in 0.3.0</b> · Every platform now ships an installable build. macOS gets a <b style="color:var(--text)">drag-to-Applications .dmg</b>; Linux gets an <b style="color:var(--text)">apt .deb</b> and a one-file <b style="color:var(--text)">AppImage</b> beside the tarball. All three are built from the same tag, hashed in CI, and served from this page. Everything from 0.2.12 remains: permanent tray minimize and Auto Erase Junk, the centred Erase capsule, one-click checksum-verified Windows updates, the dark tray, the shared file store, and 0.00% idle cost.</span>
+          <span><b style="color:var(--text)">New in 0.3.1</b> · <b style="color:var(--text)">Play repairs the instance first</b>: a missing JVM, version metadata, client jar, library, asset, or Fabric-family loader is detected without a network round trip, filled from Mojang's own metadata, and the launch continues on its own. Minecraft's <b style="color:var(--text)">own telemetry is forced off</b> — every launch rewrites <code>options.txt</code> to <code>telemetryOptIn:false</code> while keeping every other line. A configured Java that moved now falls through to the instance runtime, the PATH, and an installed JDK instead of failing the launch. Idle timers got quieter: the temp sweep runs every 15 minutes over an hour of grace, and an install marker means a healthy instance starts without walking its asset tree. Everything from 0.3.0 remains: the macOS <b style="color:var(--text)">.dmg</b>, the Linux <b style="color:var(--text)">.deb</b> and <b style="color:var(--text)">AppImage</b>, one tag that hashes and serves all of it, permanent tray minimize, Auto Erase Junk, and 0.00% idle cost.</span>
           <span>Every tag builds all three platforms in CI and publishes checksums.</span>
           <a href="downloads/KAELIS-LINKS.txt">URL &amp; install index ↗</a>
           <a href="https://github.com/fuvji/kaelis/releases/latest" rel="noreferrer">All releases ↗</a>
@@ -610,9 +610,9 @@
           <summary>Checksums and build provenance</summary>
           <div class="body">
             <p style="margin:0;color:var(--muted);font-size:13px">Every artifact is hashed at release time. Published files: <a href="downloads/SHA256SUMS.txt" style="color:var(--accent-soft)">SHA256SUMS.txt</a> and the generated <a href="downloads/KAELIS-LINKS.txt" style="color:var(--accent-soft)">URL &amp; installation index</a>.</p>
-            <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">c17cb139a93c46832c92bc5999c14673aef63754c36c805195560f20d9e3bded</code></div>
-            <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">a4e5c1bd539fa9e19158f91e549e5543a018219bf9d837c5c3330b567cee0963</code></div>
-            <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">b3fe92fd15c5023e84d8b8eb509461c9a2bef68fa41a9bb31375ce79032316d9</code></div>
+            <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">320966fb2270da0dfcdc17e7c64cc2470d8e79598708b600bc9450e7b0d42679</code></div>
+            <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">f362b5d0ecbe36096b90d5a0de9b7e137f0b2b095d205de3435a956be766ffa8</code></div>
+            <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">37a6fa945bea90f00caa5cbde64e3881eade8f25a02ca5d1fe91492335c4524a</code></div>
             <div class="hash"><span>Kaelis-macos-universal.dmg</span><code data-release="dmg-hash">6fa2fda1b93f2c01228da3073ce18f3722b7e650bbcd4703eabbe5e7a2b2e9f7</code></div>
             <div class="hash"><span>Kaelis-linux-x64.deb</span><code data-release="deb-hash">e2510545e116a6c29daa32eebc9da1629bff25c4fa14be307cd2de3a57ae3d0d</code></div>
             <div class="hash"><span>Kaelis-linux-x64.AppImage</span><code data-release="appimage-hash">0c34a7aaba346aeb68a284834321db24a72d3fc2fe1f172871d3921c289cea52</code></div>

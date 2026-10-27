@@ -1576,10 +1576,40 @@ fn play_instance(instance_id: &str, username: Option<&str>) -> ExitCode {
         Ok(runtime) => runtime,
         Err(error) => return fail(error),
     };
-    let instance = match Instance::load(instance_id) {
+    let mut instance = match Instance::load(instance_id) {
         Ok(instance) => instance,
         Err(error) => return fail(format!("could not load instance: {error}")),
     };
+    // A headless launch gets the same guarantee as the Play button: whatever
+    // is missing is fetched from Mojang's metadata first, so a scripted launch
+    // on a fresh machine works without a repair step of its own.
+    let readiness = kaelis_api::health::check(&instance);
+    if !readiness.ready() {
+        let http = match http_client() {
+            Ok(http) => http,
+            Err(error) => return fail(error),
+        };
+        println!("[Kaelis] {}", readiness.summary());
+        let repaired = runtime.block_on(kaelis_api::health::repair(
+            &http,
+            &mut instance,
+            |update| match update {
+                kaelis_api::health::RepairProgress::Message(message) => {
+                    println!("[Kaelis] {message}");
+                }
+                kaelis_api::health::RepairProgress::Download { completed, total }
+                    if completed == total =>
+                {
+                    println!("[Kaelis] downloaded {completed} file(s)");
+                }
+                kaelis_api::health::RepairProgress::Download { .. } => {}
+            },
+        ));
+        match repaired {
+            Ok(report) => println!("[Kaelis] {}", report.summary()),
+            Err(error) => return fail(error),
+        }
+    }
     let profile = offline_profile(&username);
     let identity = LaunchIdentity::offline(profile.name, profile.uuid);
     let log = EphemeralLog::new(20_000);
@@ -1610,8 +1640,10 @@ fn run_gui(handoff: Option<HandoffServer>, start_hidden: bool) -> ExitCode {
     };
     // The sweeper's first tick fires immediately, so it already performs the
     // startup sweep on the runtime instead of walking the temp folder on the
-    // thread that is about to create the window.
-    let sweeper = kaelis_core::sweeper::spawn_background_sweeper(runtime.handle(), 300, 3600);
+    // thread that is about to create the window. Later ticks are 15 minutes
+    // apart: stale staging files have an hour of grace, so a tighter timer
+    // would only spend wake-ups on a directory that is almost always clean.
+    let sweeper = kaelis_core::sweeper::spawn_background_sweeper(runtime.handle(), 900, 3600);
     // A newer build retires the copies a portable folder or a manual download
     // left behind, so only one launcher remains next to the running one.
     kaelis_core::sweeper::retire_older_builds(env!("CARGO_PKG_VERSION"));
