@@ -1,6 +1,6 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.3.2-70a5ff)
+![Version](https://img.shields.io/badge/version-0.3.3-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
@@ -108,7 +108,15 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.3.2
+## What's new in 0.3.3
+
+- **Every component sits at its newest patch release.** `openssl-probe` 0.2.2,
+  `roxmltree` 0.21.2, and `rustix` 1.1.6 replace their previous patch versions.
+  No behaviour changes were needed; the launcher is built, linted, and tested
+  against the newest versions crates.io offers inside the ranges the project
+  already allows.
+
+### From 0.3.2
 
 - **The launcher remembers how it was left.** The window reopens at the size it
   was last settled on, and the switches reopen where they were set: version-list
