@@ -1,10 +1,10 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.3.1-70a5ff)
+![Version](https://img.shields.io/badge/version-0.3.2-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
-![Tests](https://img.shields.io/badge/tests-278%20passing-3fb950)
+![Tests](https://img.shields.io/badge/tests-280%20passing-3fb950)
 
 <img width="1080" height="700" alt="Accounts tab: the active identity and every saved offline or Microsoft account" src="site/assets/app-accounts.png" />
 
@@ -31,7 +31,8 @@ keep that library clean, correct, and fast on their own.
 | **Runs in parallel, quietly** | Per-instance OS guards let different instances launch together; a smart power governor drops every unfocused game to idle priority within 1.5 s and restores it the moment it is focused, so the game being played owns the CPU |
 | **Reopens, never doubles** | One process, one tray icon: a second launch, a Start-menu click, or the tray icon restores the running window in ~120 ms instead of starting another launcher — including over a fullscreen game |
 | **Hibernates while you play** | Starting a game hides the window and empties its working set, and 90 s unfocused does the same while the window stays open; one tray click restores it, mid-game included |
-| **Tray-first window** | On Windows, the title-bar minimize button and **Show / Minimize** in the tray hide the launcher to the notification area and give its pages back. Always on; there is no switch to turn it off. The tray icon itself toggles: a click restores a hidden or taskbar-minimised window, and hides a visible one. The native menu is forced dark and is three actions plus one separator |
+| **Frameless window, tray-first** | The launcher draws its own header instead of a native title bar: drag anywhere on the strip to move the window, double-click to maximize or restore, and one click each to minimize, maximize, or close — Close ends the process immediately. On Windows minimize still hides to the notification area and gives its pages back. Always on; there is no switch to turn it off. The tray icon itself toggles: a click restores a hidden or taskbar-minimised window, and hides a visible one. The native menu is forced dark and is three actions plus one separator |
+| **Remembers your setup** | Window size and every remembered switch reopen the way they were left: version-list snapshots, alpha and beta versions, required dependencies, the search providers, and search-as-you-type. A resize is written once the drag settles, and quitting right after one still keeps the newest size |
 | **Updates in one click** | One anonymous GitHub request runs in the background after the window is up. When a newer release exists, the footer version links to it and an **Update** action installs the build right there: the download is SHA-256-verified against the same release, the old executable is backed up, and a failed swap rolls back. Nothing downloads or installs on its own |
 | **Starts with Windows** | One optional per-user sign-in entry opens Kaelis hidden in the tray, with no service, scheduled task, splash, or focus steal. Enable or disable it in Settings or with `kaelis --startup on\|off` |
 | **Survives a launcher restart** | A game's process id and creation time are recorded when it spawns, so reopening Kaelis still shows Quit for a game that is running, keeps a second JVM off the same world, and can end that game from the card |
@@ -107,7 +108,25 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.3.1
+## What's new in 0.3.2
+
+- **The launcher remembers how it was left.** The window reopens at the size it
+  was last settled on, and the switches reopen where they were set: version-list
+  snapshots, alpha and beta versions, required dependencies, the search
+  providers, and search-as-you-type. A maximized window is never recorded, so
+  restoring never pins the launcher to a full screen, and a corrupt or
+  implausible saved size falls back to the default that fits a 1366×768 laptop.
+- **The window is a frameless overlay.** There is no native title bar: the
+  launcher's own header is the handle. Drag anywhere on the strip to move the
+  window, double-click it to maximize or restore, and use one control each to
+  minimize, maximize or restore, and close. Close ends the process immediately,
+  with the current geometry written first. On Windows minimize still hides to
+  the tray. Resizing works from all eight edges and corners, with the cursor
+  changing over each grip.
+- **Shorter copy everywhere.** Descriptions on Instances, Content, and Settings
+  are one line each and say the same thing they did before.
+
+### From 0.3.1
 
 - **Play repairs the instance before it launches.** Missing pieces are found
   with filesystem checks only — no network round trip — and then filled from

@@ -143,9 +143,38 @@ pub struct LauncherSettings {
     /// involved and login is not delayed by a task scheduler.
     #[serde(default)]
     pub launch_at_startup: bool,
+    /// Inner size of the launcher window in logical points, written once a
+    /// resize settles. `[0.0, 0.0]` means "never resized", so a first launch
+    /// opens at the default size instead of a guess. A maximized window is
+    /// never recorded, so restoring never pins the launcher to a full screen.
+    #[serde(default)]
+    pub window_size: [f32; 2],
+    /// Version-list filters, remembered so the list reopens the way it was
+    /// left instead of resetting to releases-only on every start.
+    #[serde(default = "default_true")]
+    pub show_snapshots: bool,
+    #[serde(default)]
+    pub show_alpha: bool,
+    #[serde(default)]
+    pub show_beta: bool,
+    /// Content studio switches: whether an install brings required
+    /// dependencies, which providers a search covers, and whether typing runs
+    /// the search. Each is one checkbox the user should not have to set twice.
+    #[serde(default = "default_true")]
+    pub install_dependencies: bool,
+    #[serde(default = "default_true")]
+    pub search_modrinth: bool,
+    #[serde(default = "default_true")]
+    pub search_curseforge: bool,
+    #[serde(default = "default_true")]
+    pub search_as_typed: bool,
 }
 
 fn default_auto_repair() -> bool {
+    true
+}
+
+fn default_true() -> bool {
     true
 }
 
@@ -161,6 +190,14 @@ impl Default for LauncherSettings {
             accounts: Vec::new(),
             ui_scale: 0.0,
             launch_at_startup: false,
+            window_size: [0.0, 0.0],
+            show_snapshots: true,
+            show_alpha: false,
+            show_beta: false,
+            install_dependencies: true,
+            search_modrinth: true,
+            search_curseforge: true,
+            search_as_typed: true,
         }
     }
 }
@@ -435,6 +472,35 @@ mod tests {
         )
         .expect("legacy settings");
         assert!(legacy.launch_at_startup);
+    }
+
+    #[test]
+    fn ui_switches_and_window_size_survive_a_round_trip() {
+        let settings = LauncherSettings {
+            window_size: [1280.0, 720.0],
+            show_snapshots: false,
+            show_alpha: true,
+            ..LauncherSettings::default()
+        };
+        // The defaults are still the useful ones: releases only, required
+        // dependencies on, both providers on, search as typed on.
+        assert!(settings.install_dependencies);
+        assert!(settings.search_modrinth);
+        assert!(settings.search_curseforge);
+        assert!(settings.search_as_typed);
+        let decoded: LauncherSettings =
+            serde_json::from_str(&serde_json::to_string(&settings).expect("encode"))
+                .expect("decode");
+        assert_eq!(decoded.window_size, [1280.0, 720.0]);
+        assert!(!decoded.show_snapshots);
+        assert!(decoded.show_alpha);
+        // A file written before these keys existed opens with the same
+        // defaults it always had, not with a feature switched off.
+        let legacy: LauncherSettings = serde_json::from_str("{}").expect("legacy settings");
+        assert_eq!(legacy.window_size, [0.0, 0.0]);
+        assert!(legacy.show_snapshots);
+        assert!(legacy.install_dependencies);
+        assert!(legacy.search_as_typed);
     }
 
     #[test]

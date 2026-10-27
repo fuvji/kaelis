@@ -166,6 +166,21 @@ fn tab_from_shortcuts(input: &mut egui::InputState) -> Option<Tab> {
     None
 }
 
+/// The switches the launcher remembers between runs.
+///
+/// Compared as one value once per frame, so a checkbox can change any of them
+/// without every draw site remembering to save.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct UiSwitches {
+    show_snapshots: bool,
+    show_alpha: bool,
+    show_beta: bool,
+    install_dependencies: bool,
+    search_modrinth: bool,
+    search_curseforge: bool,
+    search_as_typed: bool,
+}
+
 #[derive(Debug, Default)]
 pub struct FrameGovernor {
     pub focused: bool,
@@ -1125,6 +1140,15 @@ pub struct KaelisApp {
     modpack_generation: u64,
     /// A per-user sign-in entry starts Kaelis hidden in the tray.
     launch_at_startup: bool,
+    /// Live inner size of the window in logical points, tracked so a settled
+    /// resize can be written to settings.
+    window_size: [f32; 2],
+    /// When the size has stopped changing, the write happens; `None` means the
+    /// size on disk is already current.
+    window_size_due: Option<std::time::Instant>,
+    /// The persisted switches as they were last written, compared once per
+    /// frame so any checkbox can change them without its own save call.
+    ui_switches_saved: UiSwitches,
     /// The window is hidden because a game started, not by the user. Only this
     /// case restores the window automatically when the last game exits.
     hidden_for_game: bool,
@@ -1420,9 +1444,9 @@ impl KaelisApp {
             new_instance_version: String::new(),
             new_instance_loader: "vanilla".to_owned(),
             versions: Vec::new(),
-            show_alpha: false,
-            show_beta: false,
-            show_snapshots: true,
+            show_alpha: launcher_settings.show_alpha,
+            show_beta: launcher_settings.show_beta,
+            show_snapshots: launcher_settings.show_snapshots,
             content_kind: match std::env::var("KAELIS_SCREENSHOT_KIND")
                 .unwrap_or_default()
                 .as_str()
@@ -1452,12 +1476,12 @@ impl KaelisApp {
             mod_pending_signature: String::new(),
             mod_last_request: String::new(),
             mod_signature_changed_at: None,
-            mod_auto_search: true,
+            mod_auto_search: launcher_settings.search_as_typed,
             mod_refine: String::new(),
             mod_filter: ModFilter::All,
             mod_sort: ModSort::Relevance,
-            mod_show_modrinth: true,
-            mod_show_curseforge: true,
+            mod_show_modrinth: launcher_settings.search_modrinth,
+            mod_show_curseforge: launcher_settings.search_curseforge,
             installed: None,
             installed_scan_generation: 0,
             egui_context: creation.egui_ctx.clone(),
@@ -1473,7 +1497,7 @@ impl KaelisApp {
             install_states: HashMap::new(),
             install_detail: None,
             install_started_at: None,
-            install_dependencies: true,
+            install_dependencies: launcher_settings.install_dependencies,
             last_install: None,
             install_progress: None,
             confirm_mod_delete: None,
@@ -1544,6 +1568,17 @@ impl KaelisApp {
             modpack_task: None,
             modpack_generation: 0,
             launch_at_startup: launcher_settings.launch_at_startup,
+            window_size: launcher_settings.window_size,
+            window_size_due: None,
+            ui_switches_saved: UiSwitches {
+                show_snapshots: launcher_settings.show_snapshots,
+                show_alpha: launcher_settings.show_alpha,
+                show_beta: launcher_settings.show_beta,
+                install_dependencies: launcher_settings.install_dependencies,
+                search_modrinth: launcher_settings.search_modrinth,
+                search_curseforge: launcher_settings.search_curseforge,
+                search_as_typed: launcher_settings.search_as_typed,
+            },
             update_report: None,
             updates_busy: false,
             launcher_release: None,
@@ -3755,6 +3790,61 @@ impl KaelisApp {
 
     /// Everything persisted outside instance JSON. One construction point so a
     /// new field can never be dropped by one of the six save paths.
+    /// The switches this launcher remembers between runs.
+    ///
+    /// Gathered into one comparable value so the frame loop can notice a
+    /// checkbox change once, instead of every checkbox remembering to save.
+    fn ui_switches(&self) -> UiSwitches {
+        UiSwitches {
+            show_snapshots: self.show_snapshots,
+            show_alpha: self.show_alpha,
+            show_beta: self.show_beta,
+            install_dependencies: self.install_dependencies,
+            search_modrinth: self.mod_show_modrinth,
+            search_curseforge: self.mod_show_curseforge,
+            search_as_typed: self.mod_auto_search,
+        }
+    }
+
+    /// Write settings once when a remembered switch changed.
+    fn persist_switches_if_changed(&mut self) {
+        let current = self.ui_switches();
+        if current != self.ui_switches_saved {
+            self.ui_switches_saved = current;
+            self.persist_settings();
+        }
+    }
+
+    /// Follow the window's own size and write it once the drag settles.
+    ///
+    /// A maximized window is skipped on purpose: recording the monitor size
+    /// would reopen the launcher pinned to a full screen, so the last windowed
+    /// size is what survives.
+    fn track_window_size(&mut self, context: &egui::Context) {
+        const SETTLE: std::time::Duration = std::time::Duration::from_millis(500);
+        let viewport = context.input(|input| input.viewport().clone());
+        if viewport.maximized == Some(true) {
+            self.window_size_due = None;
+        } else if let Some(rect) = viewport.inner_rect {
+            let size = [rect.width(), rect.height()];
+            if (size[0] - self.window_size[0]).abs() > 0.5
+                || (size[1] - self.window_size[1]).abs() > 0.5
+            {
+                self.window_size = size;
+                self.window_size_due = Some(std::time::Instant::now() + SETTLE);
+            }
+        }
+        if let Some(due) = self.window_size_due {
+            let now = std::time::Instant::now();
+            if now >= due {
+                self.window_size_due = None;
+                self.persist_settings();
+            } else {
+                context.request_repaint_after(due - now);
+            }
+        }
+    }
+
     fn settings_snapshot(&self) -> LauncherSettings {
         LauncherSettings {
             last_account: self.last_account.clone(),
@@ -3770,6 +3860,14 @@ impl KaelisApp {
                 .unwrap_or_default(),
             accounts: self.accounts.clone(),
             ui_scale: self.ui_scale,
+            window_size: self.window_size,
+            show_snapshots: self.show_snapshots,
+            show_alpha: self.show_alpha,
+            show_beta: self.show_beta,
+            install_dependencies: self.install_dependencies,
+            search_modrinth: self.mod_show_modrinth,
+            search_curseforge: self.mod_show_curseforge,
+            search_as_typed: self.mod_auto_search,
         }
     }
 
@@ -4547,6 +4645,10 @@ impl KaelisApp {
     /// window and unwind every editor, worker, and runtime handle before the
     /// process ended.
     fn quit_now(&mut self) -> ! {
+        // A resize made less than half a second before Quit is still the size
+        // the user wants back, so the final geometry is written here as well as
+        // by the settle timer.
+        self.persist_settings();
         self._tray = None;
         std::process::exit(0)
     }
@@ -4867,7 +4969,7 @@ impl KaelisApp {
                             )
                         } else {
                             format!(
-                                "{name} imported · {imported} files · MC {game_version} · {loader}. Add this loader before playing."
+                                "{name} imported · {imported} files · MC {game_version} · {loader}; add the loader to play."
                             )
                         };
                         self.set_status(
@@ -6742,7 +6844,7 @@ impl KaelisApp {
         Self::fraction(self.install_progress)
     }
 
-    fn show_header(&self, context: &egui::Context) {
+    fn show_header(&mut self, context: &egui::Context) {
         egui::TopBottomPanel::top("kaelis-header")
             .frame(
                 egui::Frame::none()
@@ -6750,6 +6852,24 @@ impl KaelisApp {
                     .inner_margin(egui::Margin::symmetric(14.0, 7.0)),
             )
             .show(context, |ui| {
+                // The window is an overlay with no native title bar, so this
+                // strip is its handle: drag to move, double-click to maximise
+                // or restore. Registered before the widgets so the buttons on
+                // top keep their own clicks.
+                let strip = ui.interact(
+                    ui.max_rect(),
+                    ui.id().with("kaelis-window-drag"),
+                    egui::Sense::click_and_drag(),
+                );
+                if strip.drag_started() {
+                    context.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                }
+                if strip.double_clicked() {
+                    let maximized = context
+                        .input(|input| input.viewport().maximized)
+                        .unwrap_or(false);
+                    context.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+                }
                 ui.horizontal(|ui| {
                     ui.label(
                         egui::RichText::new(self.current_tab.title())
@@ -6757,6 +6877,21 @@ impl KaelisApp {
                             .strong(),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if header_button(ui, "✕", "Close").clicked() {
+                            self.quit_now();
+                        }
+                        let maximized = context
+                            .input(|input| input.viewport().maximized)
+                            .unwrap_or(false);
+                        let glyph = if maximized { "❐" } else { "□" };
+                        if header_button(ui, glyph, if maximized { "Restore" } else { "Maximize" })
+                            .clicked()
+                        {
+                            context.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
+                        }
+                        if header_button(ui, "—", "Minimize").clicked() {
+                            platform::minimize_window(context);
+                        }
                         let running = self.running_instances.len();
                         if running > 0 {
                             let label = if running == 1 {
@@ -6781,6 +6916,100 @@ impl KaelisApp {
                     );
                 }
             });
+    }
+
+    /// Edge and corner grips, because an overlay has no native resize border.
+    ///
+    /// A grip only exists while the pointer is over it, so every other click in
+    /// the window still reaches the widget underneath.
+    fn window_resize_grips(context: &egui::Context) {
+        use egui::{CursorIcon, ResizeDirection, ViewportCommand};
+        const GRIP: f32 = 5.0;
+        let screen = context.screen_rect();
+        let Some(pointer) = context.pointer_hover_pos() else {
+            return;
+        };
+        let (min, max) = (screen.min, screen.max);
+        let grips: [(ResizeDirection, egui::Rect, CursorIcon); 8] = [
+            (
+                ResizeDirection::North,
+                egui::Rect::from_min_max(
+                    egui::pos2(min.x + GRIP, min.y),
+                    egui::pos2(max.x - GRIP, min.y + GRIP),
+                ),
+                CursorIcon::ResizeNorth,
+            ),
+            (
+                ResizeDirection::South,
+                egui::Rect::from_min_max(
+                    egui::pos2(min.x + GRIP, max.y - GRIP),
+                    egui::pos2(max.x - GRIP, max.y),
+                ),
+                CursorIcon::ResizeSouth,
+            ),
+            (
+                ResizeDirection::West,
+                egui::Rect::from_min_max(
+                    egui::pos2(min.x, min.y + GRIP),
+                    egui::pos2(min.x + GRIP, max.y - GRIP),
+                ),
+                CursorIcon::ResizeWest,
+            ),
+            (
+                ResizeDirection::East,
+                egui::Rect::from_min_max(
+                    egui::pos2(max.x - GRIP, min.y + GRIP),
+                    egui::pos2(max.x, max.y - GRIP),
+                ),
+                CursorIcon::ResizeEast,
+            ),
+            (
+                ResizeDirection::NorthWest,
+                egui::Rect::from_min_max(min, egui::pos2(min.x + GRIP, min.y + GRIP)),
+                CursorIcon::ResizeNorthWest,
+            ),
+            (
+                ResizeDirection::NorthEast,
+                egui::Rect::from_min_max(
+                    egui::pos2(max.x - GRIP, min.y),
+                    egui::pos2(max.x, min.y + GRIP),
+                ),
+                CursorIcon::ResizeNorthEast,
+            ),
+            (
+                ResizeDirection::SouthWest,
+                egui::Rect::from_min_max(
+                    egui::pos2(min.x, max.y - GRIP),
+                    egui::pos2(min.x + GRIP, max.y),
+                ),
+                CursorIcon::ResizeSouthWest,
+            ),
+            (
+                ResizeDirection::SouthEast,
+                egui::Rect::from_min_max(
+                    egui::pos2(max.x - GRIP, max.y - GRIP),
+                    egui::pos2(max.x, max.y),
+                ),
+                CursorIcon::ResizeSouthEast,
+            ),
+        ];
+        for (index, (direction, rect, cursor)) in grips.into_iter().enumerate() {
+            if !rect.contains(pointer) {
+                continue;
+            }
+            context.set_cursor_icon(cursor);
+            let response = egui::Area::new(egui::Id::new(("kaelis-resize", index)))
+                .order(egui::Order::Foreground)
+                .fixed_pos(rect.min)
+                .show(context, |ui| {
+                    ui.allocate_response(rect.size(), egui::Sense::drag())
+                })
+                .inner;
+            if response.drag_started() {
+                context.send_viewport_cmd(ViewportCommand::BeginResize(direction));
+            }
+            break;
+        }
     }
 
     fn show_footer(&mut self, context: &egui::Context) {
@@ -7307,7 +7536,7 @@ impl KaelisApp {
                             }
                             ui.label(
                                 egui::RichText::new(
-                                    "Mods run through the loader; resource packs, shaders, and worlds install without touching the mod graph.",
+                                    "Mods need the loader; packs, shaders, and worlds install directly.",
                                 )
                                 .size(9.5)
                                 .color(MUTED),
@@ -7751,7 +7980,7 @@ impl KaelisApp {
                         PortableGlyph::Import,
                         Some("Import"),
                         !busy,
-                        "Open a .kaelis.zip, .mrpack, CurseForge or Prism export — or drop one anywhere in this window.",
+                        "Open a .kaelis.zip, .mrpack, CurseForge or Prism export, or drop one anywhere.",
                     )
                     .clicked()
                     {
@@ -7875,7 +8104,7 @@ impl KaelisApp {
                 );
                 ui.label(
                     egui::RichText::new(
-                        "Name an instance above, pick a Minecraft version, and Kaelis provisions Java and the client on first play.",
+                        "Name it above, pick a version, and Play provisions Java and the client.",
                     )
                     .size(11.0)
                     .color(MUTED),
@@ -8712,7 +8941,7 @@ impl KaelisApp {
                     } else {
                         ui.checkbox(&mut self.mod_show_curseforge, "Search CurseForge")
                             .on_hover_text(
-                                "Searches the whole CurseForge catalogue with no key and no setup; a project link or id resolves exactly.",
+                                "Searches all of CurseForge with no key; a link or id resolves exactly.",
                             );
                     }
                     ui.checkbox(&mut self.mod_auto_search, "Search as I type");
@@ -9255,7 +9484,7 @@ impl KaelisApp {
                     (
                         "Search the whole library",
                         format!(
-                            "Type a name, paste a Modrinth or CurseForge project link, or drop a {} file here. Ctrl+F focuses the box.",
+                            "Type a name, paste a project link, or drop a {} file here. Ctrl+F focuses.",
                             if self.content_kind == ContentKind::Mod {
                                 "mod"
                             } else {
@@ -10157,7 +10386,7 @@ impl KaelisApp {
                 ui.label(
                     egui::RichText::new(if item.kind == ContentKind::Modpack {
                         format!(
-                            "Creates an instance with this pack's version, loader, and mods. {} projects listed; nothing stored.",
+                            "Creates an instance with this pack's version, loader, and mods. {} projects; nothing stored.",
                             item.provider
                         )
                     } else {
@@ -10474,7 +10703,7 @@ impl KaelisApp {
                 // every other control in the row.
                 let sign_in = primary_button(ui, "Sign in with Microsoft")
                     .on_hover_text(
-                        "Shows a short code, opens the Microsoft page, and finishes by itself once you approve. No setup.",
+                        "Shows a code, opens the Microsoft page, and finishes once you approve.",
                     );
                 if sign_in.clicked() && !self.auth_busy {
                     self.start_sign_in(context.clone());
@@ -11122,7 +11351,7 @@ impl KaelisApp {
             section_label(ui, "ZERO-SETUP SERVICES");
             ui.label(
                 egui::RichText::new(
-                    "Microsoft sign-in and CurseForge need no key. Microsoft keeps you signed in through the OS credential store; CurseForge runs through the public v1 mirror.",
+                    "Microsoft and CurseForge need no key. Sign-in is kept in the OS credential store; CurseForge uses its public v1 mirror.",
                 )
                 .small()
                 .weak(),
@@ -11410,6 +11639,12 @@ impl eframe::App for KaelisApp {
         // repainting even when nothing is animating.
         self.governor.animating = self.is_busy() || self.screenshot_path.is_some();
         self.governor.apply(context);
+        // Remembered switches and window geometry: one comparison and one
+        // pointer read per frame, nothing that touches the disk until a value
+        // actually changed.
+        self.persist_switches_if_changed();
+        self.track_window_size(context);
+        Self::window_resize_grips(context);
         Self::paint_backdrop(context);
         self.show_header(context);
         self.show_sidebar(context);
@@ -12600,6 +12835,17 @@ fn check_chip(
 /// neighbours and sat at the top of the row. Allocating the control height up
 /// front and painting the dot and text on its centre line keeps every toolbar
 /// on one baseline without adding another widget to the paint path.
+/// One glyph control on the header strip, sized like the rail's icons.
+fn header_button(ui: &mut egui::Ui, glyph: &str, tooltip: &str) -> egui::Response {
+    ui.add(
+        egui::Button::new(egui::RichText::new(glyph).size(12.0).color(MUTED))
+            .frame(false)
+            .min_size(egui::vec2(24.0, CONTROL_HEIGHT)),
+    )
+    .on_hover_text(tooltip)
+    .on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
 fn status_pill(ui: &mut egui::Ui, text: &str, color: egui::Color32) -> egui::Response {
     let galley =
         ui.painter()

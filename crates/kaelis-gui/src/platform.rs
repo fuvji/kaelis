@@ -297,6 +297,22 @@ pub(crate) fn hide_to_tray(context: &egui::Context) {
     trim_working_set();
 }
 
+/// The header's minimize control on an overlay with no native title bar.
+///
+/// On Windows the launcher's own behaviour is the tray, so the custom button
+/// does exactly what the old title-bar button did. Elsewhere it is an ordinary
+/// minimize, so the window can be restored from the taskbar or the dock.
+pub(crate) fn minimize_window(context: &egui::Context) {
+    #[cfg(windows)]
+    {
+        hide_to_tray(context);
+    }
+    #[cfg(not(windows))]
+    {
+        context.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+    }
+}
+
 /// Give back the pages the hidden launcher no longer needs.
 ///
 /// Hiding a window stops it painting, but its working set still holds the
