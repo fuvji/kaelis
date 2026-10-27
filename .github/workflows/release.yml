@@ -142,10 +142,36 @@ jobs:
     needs: [windows, macos, linux]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
+
+      - name: Compose release notes from the README
+        # The generated notes only list commit subjects, and this project
+        # pushes directly instead of merging pull requests, so they reduce to a
+        # changelog link. The README already carries a written section per
+        # release; lift that one section so a tag tells people what changed.
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          # Stop at the next `##` or `###` heading, so an older release's
+          # "From x.y.z" history is not copied into this tag's notes.
+          awk -v heading="## What's new in ${version}" '
+            $0 == heading { capturing = 1; next }
+            capturing && /^#{2,3} / { exit }
+            capturing { print }
+          ' README.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            printf 'Kaelis %s.\n' "${version}" > release-notes.md
+          fi
+          printf '\n**Full changelog:** https://github.com/%s/compare/%s...%s\n' \
+            "${GITHUB_REPOSITORY}" "$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^")" "${GITHUB_REF_NAME}" >> release-notes.md
+          head -20 release-notes.md
 
       - name: Collect
         run: |
@@ -162,7 +188,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           name: Kaelis ${{ github.ref_name }}
-          generate_release_notes: true
+          body_path: release-notes.md
           fail_on_unmatched_files: true
           files: release/*
 
