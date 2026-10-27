@@ -1233,10 +1233,23 @@ mod tests {
     }
 
     #[test]
-    fn unconfigured_instance_uses_path_java() {
+    fn an_unconfigured_instance_agrees_with_the_readiness_check() {
         let instance = test_instance();
-        let expected = if cfg!(windows) { "java.exe" } else { "java" };
-        assert_eq!(resolve_java_executable(&instance).unwrap(), expected);
+        // No managed runtime lives under this scratch root, so the launcher
+        // uses whatever the host has: a `java` on the PATH or an installed JDK.
+        // The bare name is the last resort and is covered by the fallback test
+        // above. What matters here is that a launch starts exactly the JVM the
+        // readiness check found; the two used to disagree on a stale path.
+        match crate::runtime::resolve_java(&instance) {
+            Some(java) => assert_eq!(
+                resolve_java_executable(&instance).unwrap(),
+                java.into_os_string()
+            ),
+            None => assert_eq!(
+                resolve_java_executable(&instance).unwrap(),
+                OsString::from(crate::runtime::java_binary_name())
+            ),
+        }
     }
 
     #[test]
