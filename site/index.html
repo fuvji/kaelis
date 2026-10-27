@@ -40,7 +40,7 @@
         "applicationSubCategory": "Minecraft launcher",
         "operatingSystem": "Windows 10, Windows 11, macOS 11, Linux",
         "processorRequirements": "x86_64 or arm64",
-        "softwareVersion": "0.3.5",
+        "softwareVersion": "0.3.6",
         "softwareRequirements": "Rust 1.85+ to build from source; Java is provisioned automatically",
         "downloadUrl": "https://fuvji.github.io/kaelis/downloads/Kaelis-Portable.zip",
         "installUrl": "https://fuvji.github.io/kaelis/#downloads",
@@ -424,7 +424,7 @@
     <div class="shell" id="top">
       <section class="hero" aria-labelledby="hero-title">
         <div>
-          <span class="eyebrow"><i></i>v0.3.5 · Windows · macOS · Linux</span>
+          <span class="eyebrow"><i></i>v0.3.6 · Windows · macOS · Linux</span>
           <h1 id="hero-title">Minecraft,<br><em>composed.</em></h1>
           <p class="lede">Instances, mods, packs, shaders, and accounts in one native workspace. Files stay local. Nothing runs in the background.</p>
           <div class="hero-actions">
@@ -599,7 +599,7 @@
         </div>
 
         <div class="downloads-foot">
-          <span><b style="color:var(--text)">New in 0.3.5</b> · <b style="color:var(--text)">the window goes as short as you want</b> — the minimum height drops from 520 to 320 points and a small window is now remembered small instead of snapping back, with the drag limit read straight from the running window at 760×320. The <b style="color:var(--text)">sidebar stops overlapping itself</b>: below 88 points of room the account card becomes the one-button avatar, so all five tabs stay reachable at any height. <b style="color:var(--text)">Two waits are gone</b>: a typing pause in Content searches after 200 ms instead of 450 ms, and macOS and Linux notice a finished game every 100 ms instead of every 300 ms. Everything from 0.3.4 remains: rounded corners from the compositor, stroke-drawn controls with no drop shadows, an opaque surface, remembered window size and switches, and the frameless overlay. From 0.3.1: Play repairs a missing JVM, client jar, library, or loader before launch, Minecraft's own telemetry is forced off, and Auto Erase Junk keeps every instance clean at 0.00% idle cost.</span>
+          <span><b style="color:var(--text)">New in 0.3.6</b> · <b style="color:var(--text)">the Content screen lost its boxes</b>: the All / Installed / Not installed filter row and the Modrinth and Installed pills beside every result are gone, because an <b style="color:var(--text)">Install</b> action already means absent and an <b style="color:var(--text)">Erase</b> already means present — the filter code went with them instead of being hidden. Search and filter fields are <b style="color:var(--text)">capped at 420/330/320/300 points</b> instead of stretching across the window, <b style="color:var(--text)">every text button is tighter</b> (padding 12×4 → 9×3, Install 96 → 78 points), and the <b style="color:var(--text)">window bar is a handle and a title</b> with the status sentence moved to the footer. From 0.3.5: a window down to 320 points that reopens at the size you left it, an adaptive sidebar, and two waits cut. From 0.3.4: rounded corners from the compositor, stroke-drawn controls with no shadows, an opaque surface, remembered switches, and the frameless overlay. From 0.3.1: Play repairs a missing JVM, client jar, library, or loader before launch, Minecraft's own telemetry is forced off, and Auto Erase Junk keeps every instance clean at 0.00% idle cost.</span>
           <span>Every tag builds all three platforms in CI and publishes checksums.</span>
           <a href="downloads/KAELIS-LINKS.txt">URL &amp; install index ↗</a>
           <a href="https://github.com/fuvji/kaelis/releases/latest" rel="noreferrer">All releases ↗</a>
@@ -610,9 +610,9 @@
           <summary>Checksums and build provenance</summary>
           <div class="body">
             <p style="margin:0;color:var(--muted);font-size:13px">Every artifact is hashed at release time. Published files: <a href="downloads/SHA256SUMS.txt" style="color:var(--accent-soft)">SHA256SUMS.txt</a> and the generated <a href="downloads/KAELIS-LINKS.txt" style="color:var(--accent-soft)">URL &amp; installation index</a>.</p>
-            <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">dae96fcd2382e621e5dc185c662ecaa682287edc78b9754ba5259c641e907f01</code></div>
-            <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">2e1f70ad4cc2943922639ac2ac864cc06b95db3a7474d523db7a53e0f2c90533</code></div>
-            <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">e1646abccfb85fe9543e88d0603dd68c15bd714d9b2864702d0e40896579dd62</code></div>
+            <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">66e17c391bce585f7169eb72855503bf3b44aeb70b81bb72eea7b0e87e0e4c4f</code></div>
+            <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">0b577586a8268aa3346aebb8f7dc4db7d430389700004a128fbd5ec649c1d221</code></div>
+            <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">bfd2a4b33f32b2dbf96e192301a078d2bd5cf0daf4beb040078585d61c692ca0</code></div>
             <div class="hash"><span>Kaelis-macos-universal.dmg</span><code data-release="dmg-hash">6fa2fda1b93f2c01228da3073ce18f3722b7e650bbcd4703eabbe5e7a2b2e9f7</code></div>
             <div class="hash"><span>Kaelis-linux-x64.deb</span><code data-release="deb-hash">e2510545e116a6c29daa32eebc9da1629bff25c4fa14be307cd2de3a57ae3d0d</code></div>
             <div class="hash"><span>Kaelis-linux-x64.AppImage</span><code data-release="appimage-hash">0c34a7aaba346aeb68a284834321db24a72d3fc2fe1f172871d3921c289cea52</code></div>

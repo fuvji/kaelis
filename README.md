@@ -1,6 +1,6 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.3.5-70a5ff)
+![Version](https://img.shields.io/badge/version-0.3.6-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
@@ -108,7 +108,31 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.3.5
+## What's new in 0.3.6
+
+- **The Content screen has no boxes left to read.** The All / Installed / Not
+  installed filter row is gone, and with it the two pills that sat beside every
+  result title: an `Install` action already means the project is absent and an
+  `Erase` already means it is present, so the pills repeated the button. The
+  provider is still in the Details preview, where a single project is being
+  examined. The filter enum and its plumbing are deleted rather than hidden, so
+  nothing dead is left behind, and each row now lays out two fewer widgets.
+- **Search fields are capped, not stretched.** The mod search, the results
+  refine, the installed filter, and the instance filter stop at 420/320/300/330
+  points instead of filling whatever width the window has, and the sort control
+  shares the refine row. On a 1440 px display that is most of a row of empty
+  surface removed from three bars.
+- **Every text button is tighter.** Default padding drops from 12×4 to 9×3, and
+  the fixed Install width from 96 to 78 points (the longest state label plus the
+  compact padding), so Create, Play, Install, Erase, Copy, and Search all lose
+  the same dead margin without changing the 26 pt control height or the row
+  alignment.
+- **The window bar is a handle and a title.** Header padding drops from 7 to 4
+  points and the tab name from 14 to 12.5; the status sentence moved to the
+  footer, where it truncates instead of pushing the FPS readout and the full
+  text stays one hover away.
+
+### From 0.3.5
 
 - **The window can be made short again.** The minimum height drops from 520 to
   320 points, and the restore check reads the same constant, so a window you

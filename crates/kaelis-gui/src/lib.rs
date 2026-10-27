@@ -400,25 +400,6 @@ struct InstanceCard {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ModFilter {
-    All,
-    Installed,
-    NotInstalled,
-}
-
-impl ModFilter {
-    const ALL: [Self; 3] = [Self::All, Self::Installed, Self::NotInstalled];
-
-    fn label(self) -> &'static str {
-        match self {
-            Self::All => "All",
-            Self::Installed => "Installed",
-            Self::NotInstalled => "Not installed",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ModSort {
     Relevance,
     Downloads,
@@ -427,7 +408,6 @@ enum ModSort {
 
 #[derive(Debug, Clone, Copy)]
 struct ModView {
-    filter: ModFilter,
     sort: ModSort,
     show_modrinth: bool,
     show_curseforge: bool,
@@ -1032,7 +1012,6 @@ pub struct KaelisApp {
     mod_signature_changed_at: Option<std::time::Instant>,
     mod_auto_search: bool,
     mod_refine: String,
-    mod_filter: ModFilter,
     mod_sort: ModSort,
     mod_show_modrinth: bool,
     mod_show_curseforge: bool,
@@ -1248,7 +1227,11 @@ fn install_style(context: &egui::Context) {
     // Two pixels tighter on both axes than the old shell. Sixty rows of
     // settings, mods, or instances fit without changing a single label.
     style.spacing.item_spacing = egui::vec2(7.0, 5.0);
-    style.spacing.button_padding = egui::vec2(12.0, 4.0);
+    // Compact controls: two pixels of side padding less than the old shell,
+    // one less vertically. Every text button (Install, Create, Search, Copy,
+    // Erase) loses the same dead margin, and the 26 px interaction height keeps
+    // its centre line, so the rows only get shorter.
+    style.spacing.button_padding = egui::vec2(9.0, 3.0);
     style.spacing.interact_size.y = CONTROL_HEIGHT;
     style.spacing.slider_width = 190.0;
     style.spacing.scroll.bar_width = 4.0;
@@ -1480,7 +1463,6 @@ impl KaelisApp {
             mod_signature_changed_at: None,
             mod_auto_search: launcher_settings.search_as_typed,
             mod_refine: String::new(),
-            mod_filter: ModFilter::All,
             mod_sort: ModSort::Relevance,
             mod_show_modrinth: launcher_settings.search_modrinth,
             mod_show_curseforge: launcher_settings.search_curseforge,
@@ -6877,7 +6859,9 @@ impl KaelisApp {
             .frame(
                 egui::Frame::none()
                     .fill(egui::Color32::from_rgba_premultiplied(7, 8, 11, 248))
-                    .inner_margin(egui::Margin::symmetric(14.0, 7.0)),
+                    // A 4 px strip above and below the title: the bar is a
+                    // handle and a label, not a third content row.
+                    .inner_margin(egui::Margin::symmetric(12.0, 4.0)),
             )
             .show(context, |ui| {
                 // The window is an overlay with no native title bar, so this
@@ -6901,7 +6885,7 @@ impl KaelisApp {
                 ui.horizontal(|ui| {
                     ui.label(
                         egui::RichText::new(self.current_tab.title())
-                            .size(14.0)
+                            .size(12.5)
                             .strong(),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -6934,7 +6918,6 @@ impl KaelisApp {
                         if self.is_busy() {
                             ui.add(egui::Spinner::new().size(12.0));
                         }
-                        status_pill(ui, &self.status, self.status_kind.color());
                     });
                 });
                 if let Some(fraction) = self.progress_fraction() {
@@ -7117,6 +7100,30 @@ impl KaelisApp {
                             ))
                             .size(8.5)
                             .color(MUTED),
+                        );
+                    }
+                    // The status sentence moved here from the window bar: the
+                    // bar keeps only the tab name and the window controls, and
+                    // this strip already had a spare line. It truncates rather
+                    // than pushing the FPS readout, and the full text is one
+                    // hover away.
+                    if !self.status.is_empty() {
+                        ui.add_space(8.0);
+                        let room = (ui.available_width() - 210.0).max(60.0);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(room, 12.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(&self.status)
+                                            .size(8.5)
+                                            .color(self.status_kind.color()),
+                                    )
+                                    .truncate(),
+                                )
+                                .on_hover_text(&self.status);
+                            },
                         );
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -7849,7 +7856,6 @@ impl KaelisApp {
             self.mod_icons.clear();
             self.mod_results_query.clear();
             self.mod_refine.clear();
-            self.mod_filter = ModFilter::All;
             self.mod_last_request.clear();
             self.mod_pending_signature.clear();
             self.mod_signature_changed_at = Some(std::time::Instant::now());
@@ -8098,7 +8104,7 @@ impl KaelisApp {
                 &mut self.instance_filter,
                 INSTANCE_FILTER_ID,
                 "Filter by name, group, version, or loader…",
-                430.0,
+                330.0,
             );
             if ui
                 .button("Recheck")
@@ -8581,7 +8587,6 @@ impl KaelisApp {
                     self.mod_icons.clear();
                     self.mod_results_query.clear();
                     self.mod_refine.clear();
-                    self.mod_filter = ModFilter::All;
                     self.mod_last_request.clear();
                     self.mod_pending_signature.clear();
                     self.mod_signature_changed_at = Some(std::time::Instant::now());
@@ -8806,7 +8811,10 @@ impl KaelisApp {
                 ContentKind::Modpack => "Search modpacks, or drop a .mrpack to install it…",
             };
             ui.horizontal(|ui| {
-                let width = (ui.available_width() - 236.0).max(200.0);
+                // Capped: a field that spans the window on a 1440 px display is
+                // mostly empty surface, and the actions beside it read as a
+                // loose row. 420 fits the longest hint text and nothing more.
+                let width = (ui.available_width() - 236.0).clamp(200.0, 420.0);
                 let query = search_pill(ui, &mut self.mod_query, MOD_SEARCH_ID, hint, width);
                 let text = self.mod_query.trim().to_owned();
                 let link = text.starts_with("https://") || text.starts_with("http://");
@@ -9043,7 +9051,6 @@ impl KaelisApp {
         if let Some(kind) = request.kind {
             self.content_kind = kind;
             self.mod_refine.clear();
-            self.mod_filter = ModFilter::All;
             self.reset_browse();
             self.persist_settings();
             request.search = true;
@@ -9322,7 +9329,6 @@ impl KaelisApp {
             );
         }
         if request.reset_filters {
-            self.mod_filter = ModFilter::All;
             self.mod_refine.clear();
         }
         if let Some(index) = request.install
@@ -9419,11 +9425,8 @@ impl KaelisApp {
         let visible = visible_mod_indices(
             &self.mod_results.items,
             &self.mod_rows,
-            self.installed.as_ref(),
-            Some(&self.content_library),
             &self.mod_refine,
             ModView {
-                filter: self.mod_filter,
                 sort: self.mod_sort,
                 show_modrinth: self.mod_show_modrinth,
                 show_curseforge: self.mod_show_curseforge,
@@ -9440,7 +9443,10 @@ impl KaelisApp {
                         .strong()
                         .color(MUTED),
                 );
-                let width = (ui.available_width() - 24.0).max(80.0);
+                // Capped, not full width: a search field the width of the
+                // window reads as a text editor, and the sort control beside it
+                // was the only thing it had to share the row with.
+                let width = (ui.available_width() - 190.0).clamp(120.0, 320.0);
                 search_pill(
                     ui,
                     &mut self.mod_refine,
@@ -9448,19 +9454,9 @@ impl KaelisApp {
                     "Filter these results…",
                     width,
                 );
-            });
-            ui.horizontal_wrapped(|ui| {
-                for filter in ModFilter::ALL {
-                    if ui
-                        .selectable_label(self.mod_filter == filter, filter.label())
-                        .clicked()
-                    {
-                        self.mod_filter = filter;
-                    }
-                }
                 egui::ComboBox::from_id_source("kaelis-mod-sort")
                     .selected_text(self.mod_sort.label())
-                    .width(128.0)
+                    .width(112.0)
                     .show_ui(ui, |ui| {
                         for sort in ModSort::ALL {
                             ui.selectable_value(&mut self.mod_sort, sort, sort.label());
@@ -9623,37 +9619,24 @@ impl KaelisApp {
                         ui.horizontal_top(|ui| {
                             draw_mod_icon(ui, icon, item);
                             ui.add_space(6.0);
-                            // Reserve the real width of Install + Details; a
-                            // 96 px reservation let long metadata run under
-                            // the action buttons.
-                            let text_width = (ui.available_width() - 172.0).max(120.0);
+                            // Reserve the real width of Install + Details, at
+                            // the compact control width, so long metadata never
+                            // runs under the action buttons.
+                            let text_width = (ui.available_width() - 150.0).max(120.0);
                             ui.vertical(|ui| {
                                 ui.set_max_width(text_width);
-                                ui.horizontal(|ui| {
-                                    ui.label(egui::RichText::new(&item.title).strong().size(13.5))
-                                        .on_hover_text(if item.description.is_empty() {
-                                            item.title.clone()
-                                        } else {
-                                            item.description.clone()
-                                        });
-                                    if let Some((_, disabled)) = installed_entry {
-                                        chip(
-                                            ui,
-                                            if disabled {
-                                                "Installed · off"
-                                            } else {
-                                                "Installed"
-                                            },
-                                            if disabled {
-                                                StatusKind::Warning.color()
-                                            } else {
-                                                StatusKind::Success.color()
-                                            },
-                                        );
-                                    } else if state_label.is_empty() {
-                                        chip(ui, &item.provider.to_string(), MUTED);
-                                    }
-                                });
+                                // Title only. The provider pill and the
+                                // "Installed" pill beside it were two boxes per
+                                // row that repeated what the action already
+                                // says: an Erase means installed, an Install
+                                // means not. Both live in the Details preview
+                                // for the rare time the source matters.
+                                ui.label(egui::RichText::new(&item.title).strong().size(13.5))
+                                    .on_hover_text(if item.description.is_empty() {
+                                        item.title.clone()
+                                    } else {
+                                        item.description.clone()
+                                    });
                                 // Two visible lines per project instead of four:
                                 // author, downloads, loader support, and version
                                 // share one line, and description/categories are
@@ -9714,12 +9697,13 @@ impl KaelisApp {
                                     };
                                     // Fixed width: "Install", "Queued", and
                                     // "Installing…" must not resize the row on
-                                    // every state change.
+                                    // every state change. 78 px is the longest
+                                    // of the three plus the compact padding.
                                     let button = ui
                                         .add_enabled(
                                             !running && !queued,
                                             egui::Button::new(label)
-                                                .min_size(egui::vec2(96.0, 0.0)),
+                                                .min_size(egui::vec2(78.0, 0.0)),
                                         )
                                         .on_disabled_hover_text(
                                             "This install is already in the queue.",
@@ -10064,7 +10048,7 @@ impl KaelisApp {
                 // is left. Reserving a guessed width clipped the button at the
                 // default window size.
                 let button_width = if kind == ContentKind::Mod { 82.0 } else { 0.0 };
-                let width = (ui.available_width() - button_width - 18.0).max(80.0);
+                let width = (ui.available_width() - button_width - 18.0).clamp(80.0, 300.0);
                 search_pill(
                     ui,
                     &mut filter,
@@ -12270,8 +12254,6 @@ fn title_case(value: &str) -> String {
 fn visible_mod_indices(
     items: &[ModSearchItem],
     rows: &[ModRow],
-    installed: Option<&InstalledScan>,
-    content: Option<&ContentLibrary>,
     refine: &str,
     view: ModView,
 ) -> Vec<usize> {
@@ -12292,21 +12274,6 @@ fn visible_mod_indices(
                     .all(|token| row.search_text.contains(token.as_str()))
             {
                 return None;
-            }
-            let is_installed = if item.kind == ContentKind::Mod {
-                installed
-                    .is_some_and(|scan| scan.match_file(&item.slug, &row.match_tokens).is_some())
-            } else {
-                content.is_some_and(|library| {
-                    library
-                        .match_entry(item.kind, &item.slug, &row.match_tokens)
-                        .is_some()
-                })
-            };
-            match view.filter {
-                ModFilter::Installed if !is_installed => return None,
-                ModFilter::NotInstalled if is_installed => return None,
-                _ => {}
             }
             Some(index)
         })
@@ -14104,8 +14071,8 @@ fn show_qr(ui: &mut egui::Ui, device: &DeviceCodeResponse) {
 mod tests {
     use super::{
         ARTWORK_EDGE, CheckState, HandoffRequest, InstalledFile, InstalledScan, InstanceHealth,
-        KaelisApp, ModFilter, ModSort, ModView, StatusKind, Tab, apply_pack_artwork,
-        auto_scale_for, auto_scale_for_settled, build_mod_rows, center_square, clipboard_picture,
+        KaelisApp, ModSort, ModView, StatusKind, Tab, apply_pack_artwork, auto_scale_for,
+        auto_scale_for_settled, build_mod_rows, center_square, clipboard_picture,
         content_list_text, count_noun, decode_image_payload, decode_instance_icon, decode_mod_icon,
         draw_instance_avatar, draw_mod_icon, expand_dropped, filter_tokens, has_extension,
         https_icon_url, install_state_key, instance_content_summary, instance_matches,
@@ -14182,9 +14149,8 @@ mod tests {
         }
     }
 
-    fn test_view(filter: ModFilter, sort: ModSort, modrinth: bool, curseforge: bool) -> ModView {
+    fn test_view(sort: ModSort, modrinth: bool, curseforge: bool) -> ModView {
         ModView {
-            filter,
             sort,
             show_modrinth: modrinth,
             show_curseforge: curseforge,
@@ -14421,34 +14387,15 @@ mod tests {
         assert_eq!(rows[1].relevance, 7);
         assert_eq!(rows[2].relevance, 0);
 
-        let installed = installed_scan("lithium-fabric-0.12.jar", "lithium");
-        let visible = visible_mod_indices(
-            &items,
-            &rows,
-            Some(&installed),
-            None,
-            "",
-            test_view(ModFilter::Installed, ModSort::Relevance, true, true),
-        );
-        assert_eq!(visible, vec![2]);
-
-        let visible = visible_mod_indices(
-            &items,
-            &rows,
-            Some(&installed),
-            None,
-            "sodium",
-            test_view(ModFilter::NotInstalled, ModSort::Downloads, true, true),
-        );
-        assert_eq!(visible, vec![0, 1]);
+        // The refine text is the only filter left: everything shows without it.
+        let all = visible_mod_indices(&items, &rows, "", test_view(ModSort::Relevance, true, true));
+        assert_eq!(all.len(), 3);
 
         let refined = visible_mod_indices(
             &items,
             &rows,
-            None,
-            None,
             "extra",
-            test_view(ModFilter::All, ModSort::Relevance, true, true),
+            test_view(ModSort::Relevance, true, true),
         );
         assert_eq!(refined, vec![0]);
     }
@@ -14671,10 +14618,8 @@ mod tests {
             visible_mod_indices(
                 &items,
                 &rows,
-                None,
-                None,
                 "",
-                test_view(ModFilter::All, ModSort::Downloads, true, false)
+                test_view(ModSort::Downloads, true, false)
             ),
             vec![0]
         );
@@ -14682,10 +14627,8 @@ mod tests {
             visible_mod_indices(
                 &items,
                 &rows,
-                None,
-                None,
                 "",
-                test_view(ModFilter::All, ModSort::Downloads, false, true)
+                test_view(ModSort::Downloads, false, true)
             ),
             vec![1]
         );
@@ -14703,14 +14646,7 @@ mod tests {
         ];
         let rows = build_mod_rows(&items, "");
         for sort in [ModSort::Relevance, ModSort::Downloads, ModSort::Name] {
-            let visible = visible_mod_indices(
-                &items,
-                &rows,
-                None,
-                None,
-                "",
-                test_view(ModFilter::All, sort, true, true),
-            );
+            let visible = visible_mod_indices(&items, &rows, "", test_view(sort, true, true));
             assert_eq!(visible, vec![3, 2, 1, 0], "{sort:?}");
         }
     }
