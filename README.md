@@ -1,6 +1,6 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.3.6-70a5ff)
+![Version](https://img.shields.io/badge/version-0.3.7-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
@@ -8,7 +8,7 @@
 
 <img width="1080" height="700" alt="Accounts tab: the active identity and every saved offline or Microsoft account" src="site/assets/app-accounts.png" />
 
-**Minecraft, composed.** The fastest and lightest way to run Minecraft: a
+**Minecraft Launcher.** The fastest and lightest way to run Minecraft: a
 native Rust launcher for Windows, macOS, and Linux with one calm library for
 instances, modpacks, mods, resource packs, and shaders — and power features that
 keep that library clean, correct, and fast on their own.
@@ -108,7 +108,32 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.3.6
+## What's new in 0.3.7
+
+- **No keyboard shortcuts.** `Ctrl/Cmd + 1…5`, `Ctrl + F`, and `Ctrl + S` are
+  gone together with `tab_from_shortcuts` and the shortcut labels in the rail
+  tooltips, the Instances count line, the Settings scale row, and the item
+  tooltips. Nothing is consumed before the widgets see it. Standard text
+  editing is untouched: Tab still moves focus, Escape still dismisses a preview,
+  and the clipboard still pastes into a field.
+- **Six captions and nine decorative labels removed.** The window bar carries
+  only the tab name and three controls — no `PLAYING` pill and no status
+  sentence; `ACTIVE INSTANCE` and its `Manage content` button are gone from
+  Overview; `Your instances` is gone from Instances, which now starts with its
+  filter row; `BROWSE`, `INSTANCE`, and the `Loader` labels are gone from
+  Content, along with the `MC 1.21.1` and `fabric` chips that repeated what the
+  instance box already said, the `50 of 50` counter, the `Add files…` button
+  beside Folders, and the `Detected fabric` pill that repeated the combo box.
+- **Helper sentences deleted.** `Name it to begin.`, `Pick a Minecraft version.`,
+  `Java installs on first play.`, `Name it above, pick a version, and Play
+  provisions Java and the client.`, the `Mods, packs, shaders, and worlds stay
+  together.` line, and the whole **Zero-setup services** card are gone. The
+  Create button refuses and explains itself in its own tooltip instead.
+- **Copy:** the tagline is **Minecraft Launcher** (app, README, site title, and
+  hero), the sidebar credits **Rust** instead of `Rust 2024`, and both create
+  surfaces say **Create instance**.
+
+### From 0.3.6
 
 - **The Content screen has no boxes left to read.** The All / Installed / Not
   installed filter row is gone, and with it the two pills that sat beside every

@@ -141,35 +141,6 @@ impl Tab {
     }
 }
 
-/// Ctrl/Cmd + 1…5 selects a tab. Kept separate from the window so a unit test
-/// can feed the same key events the real input state receives.
-/// The label for the primary shortcut modifier on this platform. The chord
-/// itself uses `Modifiers::COMMAND`, so macOS answers to Cmd and the tooltip
-/// must say so instead of advertising a key that does nothing there.
-fn shortcut_modifier() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "Cmd"
-    } else {
-        "Ctrl"
-    }
-}
-
-fn tab_from_shortcuts(input: &mut egui::InputState) -> Option<Tab> {
-    const KEYS: [egui::Key; 5] = [
-        egui::Key::Num1,
-        egui::Key::Num2,
-        egui::Key::Num3,
-        egui::Key::Num4,
-        egui::Key::Num5,
-    ];
-    for (index, key) in KEYS.into_iter().enumerate() {
-        if input.consume_key(egui::Modifiers::COMMAND, key) {
-            return Some(Tab::ALL[index]);
-        }
-    }
-    None
-}
-
 /// The switches the launcher remembers between runs.
 ///
 /// Compared as one value once per frame, so a checkbox can change any of them
@@ -3917,19 +3888,16 @@ impl KaelisApp {
         }
     }
 
-    /// Ctrl+1…5 jump straight to a tab, and any Tab press turns on the
-    /// focus ring. A pointer press turns it off again, so the ring never
-    /// lingers after a mouse-driven focus.
+    /// A Tab press turns the focus ring on; a pointer press turns it off again,
+    /// so the ring never lingers after a mouse-driven focus. No chord is
+    /// consumed here: the launcher advertises no shortcuts, so nothing is taken
+    /// away from the widgets before they see it.
     fn handle_keyboard_navigation(&mut self, context: &egui::Context) {
         if context.input(|input| input.key_pressed(egui::Key::Tab)) {
             self.keyboard_nav = true;
         }
         if context.input(|input| input.pointer.any_pressed()) {
             self.keyboard_nav = false;
-        }
-        if let Some(tab) = context.input_mut(tab_from_shortcuts) {
-            self.current_tab = tab;
-            self.keyboard_nav = true;
         }
     }
 
@@ -6094,14 +6062,12 @@ impl KaelisApp {
                         egui::vec2(ui.available_width(), 27.0),
                         egui::Sense::click(),
                     );
+                    // The tooltip is the label: in rail mode the row is an
+                    // icon only, and no chord is advertised anywhere now.
+                    let _ = index;
                     let response = response
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .on_hover_text(format!(
-                            "{}  ·  {}+{}",
-                            tab.title(),
-                            shortcut_modifier(),
-                            index + 1
-                        ));
+                        .on_hover_text(tab.title());
                     response.widget_info(|| {
                         // A selectable, not a plain button: screen readers get
                         // the active tab as state instead of only a label.
@@ -6224,12 +6190,9 @@ impl KaelisApp {
                         ui.add_space(6.0);
                     } else {
                         ui.label(
-                            egui::RichText::new(format!(
-                                "{} · Rust 2024",
-                                kaelis_core::brand::COMPANY
-                            ))
-                            .size(8.5)
-                            .color(MUTED),
+                            egui::RichText::new(format!("{} · Rust", kaelis_core::brand::COMPANY))
+                                .size(8.5)
+                                .color(MUTED),
                         );
                         ui.horizontal(|ui| {
                             ui.hyperlink_to(
@@ -6906,15 +6869,9 @@ impl KaelisApp {
                         if window_control(ui, WindowControl::Minimize, "Minimize").clicked() {
                             platform::minimize_window(context);
                         }
-                        let running = self.running_instances.len();
-                        if running > 0 {
-                            let label = if running == 1 {
-                                "PLAYING".to_owned()
-                            } else {
-                                format!("PLAYING {running}")
-                            };
-                            status_pill(ui, &label, StatusKind::Success.color());
-                        }
+                        // No status pill anywhere in the bar: a running game is
+                        // already on its card and on Overview, and the strip
+                        // stays a handle plus three window controls.
                         if self.is_busy() {
                             ui.add(egui::Spinner::new().size(12.0));
                         }
@@ -7126,14 +7083,17 @@ impl KaelisApp {
                             },
                         );
                     }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let fps = if self.governor.target_fps() == 0 {
-                            "Idle · event-driven"
-                        } else {
-                            "60 FPS while working"
-                        };
-                        ui.label(egui::RichText::new(fps).size(8.5).color(MUTED));
-                    });
+                    // The right side is silent when the launcher is idle:
+                    // "Idle · event-driven" described the scheduler to nobody.
+                    if self.governor.target_fps() != 0 {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                egui::RichText::new("60 FPS while working")
+                                    .size(8.5)
+                                    .color(MUTED),
+                            );
+                        });
+                    }
                 });
             });
     }
@@ -7221,15 +7181,12 @@ impl KaelisApp {
             });
         });
         ui.add_space(7.0);
+        // One row, the selected instance only: the caption above it said what
+        // the card already shows, and the button beside it opened a tab the
+        // sidebar has one click away.
         Self::glass_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("ACTIVE INSTANCE")
-                        .size(8.5)
-                        .strong()
-                        .color(MUTED),
-                );
                 if let Some(instance) = &selected {
                     draw_instance_avatar(ui, selected_icon.as_ref(), instance);
                     ui.vertical(|ui| {
@@ -7246,11 +7203,6 @@ impl KaelisApp {
                 } else {
                     ui.label("No instance selected yet.");
                 }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Manage content").clicked() {
-                        self.current_tab = Tab::Content;
-                    }
-                });
             });
         });
         ui.add_space(7.0);
@@ -7312,9 +7264,7 @@ impl KaelisApp {
             return;
         }
         ui.add_space(10.0);
-        let save_shortcut =
-            context.input(|input| input.modifiers.command && input.key_pressed(egui::Key::S));
-        let mut save = save_shortcut;
+        let mut save = false;
         let mut cancel = false;
         let mut revert = false;
         let mut folder = None;
@@ -7470,9 +7420,9 @@ impl KaelisApp {
                                             .desired_width(210.0),
                                     )
                                     .on_hover_text(
-                                        "Drop a picture on the window, press Ctrl+V with a \
-                                         picture copied, or pick one below. PNG, JPEG, WebP, \
-                                         GIF, BMP, ICO, and SVG become one 256 px square.",
+                                        "Drop a picture on the window, or pick one below. \
+                                         PNG, JPEG, WebP, GIF, BMP, ICO, and SVG become one \
+                                         256 px square.",
                                     );
                                     ui.horizontal(|ui| {
                                         if ui
@@ -7484,7 +7434,7 @@ impl KaelisApp {
                                         }
                                         if ui
                                             .button("Paste")
-                                            .on_hover_text("Use the picture on the clipboard (Ctrl+V works anywhere on this window).")
+                                            .on_hover_text("Use the picture on the clipboard.")
                                             .clicked()
                                         {
                                             paste_artwork = true;
@@ -7766,7 +7716,7 @@ impl KaelisApp {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     if primary_button(ui, "Save changes")
-                        .on_hover_text("Save instance properties (Ctrl+S)")
+                        .on_hover_text("Save instance properties")
                         .clicked()
                     {
                         save = true;
@@ -7896,14 +7846,11 @@ impl KaelisApp {
     }
 
     fn show_instances(&mut self, ui: &mut egui::Ui, context: &egui::Context) {
-        if context.input(|input| input.modifiers.command && input.key_pressed(egui::Key::F)) {
-            ui.memory_mut(|memory| memory.request_focus(egui::Id::new(INSTANCE_FILTER_ID)));
-        }
         if self.editing.is_none() {
             ui.add_space(10.0);
             Self::glass_frame().show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.heading("Create an instance");
+                ui.heading("Create instance");
                 let conflict = instance_name_conflict(&self.instances, &self.new_instance_name)
                     .map(|instance| name_conflict_text(self.new_instance_name.trim(), instance));
                 let name_taken = conflict.is_some();
@@ -8051,15 +7998,16 @@ impl KaelisApp {
                         self.request_versions(context.clone());
                     }
                 });
-                // The summary line gets its own row: sharing one with the
-                // version filters made three unrelated controls read as a
-                // single wrapped paragraph.
-                let plan = if self.new_instance_name.trim().is_empty() {
-                    ("Name it to begin.".to_owned(), MUTED)
-                } else if let Some(message) = &conflict {
+                // The summary line carries only facts: a name conflict, or
+                // what the button is about to build. Empty states say nothing,
+                // because the Create button already refuses and explains why in
+                // its own tooltip.
+                let plan = if let Some(message) = &conflict {
                     (message.clone(), StatusKind::Warning.color())
-                } else if self.new_instance_version.trim().is_empty() {
-                    ("Pick a Minecraft version.".to_owned(), MUTED)
+                } else if self.new_instance_name.trim().is_empty()
+                    || self.new_instance_version.trim().is_empty()
+                {
+                    (String::new(), MUTED)
                 } else if self
                     .new_instance_loader
                     .eq_ignore_ascii_case("vanilla")
@@ -8080,25 +8028,20 @@ impl KaelisApp {
                         accent_soft(),
                     )
                 };
-                ui.add_space(2.0);
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 6.0;
-                    ui.label(egui::RichText::new(plan.0).size(10.0).color(plan.1));
-                });
-                ui.add_space(2.0);
-                ui.label(
-                    egui::RichText::new(
-                        "Java installs on first play. Existing instances stay as they are.",
-                    )
-                    .size(9.5)
-                    .color(MUTED),
-                );
+                if !plan.0.is_empty() {
+                    ui.add_space(2.0);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        ui.label(egui::RichText::new(plan.0).size(10.0).color(plan.1));
+                    });
+                }
             });
         }
         self.show_instance_editor(ui, context);
         ui.add_space(14.0);
+        // No heading: the tab is named Instances and the list starts where the
+        // create card ends. The filter and Recheck keep the row to themselves.
         ui.horizontal(|ui| {
-            ui.heading("Your instances");
             search_pill(
                 ui,
                 &mut self.instance_filter,
@@ -8121,12 +8064,9 @@ impl KaelisApp {
                     .filter(|instance| instance_matches(instance, &self.instance_filter))
                     .count();
                 ui.label(
-                    egui::RichText::new(format!(
-                        "{shown} of {} shown · Ctrl+F filters",
-                        self.instances.len()
-                    ))
-                    .size(10.0)
-                    .color(MUTED),
+                    egui::RichText::new(format!("{shown} of {} shown", self.instances.len()))
+                        .size(10.0)
+                        .color(MUTED),
                 );
             }
         });
@@ -8137,13 +8077,6 @@ impl KaelisApp {
                     egui::RichText::new("Nothing installed yet")
                         .size(15.0)
                         .strong(),
-                );
-                ui.label(
-                    egui::RichText::new(
-                        "Name it above, pick a version, and Play provisions Java and the client.",
-                    )
-                    .size(11.0)
-                    .color(MUTED),
                 );
             });
         } else if !self.instance_filter.trim().is_empty()
@@ -8626,31 +8559,17 @@ impl KaelisApp {
             Self::glass_frame().show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.heading("Create an instance first");
-                ui.label(
-                    egui::RichText::new("Mods, packs, shaders, and worlds stay together.")
-                        .size(11.0)
-                        .color(MUTED),
-                );
                 ui.add_space(6.0);
-                if primary_button(ui, "Create an instance").clicked() {
+                if primary_button(ui, "Create instance").clicked() {
                     self.current_tab = Tab::Instances;
                 }
             });
             return;
         }
-        if context.input(|input| input.modifiers.command && input.key_pressed(egui::Key::F)) {
-            ui.memory_mut(|memory| memory.request_focus(egui::Id::new(MOD_SEARCH_ID)));
-        }
         ui.add_space(4.0);
         Self::glass_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("INSTANCE")
-                        .size(9.0)
-                        .strong()
-                        .color(MUTED),
-                );
                 let selected_name = self
                     .selected_instance()
                     .map(|instance| format!("{} · {}", instance.name, instance.mc_version))
@@ -8708,22 +8627,9 @@ impl KaelisApp {
                         request.search = true;
                     }
                 }
-                if let Some(instance) = self.selected_instance() {
-                    chip(
-                        ui,
-                        &format!("MC {}", instance.mc_version),
-                        accent_soft(),
-                    );
-                    chip(
-                        ui,
-                        &instance.loader,
-                        if instance.loader.eq_ignore_ascii_case("vanilla") {
-                            MUTED
-                        } else {
-                            accent()
-                        },
-                    );
-                }
+                // The version and loader chips are gone: the combo box beside
+                // them already ends in "Name · version", and the loader belongs
+                // to the instance, not to the toolbar.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
                         .button("Rescan")
@@ -8758,19 +8664,6 @@ impl KaelisApp {
                         .response
                         .on_hover_text("Open the instance or any content folder in the file manager.");
                     });
-                    if ui
-                        .add_enabled(
-                            instance.is_some(),
-                            egui::Button::new("Add files…"),
-                        )
-                        .on_hover_text(
-                            "Pick mods, resource packs, or shader packs from the file manager.",
-                        )
-                        .on_disabled_hover_text("Select an instance first.")
-                        .clicked()
-                    {
-                        request.add_files = true;
-                    }
                 });
             });
             ui.add_space(6.0);
@@ -8923,8 +8816,9 @@ impl KaelisApp {
             }
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
+                // The combo names itself ("fabric"), so the label in front of it
+                // was a word the value already says.
                 if self.content_kind.uses_loader() {
-                    ui.label(egui::RichText::new("Loader").size(9.5).color(MUTED));
                     egui::ComboBox::from_id_source("kaelis-mod-loader")
                         .selected_text(&self.mod_loader)
                         .width(92.0)
@@ -8953,17 +8847,10 @@ impl KaelisApp {
                         .on_hover_text(
                             "Choose the instance's loader here, or change it in the instance properties.",
                         );
-                    } else if let Some(detected) = self.detected_loader.as_deref() {
-                        // A fixed-height pill: the loader is a status, but it
-                        // has to sit on the same baseline as the combo box and
-                        // buttons beside it instead of floating in the row.
-                        status_pill(
-                            ui,
-                            &format!("Detected {detected}"),
-                            StatusKind::Success.color(),
-                        )
-                        .on_hover_text("Every installed mod declares this loader.");
                     }
+                    // The "Detected fabric" pill is gone: it repeated the value
+                    // in the combo box beside it. The warning above stays,
+                    // because a mismatch with the instance is news.
                 } else if self.content_kind == ContentKind::Modpack {
                     chip(ui, "Pack includes its loader", MUTED);
                 } else {
@@ -9432,17 +9319,12 @@ impl KaelisApp {
                 show_curseforge: self.mod_show_curseforge,
             },
         );
-        let shown = visible.len();
         let loaded = self.mod_results.items.len();
         Self::glass_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("BROWSE")
-                        .size(9.0)
-                        .strong()
-                        .color(MUTED),
-                );
+                // No caption: the pill's own hint says what it filters, and the
+                // row is the first thing under the search bar it belongs to.
                 // Capped, not full width: a search field the width of the
                 // window reads as a text editor, and the sort control beside it
                 // was the only thing it had to share the row with.
@@ -9462,13 +9344,6 @@ impl KaelisApp {
                             ui.selectable_value(&mut self.mod_sort, sort, sort.label());
                         }
                     });
-                if loaded > 0 {
-                    ui.label(
-                        egui::RichText::new(format!("{shown} of {loaded}"))
-                            .size(9.5)
-                            .color(MUTED),
-                    );
-                }
             });
         });
         if !self.mod_results.failures.is_empty() {
@@ -9510,7 +9385,7 @@ impl KaelisApp {
                     (
                         "Search the whole library",
                         format!(
-                            "Type a name, paste a project link, or drop a {} file here. Ctrl+F focuses.",
+                            "Type a name, paste a project link, or drop a {} file here.",
                             if self.content_kind == ContentKind::Mod {
                                 "mod"
                             } else {
@@ -11272,7 +11147,6 @@ impl KaelisApp {
                         chosen = Some(step);
                     }
                 }
-                ui.label(egui::RichText::new("Ctrl + / − / 0").size(9.0).color(MUTED));
                 if self.ui_scale <= 0.0 {
                     // Auto hides the resolved value behind a discrete choice;
                     // naming it makes a monitor change visible at a glance.
@@ -11360,18 +11234,9 @@ impl KaelisApp {
     }
 
     fn settings_lower(&mut self, ui: &mut egui::Ui) {
-        Self::glass_frame().show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            section_label(ui, "ZERO-SETUP SERVICES");
-            ui.label(
-                egui::RichText::new(
-                    "Microsoft and CurseForge need no key. Sign-in is kept in the OS credential store; CurseForge uses its public v1 mirror.",
-                )
-                .small()
-                .weak(),
-            );
-        });
-        ui.add_space(8.0);
+        // The zero-setup card is gone. It described the absence of a setting
+        // nobody was looking for, and the account tab already says where a
+        // sign-in lives.
         Self::glass_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
             section_label(ui, "COMMUNITY & ABOUT");
@@ -11767,7 +11632,7 @@ fn search_pill(
                 );
                 if magnifier
                     .on_hover_cursor(egui::CursorIcon::Text)
-                    .on_hover_text("Click to type, or press Ctrl+V to paste a link or file name.")
+                    .on_hover_text("Click to type, or use Paste for a link or file name.")
                     .clicked()
                 {
                     ui.memory_mut(|memory| memory.request_focus(field));
@@ -11782,7 +11647,7 @@ fn search_pill(
                             .hint_text(hint),
                     )
                     .on_hover_text(
-                        "Ctrl+V pastes text, a link, or the name of a file copied in Explorer.",
+                        "Type a name, a link, or the name of a file copied in Explorer.",
                     );
                 // Paste lives inside the pill, where the user is already
                 // looking, as a word rather than a glyph nobody has to decode.
@@ -11797,7 +11662,7 @@ fn search_pill(
                         ))
                         .frame(false),
                     )
-                    .on_hover_text("Paste text, a link, or a copied file name (Ctrl+V).")
+                    .on_hover_text("Paste text, a link, or a copied file name.")
                     .on_hover_cursor(egui::CursorIcon::PointingHand);
                 if paste.clicked()
                     && let Some(pasted) = clipboard_query_text()
@@ -14071,15 +13936,15 @@ fn show_qr(ui: &mut egui::Ui, device: &DeviceCodeResponse) {
 mod tests {
     use super::{
         ARTWORK_EDGE, CheckState, HandoffRequest, InstalledFile, InstalledScan, InstanceHealth,
-        KaelisApp, ModSort, ModView, StatusKind, Tab, apply_pack_artwork, auto_scale_for,
+        KaelisApp, ModSort, ModView, StatusKind, apply_pack_artwork, auto_scale_for,
         auto_scale_for_settled, build_mod_rows, center_square, clipboard_picture,
         content_list_text, count_noun, decode_image_payload, decode_instance_icon, decode_mod_icon,
         draw_instance_avatar, draw_mod_icon, expand_dropped, filter_tokens, has_extension,
         https_icon_url, install_state_key, instance_content_summary, instance_matches,
         instance_name_conflict, looks_like_svg, merge_launch_command, mod_item_key, note_preview,
         parse_handoff, parse_instance_json, parse_jvm_args, relative_last_played, scan_installed,
-        significant_tokens, slugify, store_instance_artwork, tab_from_shortcuts,
-        valid_instance_version, visible_mod_indices, window_icon,
+        significant_tokens, slugify, store_instance_artwork, valid_instance_version,
+        visible_mod_indices, window_icon,
     };
     use kaelis_api::accounts::LauncherSettings;
     use kaelis_api::mods::{ContentKind, ModProvider, ModSearchItem};
@@ -14428,60 +14293,6 @@ mod tests {
         // A jump across bands is accepted in the direction of travel.
         assert_eq!(auto_scale_for_settled(1400.0, 0.9), 1.12);
         assert_eq!(auto_scale_for_settled(500.0, 1.12), 0.9);
-    }
-
-    #[test]
-    fn ctrl_number_selects_the_matching_tab() {
-        // winit reports the physical ctrl key as both `ctrl` and `command`
-        // off macOS, so the event has to carry both flags, not just COMMAND.
-        let ctrl = egui::Modifiers {
-            ctrl: true,
-            command: true,
-            ..Default::default()
-        };
-        let keys = [
-            (egui::Key::Num1, Tab::Overview),
-            (egui::Key::Num2, Tab::Instances),
-            (egui::Key::Num3, Tab::Content),
-            (egui::Key::Num4, Tab::Account),
-            (egui::Key::Num5, Tab::Settings),
-        ];
-        for (key, expected) in keys {
-            let context = egui::Context::default();
-            let mut selected = None;
-            let _ = context.run(
-                egui::RawInput {
-                    events: vec![egui::Event::Key {
-                        key,
-                        physical_key: Some(key),
-                        pressed: true,
-                        repeat: false,
-                        modifiers: ctrl,
-                    }],
-                    ..Default::default()
-                },
-                |context| selected = context.input_mut(tab_from_shortcuts),
-            );
-            assert_eq!(selected, Some(expected), "{key:?}");
-        }
-
-        // A bare digit belongs to the focused field, not to navigation.
-        let context = egui::Context::default();
-        let mut plain = None;
-        let _ = context.run(
-            egui::RawInput {
-                events: vec![egui::Event::Key {
-                    key: egui::Key::Num3,
-                    physical_key: Some(egui::Key::Num3),
-                    pressed: true,
-                    repeat: false,
-                    modifiers: egui::Modifiers::default(),
-                }],
-                ..Default::default()
-            },
-            |context| plain = context.input_mut(tab_from_shortcuts),
-        );
-        assert_eq!(plain, None);
     }
 
     #[test]

@@ -15,7 +15,7 @@ pub const COMPANY_URL: &str = GITHUB_REPOSITORY;
 /// Public product site deployed from `site/`.
 pub const WEBSITE: &str = "https://fuvji.github.io/kaelis/";
 /// Short product line used in the UI and site metadata.
-pub const TAGLINE: &str = "Minecraft, composed.";
+pub const TAGLINE: &str = "Minecraft Launcher";
 /// Official community hub. Shown in footer, settings, and error reports.
 pub const DISCORD_HUB: &str = "https://discord.gg/fvrdYzrQjq";
 /// Keyring service name for Microsoft refresh tokens.
