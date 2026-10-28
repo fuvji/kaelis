@@ -1,6 +1,6 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.4.1-70a5ff)
+![Version](https://img.shields.io/badge/version-0.4.2-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
@@ -116,6 +116,20 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
+## What's new in 0.4.2
+
+- **The taskbar is really gone this time.** 0.4.1 wrote `WS_EX_TOOLWINDOW`
+  once, and both winit and Explorer recompute the style when the window is
+  shown, so the button came back. The window procedure now edits every
+  `WM_STYLECHANGING` for `GWL_EXSTYLE`, keeping `WS_EX_TOOLWINDOW` and dropping
+  `WS_EX_APPWINDOW`, so no later style write can restore the button. The
+  viewport also asks the toolkit for a taskbar-less window
+  (`ViewportBuilder::with_taskbar(false)`), which deletes the tab at creation
+  and after an Explorer restart. Verified against the running release: the
+  visible window has `WS_EX_TOOLWINDOW`, no `WS_EX_APPWINDOW`, and the shell's
+  taskbar exposes no Kaelis item — before and after a hide/show cycle.
+- **Everything from 0.4.1.**
+
 ## What's new in 0.4.1
 
 - **The window bar is only a handle.** The selected channel's name is gone from
@@ -133,12 +147,6 @@ launcher. The working set and handle count are the figures that stay stable.
   `-XX:+ParallelRefProcEnabled` beside the heap and G1 settings, so
   weak-reference cleanup uses every collector worker instead of one. No region
   size, pause target, or thread count is pinned.
-- **No taskbar button.** Kaelis is a tray application, so its window no longer
-  takes a taskbar slot: `WS_EX_TOOLWINDOW` is applied while the window is still
-  hidden, which also drops the Alt+Tab entry. The button is only removed when
-  the tray icon actually installed, so a host that refuses the icon keeps a
-  reachable window. The window itself, its minimize-to-tray behaviour, and the
-  click-to-toggle tray icon are unchanged.
 - **The icon is back.** The executable embeds `assets/kaelis.ico` again and the
   window sets the same 64 px mark, so Explorer, dialogs, and the tray menu show
   the brand instead of a generic executable. The ICO costs 46,732 B; the
@@ -148,7 +156,7 @@ launcher. The working set and handle count are the figures that stay stable.
   it cannot make Minecraft's single render thread multi-core. No timer that
   protects disk, network, or correctness was removed.
 - **Tests:** 283 (the window-icon test returns with the icon, and the taskbar
-  style is asserted as a pure function).
+  style rewrite is asserted as a pure function).
 
 ## What's new in 0.4.0
 

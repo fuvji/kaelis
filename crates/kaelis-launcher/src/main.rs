@@ -1857,6 +1857,14 @@ fn native_options(
             .with_decorations(false)
             .with_resizable(true)
             .with_icon(kaelis_gui::window_icon())
+            // Kaelis is a tray application. Asking the toolkit for a taskbar-less
+            // window is the only way the request survives: winit recomputes the
+            // native style whenever it shows or resizes the window, so a style
+            // written behind its back is reverted at the first show. This goes
+            // through winit's own taskbar list, which it re-applies if Explorer
+            // restarts. Non-Windows toolkits ignore the flag; the tray icon is
+            // still the handle there.
+            .with_taskbar(false)
             // Wayland/X11 use the app id to match the window to its desktop
             // entry, so the icon and name are right in the taskbar.
             //

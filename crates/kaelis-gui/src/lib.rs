@@ -1283,10 +1283,6 @@ impl KaelisApp {
                 });
         }
         let tray = tray::TrayController::install(creation.egui_ctx.clone(), sender.clone()).ok();
-        // The taskbar button is only removed when the tray icon exists: the
-        // tray is then the one handle that can always restore the window, and
-        // an installation where the shell refuses the icon keeps its button.
-        platform::prefer_tray_only(tray.is_some());
         if start_hidden {
             platform::begin_hidden_start(creation.egui_ctx.clone());
         }
