@@ -251,6 +251,71 @@ pub(crate) fn enable_dark_menus() {
     }
 }
 
+/// Whether the tray icon was installed at start-up.
+///
+/// The taskbar button is only removed when the tray exists: the tray is then
+/// the one handle that can always bring the window back, and an installation
+/// where the shell refuses the icon keeps its button instead of stranding the
+/// launcher.
+#[cfg(windows)]
+static TRAY_AVAILABLE: AtomicBool = AtomicBool::new(false);
+
+#[cfg(windows)]
+pub(crate) fn prefer_tray_only(tray_available: bool) {
+    TRAY_AVAILABLE.store(tray_available, Ordering::Relaxed);
+}
+
+#[cfg(not(windows))]
+pub(crate) fn prefer_tray_only(_tray_available: bool) {}
+
+/// Keep the launcher's button off the taskbar.
+///
+/// Windows gives every visible top-level window a taskbar button, and Kaelis
+/// is a tray application: the notification-area icon is its handle, and a
+/// second button for a window that hides itself during every launch is pure
+/// clutter. `WS_EX_TOOLWINDOW` removes the button and the Alt+Tab entry while
+/// leaving the window fully functional; `WS_EX_APPWINDOW` is cleared because it
+/// would force a button back. The style is applied while the window is still
+/// hidden (eframe shows it after the first frame), so no button is ever drawn
+/// and nothing flickers.
+#[cfg(windows)]
+fn hide_taskbar_button(window: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GWL_EXSTYLE, GetWindowLongPtrW, SetWindowLongPtrW,
+    };
+    // SAFETY: `window` belongs to this process, and both calls only read or
+    // replace that window's extended style word.
+    unsafe {
+        let style = GetWindowLongPtrW(window, GWL_EXSTYLE);
+        let wanted = taskbar_hidden_style(style);
+        if wanted != style {
+            SetWindowLongPtrW(window, GWL_EXSTYLE, wanted);
+        }
+    }
+}
+
+#[cfg(windows)]
+fn taskbar_hidden_style(style: isize) -> isize {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{WS_EX_APPWINDOW, WS_EX_TOOLWINDOW};
+    (style | WS_EX_TOOLWINDOW as isize) & !(WS_EX_APPWINDOW as isize)
+}
+
+#[cfg(all(test, windows))]
+mod taskbar_tests {
+    use super::taskbar_hidden_style;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{WS_EX_APPWINDOW, WS_EX_TOOLWINDOW};
+
+    #[test]
+    fn hiding_the_button_sets_toolwindow_and_clears_appwindow() {
+        let style = taskbar_hidden_style(WS_EX_APPWINDOW as isize);
+        assert_ne!(style & WS_EX_TOOLWINDOW as isize, 0);
+        assert_eq!(style & WS_EX_APPWINDOW as isize, 0);
+        // Every other bit is preserved, so resizing and painting are untouched.
+        let other = 0x0008_0000_isize;
+        assert_eq!(taskbar_hidden_style(other), other | WS_EX_TOOLWINDOW as isize);
+    }
+}
+
 /// Route the title-bar minimize button to the tray.
 ///
 /// egui only learns about a minimize after the toolkit has already minimized
@@ -293,6 +358,12 @@ pub(crate) fn install_window_hooks() {
         // SAFETY: the same arguments arrived from the window manager; the
         // default procedure owns every message this hook does not consume.
         unsafe { DefSubclassProc(window, message, wparam, lparam) }
+    }
+
+    // Applied before the subclass so a shell that re-evaluates the window on
+    // the next show never creates a button for it in the first place.
+    if TRAY_AVAILABLE.load(Ordering::Relaxed) {
+        hide_taskbar_button(window);
     }
 
     // SAFETY: the callback has the documented `SUBCLASSPROC` signature, the

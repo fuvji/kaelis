@@ -1283,6 +1283,10 @@ impl KaelisApp {
                 });
         }
         let tray = tray::TrayController::install(creation.egui_ctx.clone(), sender.clone()).ok();
+        // The taskbar button is only removed when the tray icon exists: the
+        // tray is then the one handle that can always restore the window, and
+        // an installation where the shell refuses the icon keeps its button.
+        platform::prefer_tray_only(tray.is_some());
         if start_hidden {
             platform::begin_hidden_start(creation.egui_ctx.clone());
         }
@@ -6850,11 +6854,9 @@ impl KaelisApp {
                     context.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
                 }
                 ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new(self.current_tab.title())
-                            .size(12.5)
-                            .strong(),
-                    );
+                    // The bar is a drag handle and three window controls. The
+                    // selected channel is already obvious from the rail and
+                    // the page below it, so it is not repeated here.
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if window_control(ui, WindowControl::Close, "Close").clicked() {
                             self.quit_now();

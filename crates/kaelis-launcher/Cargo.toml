@@ -1,6 +1,6 @@
 [package]
 name = "kaelis-launcher"
-version = "0.4.0"
+version = "0.4.1"
 edition.workspace = true
 description = "Kaelis — native Rust Minecraft launcher"
 homepage = "https://github.com/fuvji/kaelis"
@@ -30,3 +30,4 @@ windows-sys = { version = "0.61", features = [
 
 [build-dependencies]
 embed-resource = "3"
+

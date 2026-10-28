@@ -23,6 +23,12 @@ struct Tracked {
     /// the governor has no priority class to steer.
     #[cfg(windows)]
     demoted: bool,
+    /// A game that has never owned the foreground is still starting up: its
+    /// window, mods, and world have not appeared yet, so it must not be
+    /// throttled before the user has even seen it. It is promoted at
+    /// registration and only becomes idle-eligible after its first focus.
+    #[cfg(windows)]
+    seen_foreground: bool,
 }
 
 static GAMES: OnceLock<Mutex<Vec<Tracked>>> = OnceLock::new();
@@ -53,6 +59,8 @@ pub fn track(pid: u32) -> LiveGame {
             pid,
             #[cfg(windows)]
             demoted: false,
+            #[cfg(windows)]
+            seen_foreground: false,
         });
     }
     #[cfg(windows)]
@@ -74,7 +82,7 @@ mod imp {
     use std::sync::Once;
     use windows_sys::Win32::Foundation::{CloseHandle, HWND};
     use windows_sys::Win32::System::Threading::{
-        IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, OpenProcess,
+        HIGH_PRIORITY_CLASS, IDLE_PRIORITY_CLASS, OpenProcess,
         PROCESS_POWER_THROTTLING_CURRENT_VERSION, PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
         PROCESS_POWER_THROTTLING_STATE, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
         ProcessPowerThrottling, SetPriorityClass, SetProcessInformation,
@@ -153,7 +161,14 @@ mod imp {
         }
         let foreground = foreground_pid();
         for game in games.iter_mut() {
-            let idle = Some(game.pid) != foreground;
+            let focused = Some(game.pid) == foreground;
+            if focused {
+                game.seen_foreground = true;
+            }
+            // Until the game has been in front once, leave it high: a JVM
+            // loading mods and a world is exactly the work that must not be
+            // slowed before the window has even appeared.
+            let idle = !focused && game.seen_foreground;
             if idle != game.demoted && set_priority(game.pid, idle) {
                 game.demoted = idle;
             }
@@ -173,7 +188,7 @@ mod imp {
         (pid != 0).then_some(pid)
     }
 
-    fn set_priority(pid: u32, idle: bool) -> bool {
+    pub(super) fn set_priority(pid: u32, idle: bool) -> bool {
         // SAFETY: no pointers; the process id comes from a child this launcher
         // owns. A dead process makes OpenProcess fail, which is handled.
         let handle = unsafe {
@@ -187,13 +202,16 @@ mod imp {
             return false;
         }
         // SAFETY: `handle` is a process handle with SET_INFORMATION access.
+        // The instance in front is not merely "normal": it is the reason the
+        // machine is on, so it runs above every ordinary background process.
+        // Anything behind it is idle-class, which is lower than normal.
         let applied = unsafe {
             SetPriorityClass(
                 handle,
                 if idle {
                     IDLE_PRIORITY_CLASS
                 } else {
-                    NORMAL_PRIORITY_CLASS
+                    HIGH_PRIORITY_CLASS
                 },
             )
         };
@@ -225,5 +243,44 @@ mod imp {
         // SAFETY: the handle came from OpenProcess and is closed exactly once.
         unsafe { CloseHandle(handle) };
         applied != 0
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::set_priority;
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::{
+            GetPriorityClass, HIGH_PRIORITY_CLASS, IDLE_PRIORITY_CLASS, OpenProcess,
+            PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+
+        fn priority(pid: u32) -> Option<u32> {
+            // SAFETY: the pid belongs to the live child below, and the handle
+            // is queried with the least access that can answer the question.
+            unsafe {
+                let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+                if handle.is_null() {
+                    return None;
+                }
+                let class = GetPriorityClass(handle);
+                CloseHandle(handle);
+                (class != 0).then_some(class)
+            }
+        }
+
+        #[test]
+        fn the_active_game_is_high_and_a_background_one_is_idle() {
+            let mut child = std::process::Command::new("cmd")
+                .args(["/C", "ping -n 8 127.0.0.1 >NUL"])
+                .spawn()
+                .expect("a child process that outlives both priority changes");
+            let pid = child.id();
+            assert!(set_priority(pid, true), "a background game is demoted");
+            assert_eq!(priority(pid), Some(IDLE_PRIORITY_CLASS));
+            assert!(set_priority(pid, false), "the game in front is promoted");
+            assert_eq!(priority(pid), Some(HIGH_PRIORITY_CLASS));
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }

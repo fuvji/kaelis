@@ -1,6 +1,6 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.4.0-70a5ff)
+![Version](https://img.shields.io/badge/version-0.4.1-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
@@ -115,6 +115,40 @@ against other launchers, and the absolute window time moves with the host: the
 same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
+
+## What's new in 0.4.1
+
+- **The window bar is only a handle.** The selected channel's name is gone from
+  the strip: the rail already shows it and the page below repeats it. The bar
+  keeps the drag surface and the three window controls.
+- **The game in front runs at high priority.** A launched JVM is promoted to
+  `HIGH_PRIORITY_CLASS` while it loads and while it owns the foreground, and is
+  demoted to `IDLE_PRIORITY_CLASS` only after it has been in front once and the
+  user switches away. A JVM loading mods and a world is therefore never
+  throttled before its window appears, and a background instance still gives up
+  the fast cores through EcoQoS. A Windows test spawns a child process and
+  asserts both classes. Unix does not let an unprivileged process raise another
+  process's priority, so there is no equivalent switch to flip there.
+- **Parallel reference processing.** The default flags add
+  `-XX:+ParallelRefProcEnabled` beside the heap and G1 settings, so
+  weak-reference cleanup uses every collector worker instead of one. No region
+  size, pause target, or thread count is pinned.
+- **No taskbar button.** Kaelis is a tray application, so its window no longer
+  takes a taskbar slot: `WS_EX_TOOLWINDOW` is applied while the window is still
+  hidden, which also drops the Alt+Tab entry. The button is only removed when
+  the tray icon actually installed, so a host that refuses the icon keeps a
+  reachable window. The window itself, its minimize-to-tray behaviour, and the
+  click-to-toggle tray icon are unchanged.
+- **The icon is back.** The executable embeds `assets/kaelis.ico` again and the
+  window sets the same 64 px mark, so Explorer, dialogs, and the tray menu show
+  the brand instead of a generic executable. The ICO costs 46,732 B; the
+  rebuilt executable is **18,357,760 B**, the same size as 0.4.0's.
+- **Scope, stated plainly:** the launcher can give a game the highest practical
+  scheduling priority and tune its JVM, but it cannot overclock a CPU or GPU and
+  it cannot make Minecraft's single render thread multi-core. No timer that
+  protects disk, network, or correctness was removed.
+- **Tests:** 283 (the window-icon test returns with the icon, and the taskbar
+  style is asserted as a pure function).
 
 ## What's new in 0.4.0
 

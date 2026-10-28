@@ -23,6 +23,11 @@ pub fn default_flags_with_min(ram_mb: u32, min_ram_mb: u32) -> Vec<String> {
         format!("-Xms{initial}M"),
         format!("-Xmx{heap}M"),
         "-XX:+UseG1GC".to_owned(),
+        // Reference processing runs in parallel on every collector thread. It
+        // is a stable, non-experimental switch: where the heap has many weak
+        // references (Minecraft's registries do), it shortens the pause without
+        // pinning any region, pause, or thread count.
+        "-XX:+ParallelRefProcEnabled".to_owned(),
     ]
 }
 
