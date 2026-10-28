@@ -3,6 +3,9 @@ members = ["crates/kaelis-core", "crates/kaelis-api", "crates/kaelis-gui", "crat
 resolver = "2"
 
 [workspace.package]
+# One version for every crate: the launcher, tray tooltip, updater comparison,
+# and About card must never disagree about which build is running.
+version = "0.4.3"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"

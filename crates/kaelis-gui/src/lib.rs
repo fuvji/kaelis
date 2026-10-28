@@ -1286,9 +1286,6 @@ impl KaelisApp {
         if start_hidden {
             platform::begin_hidden_start(creation.egui_ctx.clone());
         }
-        // The minimize-button hook is attached to the real window; the first
-        // frame retries if the handle is not published yet.
-        platform::install_window_hooks();
         // Windows listens for real foreground changes rather than expecting a
         // frame after focus loss, which an idle launcher never schedules.
         platform::start_idle_guard();
@@ -11382,9 +11379,6 @@ impl eframe::App for KaelisApp {
         if context.input(|input| input.viewport().close_requested()) {
             self.quit_now();
         }
-        // A no-op after the first successful attach; retries if the window
-        // handle was not published when the app was constructed.
-        platform::install_window_hooks();
         self.apply_interface_scale(context);
         self.handle_keyboard_navigation(context);
         if self.editing.is_none()

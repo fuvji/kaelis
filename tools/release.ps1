@@ -27,7 +27,7 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $root
-$version = (Select-String -Path "crates/kaelis-launcher/Cargo.toml" -Pattern '^version = "(.*)"').Matches[0].Groups[1].Value
+$version = (Select-String -Path "Cargo.toml" -Pattern '^version = "(.*)"').Matches[0].Groups[1].Value
 
 # The GNU toolchain needs its bundled MinGW linker and gcc on PATH.
 $mingw = Join-Path $root "tools/mingw64/bin"

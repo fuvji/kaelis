@@ -40,7 +40,7 @@
         "applicationSubCategory": "Minecraft launcher",
         "operatingSystem": "Windows 10, Windows 11, macOS 11, Linux",
         "processorRequirements": "x86_64 or arm64",
-        "softwareVersion": "0.4.2",
+        "softwareVersion": "0.4.3",
         "softwareRequirements": "Rust 1.85+ to build from source; Java is provisioned automatically",
         "downloadUrl": "https://fuvji.github.io/kaelis/downloads/Kaelis-Portable.zip",
         "installUrl": "https://fuvji.github.io/kaelis/#downloads",
@@ -424,7 +424,7 @@
     <div class="shell" id="top">
       <section class="hero" aria-labelledby="hero-title">
         <div>
-          <span class="eyebrow"><i></i>v0.4.2 · Windows · macOS · Linux</span>
+          <span class="eyebrow"><i></i>v0.4.3 · Windows · macOS · Linux</span>
           <h1 id="hero-title">Minecraft<br><em>Launcher</em></h1>
           <p class="lede">Instances, mods, packs, shaders, and accounts in one native workspace. Files stay local. Nothing runs in the background.</p>
           <div class="hero-actions">
@@ -493,7 +493,7 @@
           <article class="card">
             <span class="tag">Sleep</span>
             <h3>Always one click away</h3>
-            <p>Starting a game hides the launcher and hands its working set back to Windows; 90 s unfocused does the same. Minimize sends the window to the tray, and Show / Minimize (or one tray click) lifts it above the game and forces focus, every time. Background instances idle at low priority, idle HTTP closes after 15 s, and one optional sign-in entry starts Kaelis hidden in the tray.</p>
+            <p>Starting a game hides the launcher and hands its working set back to Windows; 90 s unfocused does the same. Minimize keeps the window's taskbar button, the tray's Hide puts it away, and Show (or one tray click) lifts it above the game and forces focus, every time. Every game runs at high priority for its whole life, idle HTTP closes after 15 s, and one optional sign-in entry starts Kaelis hidden in the tray.</p>
           </article>
         </div>
       </section>
@@ -540,8 +540,8 @@
             <h3>Windows portable ZIP</h3>
             <p>One executable. Extract anywhere and run. Instances stay in your profile.</p>
             <div class="facts">
-              <span><b data-release="exe-size">16.4 MB</b> app</span>
-              <span><b data-release="zip-size">8.0 MB</b> zip</span>
+              <span><b data-release="exe-size">17.5 MB</b> app</span>
+              <span><b data-release="zip-size">8.2 MB</b> zip</span>
               <span>Windows 10 / 11 · x64</span>
               <span>No install</span>
             </div>
@@ -557,7 +557,7 @@
             <h3>Windows installer</h3>
             <p>Per-user install, Start menu shortcut, clean uninstaller.</p>
             <div class="facts">
-              <span><b data-release="setup-size">5.8 MB</b> setup</span>
+              <span><b data-release="setup-size">6.1 MB</b> setup</span>
               <span>No admin rights</span>
               <span>Clean uninstaller</span>
             </div>
@@ -599,7 +599,7 @@
         </div>
 
         <div class="downloads-foot">
-          <span><b style="color:var(--text)">New in 0.4.2</b> · <b style="color:var(--text)">no taskbar button</b>: every window-style change is rewritten to keep the launcher off the taskbar, and the toolkit is asked for a taskbar-less window too, so the taskbar and Alt+Tab stay clear and the tray icon is the handle. 0.4.1 wrote that style once, which the toolkit reverted at the first show; that is fixed. From 0.4.1: <b style="color:var(--text)">the window bar is only a handle</b>: the selected channel's name is gone, because the rail already shows it and the page below repeats it. <b style="color:var(--text)">The game in front runs at high priority</b> while it loads and while it owns the foreground, and drops to idle only after it has been in front once and the user switches away; a background instance still gives up the fast cores through EcoQoS. The default JVM flags add <b style="color:var(--text)">parallel reference processing</b>, and the brand icon is back in the executable and the tray. From 0.4.0: <b style="color:var(--text)">an idle launcher is invisible to the system</b>: a hidden or unfocused Kaelis asks Windows for <b style="color:var(--text)">background processing mode</b> and <b style="color:var(--text)">EcoQoS</b> — bottom of the CPU queue, minimum disk and memory priority, efficiency cores at a low clock — so the OS pages it out: the working set falls from ~81 MB to ~32 MB (~19 MB after a tray wake) and a tray-hidden launcher costs <b style="color:var(--text)">0 ms of CPU</b> in every 2-second window after start-up, where 0.3.7 spun at <b style="color:var(--text)">5.13% of a core</b> in a 60-second hidden sample. <b style="color:var(--text)">Updates install in place inside the running launcher</b> — rename, verified copy, relaunch with the pid to wait for — so there is no helper script, no black console window, and no one-second poll. Background instances are demoted and promoted by a foreground hook instead of a 1.5-second timer, and give up the fast cores through EcoQoS while they are not in front. From 0.3.7: <b style="color:var(--text)">the labels the buttons already said are gone</b>: no <b style="color:var(--text)">keyboard shortcuts</b> (Ctrl/Cmd + 1…5, Ctrl + F, Ctrl + S were removed with their hints and tests), no <b style="color:var(--text)">PLAYING</b> pill or status sentence in the window bar, no ACTIVE INSTANCE caption or Manage content button on Overview, no Your instances heading on Instances, and no BROWSE, INSTANCE, or Loader captions on Content — along with the MC and loader chips, the 50 of 50 counter, the Add files… button beside Folders, and the Zero-setup services card. Helper sentences like <i>Name it to begin</i> and <i>Java installs on first play</i> are deleted, and the Create button explains itself in its own tooltip. <b style="color:var(--text)">The tagline is now Minecraft Launcher</b>, the sidebar credits Rust, and both create surfaces read Create instance. From 0.3.6: no filter row, capped fields, tighter controls. From 0.3.5: a window down to 320 points. From 0.3.4: rounded corners from the compositor and no shadows. From 0.3.1: Play repairs a missing JVM, client jar, library, or loader before launch, Minecraft's own telemetry is forced off, and Auto Erase Junk keeps every instance clean at 0.00% idle cost.</span>
+          <span><b style="color:var(--text)">New in 0.4.3</b> · <b style="color:var(--text)">back in the taskbar</b>: a normal launch keeps its taskbar button and Alt+Tab entry, the window has a real title, and minimize is an ordinary minimize, so the shell can always restore it — the tray icon stays, and its Hide is the explicit way to put the window away. <b style="color:var(--text)">The game runs at high priority for its whole life</b>: promoted once at spawn and never demoted when you alt-tab, with no focus hook, monitor thread, or EcoQoS throttle on the JVM. <b style="color:var(--text)">One version everywhere</b>: every crate inherits the workspace version, so the tray, About card, and update check can no longer disagree with the running build. The stripped binary is 18,352,640 B, 5,120 B lighter than 0.4.2. From 0.4.1: <b style="color:var(--text)">the window bar is only a handle</b>: the selected channel's name is gone, because the rail already shows it and the page below repeats it. <b style="color:var(--text)">The game in front runs at high priority</b> while it loads and while it owns the foreground, and drops to idle only after it has been in front once and the user switches away; a background instance still gives up the fast cores through EcoQoS. The default JVM flags add <b style="color:var(--text)">parallel reference processing</b>, and the brand icon is back in the executable and the tray. From 0.4.0: <b style="color:var(--text)">an idle launcher is invisible to the system</b>: a hidden or unfocused Kaelis asks Windows for <b style="color:var(--text)">background processing mode</b> and <b style="color:var(--text)">EcoQoS</b> — bottom of the CPU queue, minimum disk and memory priority, efficiency cores at a low clock — so the OS pages it out: the working set falls from ~81 MB to ~32 MB (~19 MB after a tray wake) and a tray-hidden launcher costs <b style="color:var(--text)">0 ms of CPU</b> in every 2-second window after start-up, where 0.3.7 spun at <b style="color:var(--text)">5.13% of a core</b> in a 60-second hidden sample. <b style="color:var(--text)">Updates install in place inside the running launcher</b> — rename, verified copy, relaunch with the pid to wait for — so there is no helper script, no black console window, and no one-second poll. Background instances are demoted and promoted by a foreground hook instead of a 1.5-second timer, and give up the fast cores through EcoQoS while they are not in front. From 0.3.7: <b style="color:var(--text)">the labels the buttons already said are gone</b>: no <b style="color:var(--text)">keyboard shortcuts</b> (Ctrl/Cmd + 1…5, Ctrl + F, Ctrl + S were removed with their hints and tests), no <b style="color:var(--text)">PLAYING</b> pill or status sentence in the window bar, no ACTIVE INSTANCE caption or Manage content button on Overview, no Your instances heading on Instances, and no BROWSE, INSTANCE, or Loader captions on Content — along with the MC and loader chips, the 50 of 50 counter, the Add files… button beside Folders, and the Zero-setup services card. Helper sentences like <i>Name it to begin</i> and <i>Java installs on first play</i> are deleted, and the Create button explains itself in its own tooltip. <b style="color:var(--text)">The tagline is now Minecraft Launcher</b>, the sidebar credits Rust, and both create surfaces read Create instance. From 0.3.6: no filter row, capped fields, tighter controls. From 0.3.5: a window down to 320 points. From 0.3.4: rounded corners from the compositor and no shadows. From 0.3.1: Play repairs a missing JVM, client jar, library, or loader before launch, Minecraft's own telemetry is forced off, and Auto Erase Junk keeps every instance clean at 0.00% idle cost.</span>
           <span>Every tag builds all three platforms in CI and publishes checksums.</span>
           <a href="downloads/KAELIS-LINKS.txt">URL &amp; install index ↗</a>
           <a href="https://github.com/fuvji/kaelis/releases/latest" rel="noreferrer">All releases ↗</a>
@@ -610,9 +610,9 @@
           <summary>Checksums and build provenance</summary>
           <div class="body">
             <p style="margin:0;color:var(--muted);font-size:13px">Every artifact is hashed at release time. Published files: <a href="downloads/SHA256SUMS.txt" style="color:var(--accent-soft)">SHA256SUMS.txt</a> and the generated <a href="downloads/KAELIS-LINKS.txt" style="color:var(--accent-soft)">URL &amp; installation index</a>.</p>
-            <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">5520ede77ff45f4df7843f856e07444fe301804bba851d77f2210a282adf2e04</code></div>
-            <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">22032ba2eab7d8d1777edf2a07259cd444480982a0b048e09668b356046c7133</code></div>
-            <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">cc0cadf1a917c1b31a7abc472d93959228803886fdb7ed9424cb46d356d655c3</code></div>
+            <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">38bb3ed041f41ef154e99171e0c42ef4b2503da365a50d1627b6e87ff8c9b0d8</code></div>
+            <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">93eea5a98685456bec222df0c458e395de05ce5d419e44f0615427c92f2695e7</code></div>
+            <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">4c9757b91a3bc92e27e1bc7a11421813adb4c13e3f43b2ee33a55f76a17740be</code></div>
             <div class="hash"><span>Kaelis-macos-universal.dmg</span><code data-release="dmg-hash">55cd4f3af52fcf36bff449e05b71addf279dc40b6f6f55ac234a3c2d7e4525cd</code></div>
             <div class="hash"><span>Kaelis-linux-x64.deb</span><code data-release="deb-hash">ea5a0a9481a5aa3b45d6e3873237d40c749995b76c7c2e789278ec568a52c6a2</code></div>
             <div class="hash"><span>Kaelis-linux-x64.AppImage</span><code data-release="appimage-hash">396b1a3285473329a8aad2ac2dcb97230e4d9d2b95dec061b62433da5fc50adb</code></div>

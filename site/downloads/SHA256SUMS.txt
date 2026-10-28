@@ -1,8 +1,5 @@
-396b1a3285473329a8aad2ac2dcb97230e4d9d2b95dec061b62433da5fc50adb  Kaelis-linux-x64.AppImage
-ea5a0a9481a5aa3b45d6e3873237d40c749995b76c7c2e789278ec568a52c6a2  Kaelis-linux-x64.deb
-dc613d3bc35e059a4e13f712b818fbe087a643fe8a659fe3a50282181536e237  Kaelis-linux-x64.tar.gz
-55cd4f3af52fcf36bff449e05b71addf279dc40b6f6f55ac234a3c2d7e4525cd  Kaelis-macos-universal.dmg
-1dbc91f76156d2ba0fb3641dd1b8c3b1c2fa77e8246c6dbf2cde5f73268981b2  Kaelis-macos-universal.zip
-22032ba2eab7d8d1777edf2a07259cd444480982a0b048e09668b356046c7133 *Kaelis-Portable.zip
-cc0cadf1a917c1b31a7abc472d93959228803886fdb7ed9424cb46d356d655c3 *Kaelis-Setup.exe
-5520ede77ff45f4df7843f856e07444fe301804bba851d77f2210a282adf2e04 *Kaelis.exe
+# Kaelis 0.4.3 - released 2026-10-28
+# Verify: shasum -a 256 -c SHA256SUMS.txt  |  certutil -hashfile <file> SHA256
+38bb3ed041f41ef154e99171e0c42ef4b2503da365a50d1627b6e87ff8c9b0d8  Kaelis.exe
+93eea5a98685456bec222df0c458e395de05ce5d419e44f0615427c92f2695e7  Kaelis-Portable.zip
+4c9757b91a3bc92e27e1bc7a11421813adb4c13e3f43b2ee33a55f76a17740be  Kaelis-Setup.exe

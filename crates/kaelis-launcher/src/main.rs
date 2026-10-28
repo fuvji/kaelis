@@ -1837,15 +1837,15 @@ fn native_options(
     eframe::NativeOptions {
         renderer,
         viewport: eframe::egui::ViewportBuilder::default()
-            // A sign-in launch shows only the tray icon: no window flash, no
-            // taskbar entry, and no first-frame cost until the user asks.
-            // Keeping `taskbar` off in that mode means restoring the window
-            // from the tray never adds a second taskbar button: at login the
-            // tray is the app's only handle. An ordinary launch keeps its
-            // taskbar entry so a desktop without tray support can still
-            // switch to the window.
+            // A sign-in launch stays invisible until the user asks for it; an
+            // ordinary launch shows its window immediately. The window keeps
+            // the toolkit's default taskbar entry, so it can always be found
+            // and restored from the shell.
             .with_visible(!start_hidden)
-            .with_taskbar(!start_hidden)
+            // The window paints its own header, so this title is never drawn,
+            // but the shell reads it for the taskbar button and Alt+Tab. It is
+            // also the prefix `platform::main_window` looks for.
+            .with_title(kaelis_core::brand::LAUNCHER_NAME)
             // Fits a 1366×768 laptop with the taskbar visible; eframe restores
             // the last size and position once the window has been moved.
             .with_inner_size(window_size)
@@ -1857,14 +1857,6 @@ fn native_options(
             .with_decorations(false)
             .with_resizable(true)
             .with_icon(kaelis_gui::window_icon())
-            // Kaelis is a tray application. Asking the toolkit for a taskbar-less
-            // window is the only way the request survives: winit recomputes the
-            // native style whenever it shows or resizes the window, so a style
-            // written behind its back is reverted at the first show. This goes
-            // through winit's own taskbar list, which it re-applies if Explorer
-            // restarts. Non-Windows toolkits ignore the flag; the tray icon is
-            // still the handle there.
-            .with_taskbar(false)
             // Wayland/X11 use the app id to match the window to its desktop
             // entry, so the icon and name are right in the taskbar.
             //

@@ -54,7 +54,7 @@ if (Test-Path $canonical) {
     }
 }
 
-$version = (Select-String -Path "crates/kaelis-launcher/Cargo.toml" -Pattern '^version = "(.*)"').Matches[0].Groups[1].Value
+$version = (Select-String -Path "Cargo.toml" -Pattern '^version = "(.*)"').Matches[0].Groups[1].Value
 $build = $null
 $buildPath = Join-Path $dist "build.json"
 if (Test-Path $buildPath) {

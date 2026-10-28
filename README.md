@@ -28,10 +28,10 @@ keep that library clean, correct, and fast on their own.
 | **Keyless catalogue** | Modrinth and the entire CurseForge catalogue — search, paging, resource packs, shaders — with no API key and no account |
 | **Managed Java** | Installs the Mojang runtime the version metadata names and launches through it, so no system JDK is required |
 | **Portable instances** | One `.kaelis.zip` round trip, plus Prism/MultiMC, CurseForge, `.mrpack`, and loose pack imports |
-| **Runs in parallel, quietly** | Per-instance OS guards let different instances launch together; a smart power governor drops every unfocused game to idle priority within 1.5 s and restores it the moment it is focused, so the game being played owns the CPU |
+| **Runs in parallel, quietly** | Per-instance OS guards let different instances launch together; every JVM is promoted to high priority as it spawns and stays there for its whole life, so loading and rendering run ahead of ordinary background work with no timer and no focus hook |
 | **Reopens, never doubles** | One process, one tray icon: a second launch, a Start-menu click, or the tray icon restores the running window in ~120 ms instead of starting another launcher — including over a fullscreen game |
 | **Hibernates while you play** | Starting a game hides the window and empties its working set, and 90 s unfocused does the same while the window stays open; one tray click restores it, mid-game included |
-| **Frameless window, tray-first** | The launcher draws its own header instead of a native title bar: drag anywhere on the strip to move the window, double-click to maximize or restore, and one click each to minimize, maximize, or close — Close ends the process immediately. The corners are rounded by the compositor rather than by a transparent surface, and the three controls are painted strokes, so they keep the system's shapes at every scale factor. On Windows minimize still hides to the notification area and gives its pages back. Always on; there is no switch to turn it off. The tray icon itself toggles: a click restores a hidden or taskbar-minimised window, and hides a visible one. The native menu is forced dark and is three actions plus one separator |
+| **Frameless window, taskbar-friendly** | The launcher draws its own header instead of a native title bar: drag anywhere on the strip to move the window, double-click to maximize or restore, and one click each to minimize, maximize, or close — Close ends the process immediately. The corners are rounded by the compositor rather than by a transparent surface, and the three controls are painted strokes, so they keep the system's shapes at every scale factor. Minimize is an ordinary minimize: the window keeps its taskbar button and can be restored from the shell. The tray icon stays as a shortcut — a click restores a hidden window, and the menu's Hide puts a visible one away. The native menu is forced dark and is three actions plus one separator |
 | **Remembers your setup** | Window size and every remembered switch reopen the way they were left: version-list snapshots, alpha and beta versions, required dependencies, the search providers, and search-as-you-type. A resize is written once the drag settles, and quitting right after one still keeps the newest size |
 | **Updates in one click** | One anonymous GitHub request runs in the background after the window is up. When a newer release exists, the footer version links to it and an **Update** action installs the build right there: the download is SHA-256-verified against the same release, the old executable is backed up, and a failed swap rolls back. Nothing downloads or installs on its own |
 | **Starts with Windows** | One optional per-user sign-in entry opens Kaelis hidden in the tray, with no service, scheduled task, splash, or focus steal. Enable or disable it in Settings or with `kaelis --startup on\|off` |
@@ -115,6 +115,30 @@ against other launchers, and the absolute window time moves with the host: the
 same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
+
+## What's new in 0.4.3
+
+- **Back in the taskbar.** The forced `WS_EX_TOOLWINDOW` rewrite is gone, so a
+  normal launch keeps a taskbar button and Alt+Tab entry again. The window also
+  carries a real title (`Kaelis`), which was empty before, so the shell has a
+  name for it instead of the raw process name. Minimize is an ordinary minimize
+  on every platform; the tray icon remains, and its **Hide** is the explicit way
+  to put the window away. Deleting the style hook also removes an unsafe window
+  subclass and its retry path from every frame.
+- **The game stays at high priority.** A launched JVM is promoted once, right
+  after spawn, and is never demoted. The foreground hook, its message-loop
+  thread, the idle demotion, and the EcoQoS throttle on the game are all gone,
+  so alt-tabbing no longer drops the world loading in the background to idle.
+  `REALTIME_PRIORITY_CLASS` is still not used: it needs elevation and can starve
+  input and audio. High is the highest class that is both reachable and safe.
+- **One version everywhere.** Every crate now inherits the workspace version
+  instead of carrying its own. 0.4.2 shipped a launcher that reported itself as
+  0.4.2 in the tray, About card, update check, and report metadata; 0.4.3's
+  single value cannot drift again. The release and link scripts read that one
+  value.
+- **Lighter.** The stripped Windows executable is **18,352,640 B**, 5,120 B
+  smaller than 0.4.2's, with the same icon and both renderers.
+- **Tests:** 282, with `cargo fmt --check` and Clippy `-D warnings` clean.
 
 ## What's new in 0.4.2
 

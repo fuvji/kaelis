@@ -934,11 +934,11 @@ where
         _ => LaunchError::Io(error),
     })?;
     plan.native_dir.retain_for_child();
-    // Hold the power registration for exactly the life of this JVM: when the
-    // game exits (or the launch future is cancelled) the guard drops and the
-    // monitor forgets the pid instead of polling a dead process forever.
+    // Raise the JVM once, right after spawn, and never touch it again: the
+    // priority class survives for the life of the process, so a game keeps the
+    // high class while it loads, plays, and even while it is alt-tabbed.
     let pid = child.id().unwrap_or_default();
-    let _power = (pid != 0).then(|| crate::power::track(pid));
+    crate::power::promote(pid);
     // Publish the pid and its creation time before the game is visible, so a
     // launcher that dies right now still leaves a recoverable record. The
     // guard deletes it on every return path.

@@ -251,102 +251,6 @@ pub(crate) fn enable_dark_menus() {
     }
 }
 
-/// Route the title-bar minimize button to the tray.
-///
-/// egui only learns about a minimize after the toolkit has already minimized
-/// the window, which means a repaint (and a visible animation) before the
-/// launcher could hide itself. A window subclass sees `WM_SYSCOMMAND` before
-/// `DefWindowProc` and hides the real handle instead, so the button costs one
-/// message and no frame. `SetWindowSubclass` chains to the toolkit's own
-/// procedure, so restore, resize, and painting keep working unchanged.
-#[cfg(windows)]
-pub(crate) fn install_window_hooks() {
-    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-    use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GWL_EXSTYLE, SC_MINIMIZE, STYLESTRUCT, WM_STYLECHANGING, WM_SYSCOMMAND,
-    };
-
-    static INSTALLED: AtomicBool = AtomicBool::new(false);
-
-    if INSTALLED.load(Ordering::Relaxed) {
-        return;
-    }
-    let Some(window) = main_window() else {
-        // The window may not exist during the first construction step; the
-        // next frame retries because the flag stays false.
-        return;
-    };
-
-    unsafe extern "system" fn minimized(
-        window: HWND,
-        message: u32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-        _id: usize,
-        _data: usize,
-    ) -> LRESULT {
-        // Kaelis is a tray application, so its window must never hold a taskbar
-        // slot. Asking the toolkit for a taskbar-less window is not enough on
-        // its own: eframe creates the window hidden and shows it a frame later,
-        // and Explorer gives a shown top-level window a button again. Windows
-        // announces every style change before applying it, so the request is
-        // enforced here instead — every write keeps `WS_EX_TOOLWINDOW` and
-        // drops `WS_EX_APPWINDOW`, including the toolkit's own at first show,
-        // a resize, or a restore. The motivation bit is left untouched.
-        if message == WM_STYLECHANGING && wparam as i32 == GWL_EXSTYLE {
-            // SAFETY: for WM_STYLECHANGING, lparam is a `STYLESTRUCT` the
-            // window procedure may inspect and modify before it is applied.
-            let style = unsafe { &mut *(lparam as *mut STYLESTRUCT) };
-            style.styleNew = taskbar_hidden_style(style.styleNew);
-            return 0;
-        }
-        if message == WM_SYSCOMMAND && (wparam as u32 & 0xFFF0) == SC_MINIMIZE {
-            hide_window(window);
-            WINDOW_SHOWN.store(false, Ordering::Relaxed);
-            set_idle_mode(true);
-            return 0;
-        }
-        // SAFETY: the same arguments arrived from the window manager; the
-        // default procedure owns every message this hook does not consume.
-        unsafe { DefSubclassProc(window, message, wparam, lparam) }
-    }
-
-    // SAFETY: the callback has the documented `SUBCLASSPROC` signature, the
-    // window belongs to this process, and the id is private to Kaelis.
-    let installed = unsafe { SetWindowSubclass(window, Some(minimized), 0x4b41_454c, 0) } != 0;
-    INSTALLED.store(installed, Ordering::Relaxed);
-}
-
-#[cfg(not(windows))]
-pub(crate) fn install_window_hooks() {}
-
-/// The extended style a tray window must have: on the taskbar's blind side.
-#[cfg(windows)]
-fn taskbar_hidden_style(style: u32) -> u32 {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{WS_EX_APPWINDOW, WS_EX_TOOLWINDOW};
-    (style | WS_EX_TOOLWINDOW) & !WS_EX_APPWINDOW
-}
-
-#[cfg(all(test, windows))]
-mod taskbar_tests {
-    use super::taskbar_hidden_style;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{WS_EX_APPWINDOW, WS_EX_TOOLWINDOW};
-
-    #[test]
-    fn every_style_write_hides_the_taskbar_button() {
-        let style = taskbar_hidden_style(WS_EX_APPWINDOW);
-        assert_ne!(style & WS_EX_TOOLWINDOW, 0);
-        assert_eq!(style & WS_EX_APPWINDOW, 0);
-        // Every other bit is preserved, so sizing, painting, and activation
-        // are untouched.
-        let other = 0x0008_0100;
-        assert_eq!(taskbar_hidden_style(other), other | WS_EX_TOOLWINDOW);
-        // Applying it twice is the same style: the hook cannot oscillate.
-        assert_eq!(taskbar_hidden_style(style), style);
-    }
-}
-
 /// Register or remove the per-user sign-in entry.
 ///
 /// A value under `HKCU\…\Run` is the lightest possible startup hook: Windows
@@ -464,9 +368,9 @@ pub(crate) fn hide_for_game(context: &egui::Context) {
 /// be waiting for — so a window that is only hidden leaves that paint pending
 /// and the event loop spins at full speed on a window nobody can see. (That is
 /// the whole reason a hidden launcher used to sit at 5–13% of a core.) Hiding
-/// immediately afterwards still takes the taskbar button away, so the tray
-/// icon remains the only handle, and `IsIconic` stays true, which is what the
-/// scheduling check reads.
+/// immediately afterwards takes the taskbar button away, so the tray icon
+/// remains the handle while the launcher is put away, and `IsIconic` stays
+/// true, which is what the scheduling check reads.
 #[cfg(windows)]
 fn hide_window(window: windows_sys::Win32::Foundation::HWND) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, SW_MINIMIZE, ShowWindow};
@@ -478,9 +382,8 @@ fn hide_window(window: windows_sys::Win32::Foundation::HWND) {
     }
 }
 
-/// The tray's Show / Minimize action: hide a visible launcher and give its
-/// pages back, or restore a hidden one. One entry point so the menu never
-/// disagrees with the window state.
+/// The tray's Hide action: hide a visible launcher and give its pages back.
+/// One entry point so the menu never disagrees with the window state.
 pub(crate) fn hide_to_tray(context: &egui::Context) {
     hide_for_game(context);
     trim_working_set();
@@ -534,18 +437,11 @@ pub(crate) fn round_window_corners() -> bool {
 
 /// The header's minimize control on an overlay with no native title bar.
 ///
-/// On Windows the launcher's own behaviour is the tray, so the custom button
-/// does exactly what the old title-bar button did. Elsewhere it is an ordinary
-/// minimize, so the window can be restored from the taskbar or the dock.
+/// It is an ordinary minimize on every platform: the window keeps its taskbar
+/// (or dock) entry, so it can be restored from the shell as well as from the
+/// tray. Hiding to the notification area remains an explicit tray action.
 pub(crate) fn minimize_window(context: &egui::Context) {
-    #[cfg(windows)]
-    {
-        hide_to_tray(context);
-    }
-    #[cfg(not(windows))]
-    {
-        context.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-    }
+    context.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
 }
 
 /// Give back the pages the hidden launcher no longer needs.
