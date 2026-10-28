@@ -1,8 +1,8 @@
 KAELIS - URL, INSTALLATION, AND LINK INDEX
 ==========================================
-Launcher      Kaelis 0.1.4
+Launcher      Kaelis 0.4.1
 Platform      windows-x86_64
-Packaged      10/24/2026 03:21:15
+Packaged      10/28/2026 16:20:42
 Generator     tools/links.ps1 (run again after any endpoint or release change)
 Repository    https://github.com/fuvji/kaelis
 Website       https://fuvji.github.io/kaelis/
@@ -37,9 +37,18 @@ link files, and refreshes the hashes after the build.
   This index, published
     https://fuvji.github.io/kaelis/downloads/KAELIS-LINKS.txt
     Same generated content as dist/KAELIS-LINKS.txt.
+  macOS universal disk image
+    https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.dmg
+    Drag Kaelis.app to Applications; ad-hoc signed.
   macOS universal build
     https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.zip
     Built and signed ad hoc by packaging/macos/bundle.sh.
+  Linux Debian package
+    https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.deb
+    apt install ./Kaelis-linux-x64.deb; desktop entry and uninstall included.
+  Linux AppImage
+    https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.AppImage
+    One executable, no root, runs from any folder.
   Linux x64 build
     https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.tar.gz
     Binary, desktop entry, icon, LICENSE, README.
@@ -76,17 +85,23 @@ link files, and refreshes the hashes after the build.
     The installer carries the same Kaelis.exe build as the download page.
 
   2.3 macOS
-    Prebuilt: Kaelis-macos-universal.zip from the latest release; drag
-    Kaelis.app to /Applications.
+    Prebuilt: Kaelis-macos-universal.dmg from the latest release; open the
+    image and drag Kaelis.app to /Applications. The ZIP holds the same
+    bundle if you prefer to unpack it yourself.
     From source: ./packaging/macos/bundle.sh [--universal]
-    Output: dist/Kaelis.app
+                 ./packaging/macos/dmg.sh
+    Output: dist/Kaelis.app, dist/Kaelis-macos-universal.dmg
     Data: ~/Library/Application Support/gg.kaelis.Kaelis/instances
 
   2.4 Linux
-    Prebuilt: Kaelis-linux-x64.tar.gz from the latest release; extract and
-    run ./kaelis, or install the binary and desktop entry.
+    Prebuilt: Kaelis-linux-x64.deb (apt), .AppImage (portable), or
+    Kaelis-linux-x64.tar.gz (plain binary).
+    Debian / Ubuntu: sudo apt install ./Kaelis-linux-x64.deb
+    AppImage:        chmod +x Kaelis-linux-x64.AppImage && ./Kaelis-linux-x64.AppImage
     From source: ./packaging/linux/install.sh
-    Installs: ~/.local/bin/kaelis
+                 ./packaging/linux/package.sh --no-build
+    Installs: ~/.local/bin/kaelis (install.sh)
+              /usr/bin/kaelis (deb)
               ~/.local/share/applications/kaelis.desktop
               ~/.local/share/icons/hicolor/scalable/apps/kaelis.svg
     Data: ~/.local/share/kaelis/instances
@@ -333,16 +348,16 @@ link files, and refreshes the hashes after the build.
   Paths are relative to the repository root. Hashes are SHA-256.
 
   site/downloads/Kaelis.exe
-    16784896 bytes (16.0 MB)
-    b2052450c0975c140b4eca57012dc8dff9fe2a3262539197b94758680f479613
+    17237504 bytes (16.4 MB)
+    679b246ab9e91346b2d8e89c3047e276d8120f29fa1f75de16895581103f60cd
 
   site/downloads/Kaelis-Portable.zip
-    8150247 bytes (7.8 MB)
-    a94c94e3b44edb9fe9c46d0642fe0f846ef0984075dd2eb36173207bc4eae830
+    8361099 bytes (8.0 MB)
+    ce15c1fc06a7391a0d0491d947253d7425c3da02499d9dbb529a97c7f6a59f59
 
   site/downloads/Kaelis-Setup.exe
-    5996747 bytes (5.7 MB)
-    842133c5640c47f9d326f5c2e3c091afe27825dbce0b0ff30239b8a91222f58c
+    6115987 bytes (5.8 MB)
+    9f081ff96db7f78345c92723d7423c15effffa9e5c804be29bfc9cec03fbba00
 
   dist/Kaelis.exe and dist/Kaelis-Setup.exe are local scratch copies;
   site/downloads is the published set. The portable ZIP contains the same
@@ -365,10 +380,18 @@ link files, and refreshes the hashes after the build.
   listed here when it is not already covered above. This catches a new
   endpoint that was added without updating this generator.
 
+  https://api.cfwidget.com
+    crates\kaelis-api\src\curseforge.rs:26
+  https://api.curse.tools/v1
+    crates\kaelis-api\src\curseforge.rs:25
+  https://api.github.com/repos/fuvji/kaelis/releases/latest
+    crates\kaelis-api\src\release.rs:11
   https://login.live.com/oauth20_connect.srf
     crates\kaelis-api\src\auth\mod.rs:22
   https://login.live.com/oauth20_token.srf
     crates\kaelis-api\src\auth\mod.rs:23
+  https://mediafilez.forgecdn.net
+    crates\kaelis-api\src\curseforge.rs:27
 
 ==============================================================================
 9. DISCLAIMER
