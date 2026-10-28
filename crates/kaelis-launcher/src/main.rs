@@ -19,6 +19,10 @@ enum Action {
     Gui {
         /// A sign-in launch: create the window hidden, tray icon only.
         hidden: bool,
+        /// An in-place update started this build while the build it replaced
+        /// was still exiting. That process owns the single-instance guard, so
+        /// this one waits for it before claiming anything.
+        replace_pid: Option<u32>,
     },
     Help,
     Version {
@@ -115,6 +119,18 @@ fn main() -> ExitCode {
     if matches!(&action, Action::Gui { .. }) {
         hide_own_console();
     }
+    // An update in place starts the new build while the old one is still
+    // exiting, and the old one still owns the single-instance guard and the
+    // handoff endpoint. Waiting on its process handle costs nothing when it is
+    // already gone, and it is a real wait inside Windows rather than a poll, so
+    // the window appears the moment that process ends.
+    if let Action::Gui {
+        replace_pid: Some(pid),
+        ..
+    } = &action
+    {
+        wait_for_exit(*pid);
+    }
     // Screenshot mode is a development-only visual check. It must be able to
     // run beside an installed launcher without claiming the global mutex or
     // handoff endpoint, and it closes itself after one captured frame.
@@ -131,7 +147,7 @@ fn main() -> ExitCode {
             Err(SingleInstanceError::AlreadyRunning(_)) => {
                 // A sign-in launch when Kaelis is already open is a no-op; it
                 // must never pull the window in front of the user at login.
-                if matches!(&action, Action::Gui { hidden: true }) {
+                if matches!(&action, Action::Gui { hidden: true, .. }) {
                     return ExitCode::SUCCESS;
                 }
                 return forward_to_primary();
@@ -234,7 +250,7 @@ fn main() -> ExitCode {
             saves,
             json,
         } => duplicate_instance(&instance_id, saves, json),
-        Action::Gui { hidden } => run_gui(handoff, hidden),
+        Action::Gui { hidden, .. } => run_gui(handoff, hidden),
     }
 }
 
@@ -267,6 +283,38 @@ fn hide_own_console() {
 
 #[cfg(not(windows))]
 fn hide_own_console() {}
+
+/// Wait for the build this one replaces to finish exiting.
+///
+/// The updater starts the replacement before its own process ends, and the
+/// single-instance guard is only released at exit. Rather than polling for the
+/// pid to disappear, this waits on the process handle itself: it returns the
+/// instant the process ends, and after twenty seconds regardless, so a process
+/// that refuses to die cannot keep the launcher off the screen forever.
+#[cfg(windows)]
+fn wait_for_exit(pid: u32) {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_SYNCHRONIZE, WaitForSingleObject,
+    };
+
+    // SAFETY: no pointers are involved. A pid that is already gone (or that
+    // never existed) makes OpenProcess fail, which needs no handling because
+    // there is then nothing to wait for.
+    let handle = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, pid) };
+    if handle.is_null() {
+        return;
+    }
+    // SAFETY: `handle` is a synchronize-capable process handle, the timeout is
+    // in milliseconds, and the handle is closed exactly once below.
+    unsafe {
+        WaitForSingleObject(handle, 20_000);
+        CloseHandle(handle);
+    }
+}
+
+#[cfg(not(windows))]
+fn wait_for_exit(_pid: u32) {}
 
 fn forward_to_primary() -> ExitCode {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
@@ -407,6 +455,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Action, String> {
     let mut status = false;
     let mut clean = false;
     let mut tray_only = false;
+    let mut replace_pid = None;
     let mut startup = None;
     let mut accounts_report = false;
     let mut use_account = None;
@@ -428,6 +477,14 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Action, String> {
             // Used by the per-user sign-in entry. It is accepted on its own:
             // opening the launcher hidden is the whole request.
             "--tray" | "--minimized" => tray_only = true,
+            // Written by the updater, never by hand: see `Action::Gui`.
+            "--replace-pid" => {
+                replace_pid = Some(
+                    args.next()
+                        .and_then(|value| value.parse::<u32>().ok())
+                        .ok_or_else(|| "--replace-pid requires a process id".to_owned())?,
+                );
+            }
             "--accounts" => accounts_report = true,
             "--startup" => {
                 startup = Some(match args.next().as_deref() {
@@ -778,7 +835,10 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Action, String> {
     if show_alpha || show_beta || !show_snapshots {
         return Err("version filters require --list-versions".to_owned());
     }
-    Ok(Action::Gui { hidden: tray_only })
+    Ok(Action::Gui {
+        hidden: tray_only,
+        replace_pid,
+    })
 }
 
 fn usage() -> &'static str {
@@ -802,7 +862,9 @@ fn usage() -> &'static str {
        kaelis --startup <on|off> [--json]\n\
        kaelis --check-updates <instance-id> [--json]\n\
        kaelis --update-mods <instance-id> [--json]\n\
-     With no arguments, open the Kaelis desktop launcher. --tray opens it\n\
+     With no arguments, open the Kaelis desktop launcher. --replace-pid is\n\
+     written by the in-place updater: it waits for the process being replaced\n\
+     before claiming the launcher. --tray opens it\n\
      hidden in the notification area, which is how the sign-in shortcut starts.\n\
      --play without --offline uses the saved offline account that is active, so\n\
      a command-line launch and the desktop launch agree.\n\

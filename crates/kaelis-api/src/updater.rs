@@ -167,11 +167,82 @@ pub async fn prepare(client: &reqwest::Client) -> Result<Option<PreparedUpdate>,
 
 /// Install a prepared update and start the new build.
 ///
-/// The script runs detached and is the only thing that survives this process.
-/// Callers exit immediately afterwards, which is what releases the lock on the
-/// executable the script is waiting for.
+/// Windows lets a running image be *renamed* — only writing to it and deleting
+/// it are refused — so the whole swap can happen here, inside this process:
+/// move the running build aside, copy the verified one into place, start the
+/// replacement, and let the caller exit. No helper script runs, no console is
+/// created, nothing polls for this process to disappear, and the new window
+/// opens the moment the old process is gone.
 #[cfg(windows)]
 pub fn apply(update: &PreparedUpdate) -> Result<(), String> {
+    swap_in_place(update).or_else(|fast| {
+        // An install that refuses the rename (a scanner holding the file, a
+        // folder that forbids renames) still gets a verified update through the
+        // batch script, which performs the same swap after this process exits.
+        hand_off_script(update)
+            .map_err(|slow| format!("{fast}; the scripted swap failed too: {slow}"))
+    })
+}
+
+/// Rename, copy, and start the replacement, all before this process exits.
+#[cfg(windows)]
+fn swap_in_place(update: &PreparedUpdate) -> Result<(), String> {
+    let backup = update.target.with_extension("exe.old");
+    // A backup from an earlier update is unlocked by now: the build it replaced
+    // is long gone, and the running build is never the backup.
+    let _ = std::fs::remove_file(&backup);
+    std::fs::rename(&update.target, &backup)
+        .map_err(|error| format!("could not move the running build aside: {error}"))?;
+    if let Err(error) = std::fs::copy(&update.staged, &update.target) {
+        // The copy is the one step that can fail with nothing to show for it,
+        // and the backup is still here, so the user keeps a working launcher.
+        let _ = std::fs::rename(&backup, &update.target);
+        return Err(format!("could not install the verified build: {error}"));
+    }
+    if let Err(error) = start_replacement(&update.target) {
+        // A build that was never started is worse than the one known to run.
+        let _ = std::fs::remove_file(&update.target);
+        let _ = std::fs::rename(&backup, &update.target);
+        return Err(error);
+    }
+    // The verified download is installed and the caller exits next, so the
+    // staging copy is no longer needed. The backup has to wait: this process is
+    // still running from it, and Windows will not delete a mapped image. The
+    // replacement removes it as it starts (`purge_old_build`).
+    let _ = std::fs::remove_file(&update.staged);
+    Ok(())
+}
+
+/// Start the installed build, telling it which process is already using the
+/// single-instance guard.
+///
+/// A replacement that raced for the guard would find it taken and hand its
+/// arguments back to a process that is exiting, so it is told to wait instead.
+/// That wait is a handle wait inside Windows — not a poll — so the new window
+/// appears in the time it takes this process to exit. `DETACHED_PROCESS` keeps
+/// a console-subsystem build from flashing a black window on its way up.
+#[cfg(windows)]
+fn start_replacement(target: &Path) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+
+    std::process::Command::new(target)
+        .arg("--replace-pid")
+        .arg(std::process::id().to_string())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("could not start the updated build: {error}"))
+}
+
+/// The fallback swap: a detached batch script that waits for this process to
+/// exit, replaces the executable, and starts the result.
+#[cfg(windows)]
+fn hand_off_script(update: &PreparedUpdate) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     const DETACHED_PROCESS: u32 = 0x0000_0008;
@@ -238,7 +309,9 @@ fn swap_script(update: &PreparedUpdate, pid: u32) -> String {
          if errorlevel 1 goto retry\r\n\
          copy /Y \"%KAELIS_NEW%\" \"%KAELIS_EXE%\" >nul 2>&1\r\n\
          if errorlevel 1 goto rollback\r\n\
-         start \"\" \"%KAELIS_EXE%\"\r\n\
+         rem `/B` starts the build without creating a console window: the\r\n\
+         rem script itself is detached, so the launcher must never flash one.\r\n\
+         start \"\" /B \"%KAELIS_EXE%\"\r\n\
          del /F /Q \"%KAELIS_NEW%\" >nul 2>&1\r\n\
          del /F /Q \"%KAELIS_OLD%\" >nul 2>&1\r\n\
          del /F /Q \"%~f0\" >nul 2>&1\r\n\
@@ -252,7 +325,7 @@ fn swap_script(update: &PreparedUpdate, pid: u32) -> String {
          move /Y \"%KAELIS_OLD%\" \"%KAELIS_EXE%\" >nul 2>&1\r\n\
          :fail\r\n\
          rem A failed swap must not leave the user without a launcher.\r\n\
-         start \"\" \"%KAELIS_EXE%\"\r\n\
+         start \"\" /B \"%KAELIS_EXE%\"\r\n\
          exit /b 1\r\n"
     )
 }
@@ -292,6 +365,26 @@ fn ensure_writable(target: &Path) -> Result<(), String> {
 /// process to exit, so recent files are left alone; anything from an earlier
 /// run is deleted instead of accumulating in the user's temp folder.
 const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// Delete the backup an in-place update left beside the executable.
+///
+/// The rename happens while the old build is still running, so the file stays
+/// mapped — and therefore undeletable — until that process is gone: exactly
+/// now, because the replacement waited for it before start-up ran. A missing
+/// file, a read-only install folder, and a backup that is somehow still locked
+/// are all silent, because this is housekeeping, not a feature that may fail a
+/// launch.
+pub fn purge_old_build() {
+    let Ok(executable) = std::env::current_exe() else {
+        return;
+    };
+    remove_backup(&executable);
+}
+
+/// The backup path for a given build: `Kaelis.exe` → `Kaelis.exe.old`.
+fn remove_backup(executable: &Path) {
+    let _ = std::fs::remove_file(executable.with_extension("exe.old"));
+}
 
 /// Delete leftovers from earlier updates.
 ///
@@ -465,11 +558,79 @@ cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc  Kaelis-Portabl
         // The backup happens before the copy and is restored on failure.
         let backup_at = script.find(":rollback").expect("rollback label");
         assert!(script[backup_at..].contains("move /Y \"%KAELIS_OLD%\" \"%KAELIS_EXE%\""));
-        assert!(script.contains("start \"\" \"%KAELIS_EXE%\""));
+        // `/B` is what keeps the restarted build from opening a console.
+        assert!(script.contains("start \"\" /B \"%KAELIS_EXE%\""));
+        assert!(!script.contains("start \"\" \"%KAELIS_EXE%\""));
         // A failed swap still restarts the launcher, so the window cannot
         // simply vanish and leave the user without one.
         let fail_at = script.find(":fail").expect("fail label");
-        assert!(script[fail_at..].contains("start \"\" \"%KAELIS_EXE%\""));
+        assert!(script[fail_at..].contains("start \"\" /B \"%KAELIS_EXE%\""));
+    }
+
+    /// Windows lets a running image be renamed, which is what makes the
+    /// in-place swap possible; this exercises the sequence around it (rename
+    /// aside, verified copy in, replacement started, backup kept for the next
+    /// start) with `where.exe` standing in for a build, so the process the swap
+    /// starts exits on its own.
+    #[cfg(windows)]
+    #[test]
+    fn the_in_place_swap_replaces_the_build_and_keeps_a_backup() {
+        let root = std::env::temp_dir().join(format!(
+            "kaelis-swap-in-place-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .map(|age| age.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&root).expect("temp dir");
+        let system = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_owned());
+        let where_exe = PathBuf::from(system).join("System32\\where.exe");
+        let target = root.join("Kaelis.exe");
+        let staged = root.join("Kaelis-9.9.9.exe");
+        std::fs::copy(&where_exe, &target).expect("installed build");
+        std::fs::copy(&where_exe, &staged).expect("verified download");
+        let mut new_bytes = std::fs::read(&staged).expect("read download");
+        new_bytes.extend_from_slice(b"kaelis-in-place-test");
+        std::fs::write(&staged, &new_bytes).expect("mark the download");
+
+        let update = PreparedUpdate {
+            version: "9.9.9-test".to_owned(),
+            staged: staged.clone(),
+            target: target.clone(),
+        };
+        super::swap_in_place(&update).expect("the in-place swap must succeed");
+
+        assert_eq!(
+            std::fs::read(&target).expect("installed build"),
+            new_bytes,
+            "the verified download must be in place"
+        );
+        assert!(!staged.exists(), "the download is consumed by the swap");
+        let backup = root.join("Kaelis.exe.old");
+        assert!(
+            backup.exists(),
+            "the replaced build is kept until the next start-up"
+        );
+        super::remove_backup(&target);
+        assert!(!backup.exists(), "the next start-up deletes the backup");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_replaced_build_is_cleaned_up_at_start_up() {
+        let root = std::env::temp_dir().join(format!("kaelis-backup-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("temp dir");
+        let executable = root.join("Kaelis.exe");
+        let backup = root.join("Kaelis.exe.old");
+        std::fs::write(&executable, b"new").expect("new build");
+        std::fs::write(&backup, b"old").expect("old build");
+        super::remove_backup(&executable);
+        assert!(executable.exists(), "the running build is never touched");
+        assert!(!backup.exists(), "the backup is junk once the swap is over");
+        // A build with no backup beside it is not an error.
+        super::remove_backup(&executable);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[cfg(windows)]

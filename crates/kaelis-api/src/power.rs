@@ -9,7 +9,10 @@
 //!
 //! This is a scheduling decision only: no process is suspended, no session is
 //! disconnected, and Minecraft keeps ticking normally in the background. It
-//! simply stops competing with the game the user is actually playing.
+//! simply stops competing with the game the user is actually playing. A
+//! demoted instance also gives up the fast cores through EcoQoS, so an
+//! alt-tabbed world stops drawing power and heating the machine while the
+//! instance in front keeps the whole budget.
 
 use std::sync::{Mutex, OnceLock};
 
@@ -53,7 +56,15 @@ pub fn track(pid: u32) -> LiveGame {
         });
     }
     #[cfg(windows)]
-    imp::ensure_monitor();
+    {
+        // The hook is installed once and costs nothing between events, so a
+        // launch never waits for a timer to notice it.
+        imp::ensure_monitor();
+        // A second instance started while a game owns the screen is demoted
+        // right here, without waiting for the next foreground change: the lock
+        // above is released before this call, which takes it again.
+        imp::apply();
+    }
     LiveGame { pid }
 }
 
@@ -61,14 +72,17 @@ pub fn track(pid: u32) -> LiveGame {
 mod imp {
     use super::GAMES;
     use std::sync::Once;
-    use std::time::Duration;
-    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::Foundation::{CloseHandle, HWND};
     use windows_sys::Win32::System::Threading::{
-        IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-        PROCESS_SET_INFORMATION, SetPriorityClass,
+        IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, OpenProcess,
+        PROCESS_POWER_THROTTLING_CURRENT_VERSION, PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+        PROCESS_POWER_THROTTLING_STATE, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
+        ProcessPowerThrottling, SetPriorityClass, SetProcessInformation,
     };
+    use windows_sys::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowThreadProcessId,
+        EVENT_SYSTEM_FOREGROUND, GetForegroundWindow, GetMessageW, GetWindowThreadProcessId, MSG,
+        WINEVENT_OUTOFCONTEXT,
     };
 
     static STARTED: Once = Once::new();
@@ -76,32 +90,74 @@ mod imp {
     pub(super) fn ensure_monitor() {
         STARTED.call_once(|| {
             // A named thread so a debugger or a process dump names the work.
-            // It wakes every 1.5 s while a game runs and does one foreground
-            // lookup plus at most one priority call per instance.
+            // It blocks in the message loop below and wakes only when the
+            // foreground window actually changes, so an idle launcher with a
+            // game running costs no timer, no wake-up, and no polling at all —
+            // and the demote happens the instant the user switches away
+            // instead of up to a second later.
             let _ = std::thread::Builder::new()
                 .name("kaelis-power-governor".to_owned())
                 .spawn(|| {
-                    loop {
-                        std::thread::sleep(Duration::from_millis(1500));
-                        let Some(games) = GAMES.get() else {
-                            continue;
-                        };
-                        let Ok(mut games) = games.lock() else {
-                            continue;
-                        };
-                        if games.is_empty() {
-                            continue;
-                        }
-                        let foreground = foreground_pid();
-                        for game in games.iter_mut() {
-                            let idle = Some(game.pid) != foreground;
-                            if idle != game.demoted && set_priority(game.pid, idle) {
-                                game.demoted = idle;
-                            }
-                        }
+                    /// One foreground change: re-steer every tracked instance.
+                    unsafe extern "system" fn foreground_changed(
+                        _hook: HWINEVENTHOOK,
+                        _event: u32,
+                        _window: HWND,
+                        _object: i32,
+                        _child: i32,
+                        _thread: u32,
+                        _time: u32,
+                    ) {
+                        apply();
                     }
+
+                    // SAFETY: the hook is process-wide, the callback is a plain
+                    // `fn` that only reads the tracked list, no module handle is
+                    // needed for an out-of-context hook, and a null result is
+                    // checked.
+                    let hook = unsafe {
+                        SetWinEventHook(
+                            EVENT_SYSTEM_FOREGROUND,
+                            EVENT_SYSTEM_FOREGROUND,
+                            std::ptr::null_mut(),
+                            Some(foreground_changed),
+                            0,
+                            0,
+                            WINEVENT_OUTOFCONTEXT,
+                        )
+                    };
+                    if hook.is_null() {
+                        // A host that refuses the hook still gets the steering
+                        // at registration time, just not on focus changes.
+                        return;
+                    }
+                    let mut message: MSG = unsafe { std::mem::zeroed() };
+                    // Out-of-context events arrive through this thread's queue,
+                    // so it must pump messages. The loop ends only with the
+                    // process.
+                    while unsafe { GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) } > 0 {}
                 });
         });
+    }
+
+    /// Steer every tracked JVM: the one in front runs normally, the rest idle.
+    pub(super) fn apply() {
+        let Some(games) = GAMES.get() else {
+            return;
+        };
+        let Ok(mut games) = games.lock() else {
+            return;
+        };
+        if games.is_empty() {
+            return;
+        }
+        let foreground = foreground_pid();
+        for game in games.iter_mut() {
+            let idle = Some(game.pid) != foreground;
+            if idle != game.demoted && set_priority(game.pid, idle) {
+                game.demoted = idle;
+            }
+        }
     }
 
     fn foreground_pid() -> Option<u32> {
@@ -141,6 +197,31 @@ mod imp {
                 },
             )
         };
+        // EcoQoS is the power half of the same decision: an instance nobody is
+        // looking at is allowed to run on the efficiency cores at a low clock,
+        // so it cannot take the fast cores or the power budget from the world
+        // the user is playing. It is advisory — a host that ignores it keeps
+        // the priority class above.
+        let throttle = PROCESS_POWER_THROTTLING_STATE {
+            Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+            ControlMask: PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+            StateMask: if idle {
+                PROCESS_POWER_THROTTLING_EXECUTION_SPEED
+            } else {
+                0
+            },
+        };
+        // SAFETY: the handle allows SET_INFORMATION, the structure is a plain
+        // `#[repr(C)]` value for the documented class, and the size passed is
+        // its own size.
+        unsafe {
+            SetProcessInformation(
+                handle,
+                ProcessPowerThrottling,
+                std::ptr::from_ref(&throttle).cast(),
+                std::mem::size_of::<PROCESS_POWER_THROTTLING_STATE>() as u32,
+            );
+        }
         // SAFETY: the handle came from OpenProcess and is closed exactly once.
         unsafe { CloseHandle(handle) };
         applied != 0

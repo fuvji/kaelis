@@ -1,6 +1,6 @@
 [package]
 name = "kaelis-core"
-version = "0.3.7"
+version = "0.4.0"
 edition.workspace = true
 description = "Kaelis core: brand, instances, JVM flags, and local runtime primitives"
 homepage = "https://github.com/fuvji/kaelis"
@@ -15,4 +15,4 @@ directories = "6"
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Pipes", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Pipes", "Win32_System_Threading"] }

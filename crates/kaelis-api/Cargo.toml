@@ -1,6 +1,6 @@
 [package]
 name = "kaelis-api"
-version = "0.3.7"
+version = "0.4.0"
 edition.workspace = true
 description = "Kaelis API: Mojang versions, Modrinth, CurseForge, auth, and launch"
 homepage = "https://github.com/fuvji/kaelis"
@@ -28,12 +28,15 @@ zeroize = "1"
 keyring = { version = "3", default-features = false, features = ["windows-native"] }
 # The shared content store asks the filesystem how many links name a file, so a
 # cache entry that no instance references can be pruned safely.
-windows-sys = { version = "0.60", features = [
+windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
-    # OpenProcess + SetPriorityClass steer background game instances.
+    # OpenProcess, SetPriorityClass and power throttling steer background game
+    # instances.
     "Win32_System_Threading",
-    # GetForegroundWindow tells the governor which game owns the screen.
+    # GetForegroundWindow tells the governor which game owns the screen, and
+    # the foreground hook tells it the moment that changes.
+    "Win32_UI_Accessibility",
     "Win32_UI_WindowsAndMessaging",
 ] }
 

@@ -1251,6 +1251,10 @@ impl KaelisApp {
         // partial file behind. Only files old enough to be abandoned are
         // touched, so a swap that is still running is never disturbed.
         kaelis_api::updater::purge_staging();
+        // An update that replaced this build in place renamed the old one aside
+        // while it was still running, so the backup could only be deleted once
+        // that process was gone — which is now: this start-up waited for it.
+        kaelis_api::updater::purge_old_build();
         // Windows paints the tray menu itself, so the dark preference has to
         // be installed before that menu is created.
         platform::enable_dark_menus();
@@ -11514,6 +11518,14 @@ impl eframe::App for KaelisApp {
             self.idle_trimmed = true;
         }
         self.governor.focused = focused;
+        // A launcher nobody is looking at, with nothing in flight, drops to the
+        // bottom of the schedule: lowest CPU priority, disk and memory priority
+        // at their minimums, no priority boosts, EcoQoS. A hidden window always
+        // qualifies — focus can still be reported by the toolkit for a window
+        // that was shown for one frame — while work in progress keeps the normal
+        // schedule, so a download or a repair the user started is never slowed
+        // down by a focus change.
+        platform::set_idle_mode(platform::window_is_hidden() || (!focused && !self.is_busy()));
         // Screenshot mode walks a fixed number of frames, so it must keep
         // repainting even when nothing is animating.
         self.governor.animating = self.is_busy() || self.screenshot_path.is_some();

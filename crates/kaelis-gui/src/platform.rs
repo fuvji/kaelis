@@ -19,6 +19,88 @@ static WINDOW_SHOWN: AtomicBool = AtomicBool::new(true);
 /// clears it so the startup watcher cannot hide the window again.
 static STARTUP_SUPPRESS: AtomicBool = AtomicBool::new(false);
 
+/// Whether the launcher has asked Windows to run it at the bottom of the
+/// schedule. Kept in an atomic so the per-frame check is one load and a
+/// repeated request is not a pair of syscalls.
+static IDLE_MODE: AtomicBool = AtomicBool::new(false);
+
+/// Drop this process to the bottom of the system, or bring it back.
+///
+/// Every call here is a documented Windows power API, and each is reversed by
+/// its twin:
+///
+/// * **Background processing mode** (`SetPriorityClass(PROCESS_MODE_BACKGROUND_BEGIN)`)
+///   moves every thread to the lowest usable CPU priority, sets the process's
+///   disk and memory priorities to their minimums, and disables priority
+///   boosts. The launcher stops being scheduled ahead of anything the user is
+///   doing, and its disk work stops competing with the game.
+/// * **EcoQoS** (`SetProcessInformation(ProcessPowerThrottling, …EXECUTION_SPEED)`)
+///   lets the scheduler slow the process down when the power budget is tight —
+///   on a hybrid CPU that means efficiency cores at a low clock instead of a
+///   performance core at full speed.
+///
+/// Together with the working-set trim this is as close to "not running" as a
+/// process can get while still existing: the pages are paged out, and what is
+/// left cannot take a core from anybody. Both calls are advisory — a host that
+/// refuses them (an outer job object owning the priority, for example) keeps a
+/// normally scheduled launcher rather than a broken one.
+pub(crate) fn set_idle_mode(idle: bool) {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::Threading::{
+            GetCurrentProcess, PROCESS_MODE_BACKGROUND_BEGIN, PROCESS_MODE_BACKGROUND_END,
+            PROCESS_POWER_THROTTLING_CURRENT_VERSION, PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+            PROCESS_POWER_THROTTLING_STATE, ProcessPowerThrottling, SetPriorityClass,
+            SetProcessInformation,
+        };
+        if IDLE_MODE.swap(idle, Ordering::Relaxed) == idle {
+            return;
+        }
+        // SAFETY: the pseudo-handle is always valid; the throttling structure is
+        // a plain `#[repr(C)]` value for the documented class, and the size
+        // passed is the size of that structure.
+        unsafe {
+            let process = GetCurrentProcess();
+            SetPriorityClass(
+                process,
+                if idle {
+                    PROCESS_MODE_BACKGROUND_BEGIN
+                } else {
+                    PROCESS_MODE_BACKGROUND_END
+                },
+            );
+            let throttle = PROCESS_POWER_THROTTLING_STATE {
+                Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+                ControlMask: PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+                StateMask: if idle {
+                    PROCESS_POWER_THROTTLING_EXECUTION_SPEED
+                } else {
+                    0
+                },
+            };
+            SetProcessInformation(
+                process,
+                ProcessPowerThrottling,
+                std::ptr::from_ref(&throttle).cast(),
+                std::mem::size_of::<PROCESS_POWER_THROTTLING_STATE>() as u32,
+            );
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = idle;
+    }
+}
+
+/// Whether the launcher's window is hidden right now.
+///
+/// Every hide and restore path maintains the flag this reads, so the per-frame
+/// check is one atomic load instead of a window enumeration; the native check
+/// stays in [`window_is_shown`], where a tray click needs the literal truth.
+pub(crate) fn window_is_hidden() -> bool {
+    !WINDOW_SHOWN.load(Ordering::Relaxed)
+}
+
 pub(crate) fn window_is_shown() -> bool {
     // On Windows the real handle is the truth, including a window the shell
     // hid without a minimize command. The atomic covers toolkits where the
@@ -41,37 +123,83 @@ pub(crate) fn window_is_shown() -> bool {
 ///
 /// eframe deliberately shows the window after its first painted frame (the
 /// white-flash fix), so a hidden viewport alone becomes visible a moment later.
-/// This watches for that first show and hides the native window again, usually
-/// within one poll interval. `wake` cancels the watcher, so a tray click during
-/// start-up is never undone.
+/// This waits for that show *event* and hides the native window in the same
+/// millisecond, because a sampler would either hide it late or wake the process
+/// for nothing. `wake` cancels the watcher, so a tray click during start-up is
+/// never undone.
 #[cfg(windows)]
 pub(crate) fn begin_hidden_start(context: egui::Context) {
+    use std::sync::OnceLock;
+    use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+    use windows_sys::Win32::UI::Accessibility::{HWINEVENTHOOK, SetWinEventHook, UnhookWinEvent};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        EVENT_OBJECT_SHOW, GetMessageW, MSG, WINEVENT_OUTOFCONTEXT,
+    };
+
+    static CONTEXT: OnceLock<egui::Context> = OnceLock::new();
+    static HIDDEN: AtomicBool = AtomicBool::new(false);
+
+    /// The launcher's window became visible: undo it. Only the first show
+    /// matters, and only while the sign-in launch still wants to stay hidden.
+    unsafe extern "system" fn shown(
+        _hook: HWINEVENTHOOK,
+        _event: u32,
+        _window: windows_sys::Win32::Foundation::HWND,
+        _object: i32,
+        _child: i32,
+        _thread: u32,
+        _time: u32,
+    ) {
+        if HIDDEN.swap(true, Ordering::SeqCst) || !STARTUP_SUPPRESS.load(Ordering::SeqCst) {
+            return;
+        }
+        if let Some(context) = CONTEXT.get() {
+            hide_for_game(context);
+        }
+    }
+
     STARTUP_SUPPRESS.store(true, Ordering::SeqCst);
+    HIDDEN.store(false, Ordering::SeqCst);
+    // A sign-in launch is invisible from the first instruction, so it waits for
+    // the user at the bottom of the schedule: nothing it does is worth taking a
+    // core from the desktop. A tray click reverses this before the window is
+    // shown (`wake`).
+    set_idle_mode(true);
+    let _ = CONTEXT.set(context);
     let _ = std::thread::Builder::new()
         .name("kaelis-hidden-start".to_owned())
-        .spawn(move || {
-            let Some(window) = main_window() else {
+        .spawn(|| {
+            // SAFETY: the hook is process-wide and filtered to this process,
+            // the callback is a plain `fn` that touches only atomics and the
+            // stored context, and no module handle is needed for an
+            // out-of-context hook.
+            let pid = unsafe { GetCurrentProcessId() };
+            let hook = unsafe {
+                SetWinEventHook(
+                    EVENT_OBJECT_SHOW,
+                    EVENT_OBJECT_SHOW,
+                    std::ptr::null_mut(),
+                    Some(shown),
+                    pid,
+                    0,
+                    WINEVENT_OUTOFCONTEXT,
+                )
+            };
+            if hook.is_null() {
                 STARTUP_SUPPRESS.store(false, Ordering::SeqCst);
                 return;
-            };
-            // Five seconds is far longer than the first frame; the loop exits
-            // as soon as the window is hidden or the user asks for it. Caching
-            // the handle keeps each poll to one cheap visibility check.
-            for _ in 0..500 {
-                if !STARTUP_SUPPRESS.load(Ordering::SeqCst) {
-                    return;
-                }
-                // SAFETY: the handle belongs to this process.
-                if unsafe { windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible(window) }
-                    != 0
-                {
-                    hide_for_game(&context);
-                    STARTUP_SUPPRESS.store(false, Ordering::SeqCst);
-                    return;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(10));
             }
-            STARTUP_SUPPRESS.store(false, Ordering::SeqCst);
+            let mut message: MSG = unsafe { std::mem::zeroed() };
+            // Out-of-context events arrive as messages on this thread's queue,
+            // so it has to pump them. The loop ends on the first show, or with
+            // the process — whichever comes first.
+            while unsafe { GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) } > 0 {
+                if HIDDEN.load(Ordering::SeqCst) {
+                    break;
+                }
+            }
+            // SAFETY: `hook` came from SetWinEventHook and has not been removed.
+            unsafe { UnhookWinEvent(hook) };
         });
 }
 
@@ -136,9 +264,7 @@ pub(crate) fn enable_dark_menus() {
 pub(crate) fn install_window_hooks() {
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        SC_MINIMIZE, SW_HIDE, ShowWindow, WM_SYSCOMMAND,
-    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SC_MINIMIZE, WM_SYSCOMMAND};
 
     static INSTALLED: AtomicBool = AtomicBool::new(false);
 
@@ -160,9 +286,9 @@ pub(crate) fn install_window_hooks() {
         _data: usize,
     ) -> LRESULT {
         if message == WM_SYSCOMMAND && (wparam as u32 & 0xFFF0) == SC_MINIMIZE {
-            // SAFETY: `window` is the handle this subclass was attached to.
-            unsafe { ShowWindow(window, SW_HIDE) };
+            hide_window(window);
             WINDOW_SHOWN.store(false, Ordering::Relaxed);
+            set_idle_mode(true);
             return 0;
         }
         // SAFETY: the same arguments arrived from the window manager; the
@@ -272,13 +398,9 @@ fn wide(text: &str) -> Vec<u16> {
 pub(crate) fn hide_for_game(context: &egui::Context) {
     #[cfg(windows)]
     {
-        use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, ShowWindow};
         let _ = context;
         if let Some(window) = main_window() {
-            // SAFETY: `window` was returned by EnumWindows for this process.
-            unsafe {
-                ShowWindow(window, SW_HIDE);
-            }
+            hide_window(window);
         }
     }
     #[cfg(not(windows))]
@@ -287,6 +409,31 @@ pub(crate) fn hide_for_game(context: &egui::Context) {
         context.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
     }
     WINDOW_SHOWN.store(false, Ordering::Relaxed);
+    // Nothing is visible and nothing is being asked of this process, so it goes
+    // to the bottom of the schedule until it is wanted again.
+    set_idle_mode(true);
+}
+
+/// Take the launcher's window off the screen without waking the event loop.
+///
+/// Minimizing first is not cosmetic, it is what keeps a hidden launcher from
+/// burning a core. The toolkit checks the *iconic* state before scheduling
+/// another paint, and an invisible window can never deliver the paint it would
+/// be waiting for — so a window that is only hidden leaves that paint pending
+/// and the event loop spins at full speed on a window nobody can see. (That is
+/// the whole reason a hidden launcher used to sit at 5–13% of a core.) Hiding
+/// immediately afterwards still takes the taskbar button away, so the tray
+/// icon remains the only handle, and `IsIconic` stays true, which is what the
+/// scheduling check reads.
+#[cfg(windows)]
+fn hide_window(window: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, SW_MINIMIZE, ShowWindow};
+    // SAFETY: the handle belongs to this process; both calls only change the
+    // window's own show state.
+    unsafe {
+        ShowWindow(window, SW_MINIMIZE);
+        ShowWindow(window, SW_HIDE);
+    }
 }
 
 /// The tray's Show / Minimize action: hide a visible launcher and give its
@@ -503,6 +650,9 @@ pub(crate) fn start_idle_guard() {}
 /// agreement, and the final repaint produces a frame immediately instead of
 /// waiting for the next input event.
 pub(crate) fn wake(context: &egui::Context) {
+    // Ahead of everything else: a process in background-mode and EcoQoS is
+    // served last, and the restore itself is the one thing that must not be.
+    set_idle_mode(false);
     STARTUP_SUPPRESS.store(false, Ordering::Relaxed);
     #[cfg(windows)]
     restore_windows_window();
@@ -518,6 +668,7 @@ pub(crate) fn wake(context: &egui::Context) {
 /// Kept separate from [`wake`] for callers that have no egui context (the game
 /// exit worker restores the real window, and the next frame paints it).
 pub(crate) fn restore_now() {
+    set_idle_mode(false);
     STARTUP_SUPPRESS.store(false, Ordering::Relaxed);
     #[cfg(windows)]
     restore_windows_window();
@@ -553,7 +704,7 @@ fn main_window() -> Option<windows_sys::Win32::Foundation::HWND> {
     unsafe extern "system" fn find_window(
         window: windows_sys::Win32::Foundation::HWND,
         parameter: windows_sys::Win32::Foundation::LPARAM,
-    ) -> windows_sys::Win32::Foundation::BOOL {
+    ) -> windows_sys::core::BOOL {
         // SAFETY: `parameter` is the `&mut Target` passed to EnumWindows below
         // and lives for the duration of the enumeration.
         let target = unsafe { &mut *(parameter as *mut Target) };

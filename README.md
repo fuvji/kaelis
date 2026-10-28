@@ -1,10 +1,10 @@
 # Kaelis - Fastest & Lightest Minecraft Launcher
 
-![Version](https://img.shields.io/badge/version-0.3.7-70a5ff)
+![Version](https://img.shields.io/badge/version-0.4.0-70a5ff)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
 ![License](https://img.shields.io/badge/license-MIT-8b949e)
 ![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
-![Tests](https://img.shields.io/badge/tests-280%20passing-3fb950)
+![Tests](https://img.shields.io/badge/tests-281%20passing-3fb950)
 
 <img width="1080" height="700" alt="Accounts tab: the active identity and every saved offline or Microsoft account" src="site/assets/app-accounts.png" />
 
@@ -71,23 +71,31 @@ unreferenced cache.
 
 ## Performance
 
-Measured on the published Windows 0.2.12 artifact with `tools/bench.ps1` (5 runs,
-window detected through UI Automation) on 2026-10-25:
+Measured on 2026-10-28 by running the 0.3.7 build and the 0.4.0 build back to
+back on this machine with the same fixtures. The window, memory, handle, and
+shown-idle rows come from `tools/bench.ps1 -Runs 5` (the window is found through
+UI Automation); the tray rows come from a separate 60-second sample of each
+build started with `--tray`, with CPU time read from the process handle:
 
-| Metric | Result |
-| --- | --- |
-| `kaelis --version` | 79 ms median, 118 ms p95 |
-| Window, empty data root | 1,161 ms median |
-| Window, 200-jar instance | 1,000 ms median |
-| Working set (idle) | 99.0 MB empty, 89.8 MB with 200 jars |
-| Private bytes (idle) | 91.0 MB empty, 91.2 MB with 200 jars |
-| Idle CPU | 0.00% median (event-driven, no repaint loop) |
-| Handles | 507 empty, 510 with 200 jars |
-| Hibernated working set | 1.6 MB after 90 s unfocused (path unchanged since 0.2.10) |
-| Published Windows binary (0.3.0) | 17,034,240 B, SHA-256 `c17cb139…` |
-| Second launch restore | 62 ms (handoff + native window wake; path unchanged since 0.2.10) |
-| Window close to process exit | 16 ms (path unchanged since 0.2.10) |
+| Metric | 0.3.7 | 0.4.0 |
+| --- | --- | --- |
+| `kaelis --version` | 79 ms median, 82 ms p95 | 78 ms median, 120 ms p95 |
+| Window, empty data root | 313 ms | 311 ms |
+| Window, 200-jar instance | 309 ms | 315 ms |
+| Working set (idle) | 80.8 MB empty, 81.9 MB with 200 jars | 31.9 MB empty, 31.9 MB with 200 jars |
+| Private bytes (idle) | 90.2 MB empty, 91.0 MB with 200 jars | 92.5 MB empty, 93.2 MB with 200 jars |
+| Handles | 562 | 560 |
+| Idle CPU, window shown | 0.00% median | 0.00% median |
+| Idle CPU, hidden in the tray, 60 s | 3,078 ms (5.13% of a core) | 344 ms (0.57%), 0 ms in every 2-second window after the first |
+| Working set, hidden in the tray | 79.4 MB | 32.0 MB, 19.0 MB after a wake |
 
+Both idle columns are totals for one core over the sample: an idle launcher
+schedules no frames, and a hidden one is now also off the schedule entirely. The
+0.4.0 window samples caught a single 15.6 ms wake in two of ten runs; 0.3.7's ten
+samples recorded none. The older build's hidden spin is bursty rather than
+steady — a second, 10-second sample of the same two binaries measured 0.63 %
+against 0.00 % — so the 60-second figure is the one that shows what it costs
+while a game runs.
 The window does not wait for mod metadata: jar scanning and artwork decoding
 run on workers, so a 200-mod instance opens in the same time as an empty one.
 The window figure is the one that moves with the host: the same machine
@@ -108,7 +116,40 @@ same machine recorded 362 ms for 0.1.3 on a different day without any change to
 the window path, so a number that looks slower here is the machine, not the
 launcher. The working set and handle count are the figures that stay stable.
 
-## What's new in 0.3.7
+## What's new in 0.4.0
+
+- **An idle launcher is off the schedule.** A hidden or unfocused Kaelis asks
+  Windows for background processing mode and EcoQoS, so its threads sit at the
+  bottom of the CPU priority, its disk and memory priorities are at their
+  minimums, and the scheduler is free to run it on efficiency cores at a low
+  clock. With the lowest memory priority the OS also pages it out: the working
+  set falls from ~81 MB to ~32 MB, and to ~19 MB after a tray wake.
+- **A hidden launcher no longer burns a core.** Hiding the window left the
+  toolkit waiting for a paint an invisible window can never deliver, so its
+  event loop spun at 5.13 % of a core in a 60-second hidden sample. The
+  window is now minimized before it is hidden — which is the state the toolkit
+  checks before scheduling another paint — so a hidden launcher costs 0 ms of
+  CPU in every 2-second window after start-up, with no frames and no timers.
+- **Updates install instantly, without a console.** The verified download is
+  renamed into place *inside* the running launcher (Windows permits renaming a
+  running image), and the new build starts with the pid it must wait for. The
+  batch script, its one-second poll, and the black console window a restarted
+  build used to flash are all gone from the normal path; the script remains only
+  as the fallback for an install that refuses the rename.
+- **The instance governor is event-driven.** Background instances were demoted
+  by a timer that woke every 1.5 s and could be up to 1.5 s late; a foreground
+  hook now demotes the moment the user switches away and promotes the moment
+  they come back, and a demoted instance also gives up the fast cores through
+  EcoQoS. Between switches the governor thread blocks in the message queue and
+  costs nothing.
+- **`--replace-pid`** is the internal hand-off the updater uses: it waits on the
+  replaced process's handle rather than polling for its pid to disappear.
+- **Dependencies.** `windows-sys` was unified on 0.61 across all four crates
+  (two versions were being linked before).
+- **Tests:** 281 passing (was 279), including the in-place swap and the backup
+  cleanup that the instant updater depends on.
+
+### From 0.3.7
 
 - **No keyboard shortcuts.** `Ctrl/Cmd + 1…5`, `Ctrl + F`, and `Ctrl + S` are
   gone together with `tab_from_shortcuts` and the shortcut labels in the rail
