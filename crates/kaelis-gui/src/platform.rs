@@ -312,7 +312,10 @@ mod taskbar_tests {
         assert_eq!(style & WS_EX_APPWINDOW as isize, 0);
         // Every other bit is preserved, so resizing and painting are untouched.
         let other = 0x0008_0000_isize;
-        assert_eq!(taskbar_hidden_style(other), other | WS_EX_TOOLWINDOW as isize);
+        assert_eq!(
+            taskbar_hidden_style(other),
+            other | WS_EX_TOOLWINDOW as isize
+        );
     }
 }
 
