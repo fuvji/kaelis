@@ -19,9 +19,8 @@ static WINDOW_SHOWN: AtomicBool = AtomicBool::new(true);
 /// clears it so the startup watcher cannot hide the window again.
 static STARTUP_SUPPRESS: AtomicBool = AtomicBool::new(false);
 
-/// Whether the launcher has asked Windows to run it at the bottom of the
-/// schedule. Kept in an atomic so the per-frame check is one load and a
-/// repeated request is not a pair of syscalls.
+/// Windows' background-mode latch: one atomic load instead of two syscalls.
+#[cfg(windows)]
 static IDLE_MODE: AtomicBool = AtomicBool::new(false);
 
 /// Drop this process to the bottom of the system, or bring it back.
