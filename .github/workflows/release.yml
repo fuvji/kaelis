@@ -145,6 +145,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
+          # `git describe` needs the previous tag to build the compare link;
+          # the default single-commit clone leaves it out and produces
+          # `compare/...v0.4.3`.
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:

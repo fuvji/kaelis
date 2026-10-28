@@ -136,8 +136,8 @@ launcher. The working set and handle count are the figures that stay stable.
   0.4.2 in the tray, About card, update check, and report metadata; 0.4.3's
   single value cannot drift again. The release and link scripts read that one
   value.
-- **Lighter.** The stripped Windows executable is **18,352,640 B**, 5,120 B
-  smaller than 0.4.2's, with the same icon and both renderers.
+- **Lighter.** The shipped Windows executable is **17,232,896 B** (**16.4 MB**),
+  4,608 B smaller than 0.4.2's, with the same icon and both renderers.
 - **Tests:** 282, with `cargo fmt --check` and Clippy `-D warnings` clean.
 
 ## What's new in 0.4.2
