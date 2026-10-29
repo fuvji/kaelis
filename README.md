@@ -1,804 +1,174 @@
-# Kaelis - Fastest & Lightest Minecraft Launcher
+<p align="center">
+  <img width="96" height="96" src="site/assets/kaelis-mark.svg" alt="Kaelis">
+</p>
 
-![Version](https://img.shields.io/badge/version-0.4.2-70a5ff)
-![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8)
-![License](https://img.shields.io/badge/license-MIT-8b949e)
-![Idle CPU](https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950)
-![Tests](https://img.shields.io/badge/tests-281%20passing-3fb950)
+<h1 align="center">Kaelis</h1>
+
+<p align="center"><b>The fastest, lightest Minecraft launcher.</b><br>
+Native Rust for Windows, macOS, and Linux.</p>
+
+<p align="center">
+  <a href="https://fuvji.github.io/kaelis/">Website</a> ·
+  <a href="https://github.com/fuvji/kaelis/releases">Releases</a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="https://discord.gg/fvrdYzrQjq">Discord</a>
+</p>
+
+<p align="center">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.4.4-70a5ff">
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8">
+  <img alt="Idle CPU" src="https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950">
+  <img alt="License" src="https://img.shields.io/badge/license-proprietary-8b949e">
+</p>
 
 <img width="1080" height="700" alt="Accounts tab: the active identity and every saved offline or Microsoft account" src="site/assets/app-accounts.png" />
 
-**Minecraft Launcher.** The fastest and lightest way to run Minecraft: a
-native Rust launcher for Windows, macOS, and Linux with one calm library for
-instances, modpacks, mods, resource packs, and shaders — and power features that
-keep that library clean, correct, and fast on their own.
+Instances, mods, modpacks, resource packs, shaders, and accounts in one window.
+Files stay local, nothing runs in the background, and the library is one screen
+away.
 
-[Website](site/index.html) · [Releases](https://github.com/fuvji/kaelis/releases) · [Issues](https://github.com/fuvji/kaelis/issues) · [Community](https://discord.gg/fvrdYzrQjq)
+## Features
 
-## Power features
-
-| Feature | What it does |
+| | |
 | --- | --- |
-| **Auto Erase Junk** | Clears logs, crash dumps, loader caches (including Architectury Transformer scratch), mod download caches, typed command history, extracted natives, stale server packs, heap dumps, interrupted downloads even when they keep their real name, OS thumbnail files inside content folders, and stale official-launcher state (including its saved Microsoft profile and credential) at every start and after every game — capped so it can never stall startup. Always on; an old settings file cannot disable it. Folders it does not recognise are always kept |
-| **One copy of the game** | Every verified download — libraries, assets, client jar, Java runtime — is hard-linked into a content-addressed store, so a second instance of the same version occupies a few extra MB instead of another 600 MB. Store entries no instance references are pruned automatically |
-| **Auto-repair before launch** | Checks the JVM, version metadata, client jar, libraries, assets, and loader before every launch and fills whatever is missing from Mojang's own metadata, then starts the game — and scans the instance's mods, installing missing required mods (for example `ukulib` for uku's Armor HUD) before the JVM starts |
-| **Auto-disable duplicates** | Keeps the newest jar when two files provide the same mod id, so the older copy cannot crash the game first |
-| **Required dependencies** | Every install resolves and downloads the dependency graph — Modrinth and CurseForge alike |
-| **Verified mod updates** | Hash-matches installed jars, finds the newest compatible release for each, and replaces it only after SHA-1 verification; disabled jars stay disabled |
-| **Keyless catalogue** | Modrinth and the entire CurseForge catalogue — search, paging, resource packs, shaders — with no API key and no account |
-| **Managed Java** | Installs the Mojang runtime the version metadata names and launches through it, so no system JDK is required |
-| **Portable instances** | One `.kaelis.zip` round trip, plus Prism/MultiMC, CurseForge, `.mrpack`, and loose pack imports |
-| **Runs in parallel, quietly** | Per-instance OS guards let different instances launch together; every JVM is promoted to high priority as it spawns and stays there for its whole life, so loading and rendering run ahead of ordinary background work with no timer and no focus hook |
-| **Reopens, never doubles** | One process, one tray icon: a second launch, a Start-menu click, or the tray icon restores the running window in ~120 ms instead of starting another launcher — including over a fullscreen game |
-| **Hibernates while you play** | Starting a game hides the window and empties its working set, and 90 s unfocused does the same while the window stays open; one tray click restores it, mid-game included |
-| **Frameless window, taskbar-friendly** | The launcher draws its own header instead of a native title bar: drag anywhere on the strip to move the window, double-click to maximize or restore, and one click each to minimize, maximize, or close — Close ends the process immediately. The corners are rounded by the compositor rather than by a transparent surface, and the three controls are painted strokes, so they keep the system's shapes at every scale factor. Minimize is an ordinary minimize: the window keeps its taskbar button and can be restored from the shell. The tray icon stays as a shortcut — a click restores a hidden window, and the menu's Hide puts a visible one away. The native menu is forced dark and is three actions plus one separator |
-| **Remembers your setup** | Window size and every remembered switch reopen the way they were left: version-list snapshots, alpha and beta versions, required dependencies, the search providers, and search-as-you-type. A resize is written once the drag settles, and quitting right after one still keeps the newest size |
-| **Updates in one click** | One anonymous GitHub request runs in the background after the window is up. When a newer release exists, the footer version links to it and an **Update** action installs the build right there: the download is SHA-256-verified against the same release, the old executable is backed up, and a failed swap rolls back. Nothing downloads or installs on its own |
-| **Starts with Windows** | One optional per-user sign-in entry opens Kaelis hidden in the tray, with no service, scheduled task, splash, or focus steal. Enable or disable it in Settings or with `kaelis --startup on\|off` |
-| **Survives a launcher restart** | A game's process id and creation time are recorded when it spawns, so reopening Kaelis still shows Quit for a game that is running, keeps a second JVM off the same world, and can end that game from the card |
-| **Private by default** | RAM-only instance logs, no telemetry, no analytics, no background daemon, nothing stored that the OS credential store can hold instead — and every instance's own Minecraft telemetry switch is forced off before the game can read it |
+| **Auto Erase Junk** | Logs, caches, and stale launcher state go at every start. Saves, mods, and configs never do. |
+| **One copy of the game** | Verified files are hard-linked once, so a second instance costs MB, not 600 MB. |
+| **Auto-repair** | A missing JVM, jar, library, asset, or loader is refilled before the game starts. |
+| **Required dependencies** | Every install resolves and downloads its dependency graph, on both catalogues. |
+| **Verified mod updates** | Newest compatible release per mod, installed only after its hash matches. |
+| **Keyless catalogue** | All of Modrinth and CurseForge. No API key, no account. |
+| **Managed Java** | The runtime the version names, installed on first play. |
+| **Portable instances** | `.kaelis.zip` round trip, plus Prism/MultiMC, CurseForge, and `.mrpack` imports. |
+| **High-priority games** | Every JVM is promoted at spawn and stays high for its whole life. |
+| **Runs in parallel** | Per-instance guards let different instances run at once. |
+| **Reopens, never doubles** | One process, one tray icon. A second launch restores the window in ~120 ms. |
+| **Hibernates while you play** | Hides and empties its working set; one tray click brings it back. |
+| **Taskbar-friendly** | Keeps its taskbar button and Alt+Tab entry; the tray's Hide is opt-in. |
+| **Starts with Windows** | Optional per-user entry, tray-hidden, no service or scheduled task. |
+| **Survives a restart** | A running game still shows as running after the launcher reopens. |
+| **Remembers your setup** | Window size and every remembered switch reopen as they were left. |
+| **Updates in one click** | SHA-256 verified against the release, backed up, rolled back on failure. |
+| **Private by default** | No telemetry, no daemon; tokens live in the OS keychain. |
 
 **Auto Erase Junk never guesses.** It removes only what Minecraft or Kaelis
-regenerates on the next launch: `logs`, `crash-reports`, `.cache`, `.mixin.out`,
-`.fabric`, `.quilt`, `.connector`, `.architectury-transformer`, `cache`,
-`debug`, `temp`, `natives`, and `server-resource-packs`; staging files ending `.part`, `.tmp`, or `.download`
-with or without a leading dot, in the root and in every content folder; OS
-folder noise (`Thumbs.db`, `.DS_Store`, `desktop.ini`) wherever it lands; and
-root-level files that only hold diagnostics, caches, history, or another
-launcher's leftovers (`command_history.txt`, `usercache.json`, `hs_err_pid*`,
-`java_pid*`, `.attach_pid*`, `.hprof`, `.replay`, `realms_persistence.json`,
-`servers.dat_old`, `launcher_ui_state.json`, and the official launcher's saved
-profiles and credential files). Saves, mods, configuration, resource packs,
-shaders, screenshots, options, and every folder whose name it does not
-recognise — such as a leftover `tmpmkzllels1` — are never touched. A symlinked
-instance root is refused rather than followed, and a hostile folder cannot slow
-startup past 50,000 inspected entries.
+regenerates on the next launch: logs, crash dumps, loader and download caches,
+extracted natives, staging files, OS thumbnail noise, and another launcher's
+leftovers. Saves, mods, configuration, resource packs, shaders, screenshots,
+options, and every folder it does not recognise stay. A symlinked instance root
+is refused rather than followed, and a hostile folder cannot slow startup past
+50,000 inspected entries. The first pass runs off the UI thread and after every
+game; `kaelis --clean [--json]` runs it headless.
 
 **The same bytes are stored once.** A verified file is hard-linked into
-`<data>/content`, keyed by its SHA-1, before any later instance can ask for it:
-the download layer checks the store first, so a second instance of the same
-version links 443 MB of assets, 66 MB of libraries, the client jar, and the
-100 MB Java runtime in place of downloading them. Hard links are one inode with
-two names, so deleting an instance never damages another, and a store entry that
-no instance references is pruned from disk. A store on another volume, or a
-filesystem without hard links, simply falls back to a normal download.
+`<data>/content` by SHA-1 before any later instance asks for it, so a second
+instance of the same version links 443 MB of assets, 66 MB of libraries, the
+client jar, and the 100 MB Java runtime instead of downloading them. Deleting an
+instance never damages another, and unreferenced entries are pruned.
 
-`kaelis --clean [--json]` runs the same pass with no window: junk from every
-instance, a one-time share of files that predate the store, and a prune of
-unreferenced cache.
+## Content
 
-<img width="1080" height="700" alt="Instances" src="site/assets/app-instances.png" />
+Both catalogues are keyless. Modrinth is the official API; CurseForge is read
+through the public mirror of its v1 API, with the same paths, JSON, pagination,
+and file metadata as the official endpoint. Files come from the official CDN
+with hash and required-dependency checks. An approved key in `CF_API_KEY` aims
+the same calls at the official endpoint. Sites without an API are covered by
+link and local-file import, never scrapers.
+
+## Install
+
+| Platform | Downloads |
+| --- | --- |
+| **Windows 10 / 11 · x64** | [Portable ZIP](https://fuvji.github.io/kaelis/downloads/Kaelis-Portable.zip) · [Kaelis.exe](https://fuvji.github.io/kaelis/downloads/Kaelis.exe) · [Installer](https://fuvji.github.io/kaelis/downloads/Kaelis-Setup.exe) |
+| **macOS 11+** | [Universal DMG](https://fuvji.github.io/kaelis/downloads/Kaelis-macos-universal.dmg) · [ZIP](https://fuvji.github.io/kaelis/downloads/Kaelis-macos-universal.zip) |
+| **Linux · x64** | [.deb](https://fuvji.github.io/kaelis/downloads/Kaelis-linux-x64.deb) · [AppImage](https://fuvji.github.io/kaelis/downloads/Kaelis-linux-x64.AppImage) · [tar.gz](https://fuvji.github.io/kaelis/downloads/Kaelis-linux-x64.tar.gz) |
+
+No admin rights, no runtime to install, no account to create. The Windows build
+is unsigned, so SmartScreen may ask once; the macOS build is ad-hoc signed, so
+the first launch is right-click → Open. Verify before running:
+
+```bash
+shasum -a 256 -c SHA256SUMS.txt     # certutil -hashfile Kaelis.exe SHA256
+```
+
+Every artifact is listed in [SHA256SUMS.txt](https://fuvji.github.io/kaelis/downloads/SHA256SUMS.txt)
+and the [URL & install index](https://fuvji.github.io/kaelis/downloads/KAELIS-LINKS.txt).
 
 ## Performance
 
-Measured on 2026-10-28 by running the 0.3.7 build and the 0.4.0 build back to
-back on this machine with the same fixtures. The window, memory, handle, and
-shown-idle rows come from `tools/bench.ps1 -Runs 5` (the window is found through
-UI Automation); the tray rows come from a separate 60-second sample of each
-build started with `--tray`, with CPU time read from the process handle:
+Measured on one machine on 2026-10-28, 0.3.7 against 0.4.0, with the same
+fixtures and `tools/bench.ps1`.
 
 | Metric | 0.3.7 | 0.4.0 |
 | --- | --- | --- |
-| `kaelis --version` | 79 ms median, 82 ms p95 | 78 ms median, 120 ms p95 |
+| `kaelis --version` | 79 ms median | 78 ms median |
 | Window, empty data root | 313 ms | 311 ms |
 | Window, 200-jar instance | 309 ms | 315 ms |
-| Working set (idle) | 80.8 MB empty, 81.9 MB with 200 jars | 31.9 MB empty, 31.9 MB with 200 jars |
-| Private bytes (idle) | 90.2 MB empty, 91.0 MB with 200 jars | 92.5 MB empty, 93.2 MB with 200 jars |
+| Working set, idle | 80.8 MB | 31.9 MB |
 | Handles | 562 | 560 |
-| Idle CPU, window shown | 0.00% median | 0.00% median |
-| Idle CPU, hidden in the tray, 60 s | 3,078 ms (5.13% of a core) | 344 ms (0.57%), 0 ms in every 2-second window after the first |
-| Working set, hidden in the tray | 79.4 MB | 32.0 MB, 19.0 MB after a wake |
+| Idle CPU, window shown | 0.00% | 0.00% |
+| Idle CPU, hidden 60 s | 5.13% of a core | 0.57%, 0 ms after start-up |
+| Working set, hidden | 79.4 MB | 32.0 MB |
 
-Both idle columns are totals for one core over the sample: an idle launcher
-schedules no frames, and a hidden one is now also off the schedule entirely. The
-0.4.0 window samples caught a single 15.6 ms wake in two of ten runs; 0.3.7's ten
-samples recorded none. The older build's hidden spin is bursty rather than
-steady — a second, 10-second sample of the same two binaries measured 0.63 %
-against 0.00 % — so the 60-second figure is the one that shows what it costs
-while a game runs.
-The window does not wait for mod metadata: jar scanning and artwork decoding
-run on workers, so a 200-mod instance opens in the same time as an empty one.
-The window figure is the one that moves with the host: the same machine
-recorded 177 ms for 0.2.10 earlier in the day, 336 ms for 0.2.11, and then
-764–983 ms for that same 0.2.11 binary in this later session; 0.2.12 measured
-1,000–1,161 ms on the published build during the same host load. The absolute
-number is host state, not a regression. Working set, private bytes, handles, and idle CPU are the figures
-that stay put.
-Startup no longer walks the temp folder before the window: the background
-sweeper's first tick does it on the runtime. Pack downloads use 8 parallel
-transfers, and an idle launcher schedules no frames at all. The binary carries
-both renderers, so a session without OpenGL 2.0 still opens a window through
-Direct3D 12; that fallback is the largest part of the size above. Run the same benchmark after a change with
-`powershell -NoProfile -ExecutionPolicy Bypass -File tools/bench.ps1`; it writes
-`target/bench-report.json`. These are single-machine numbers, not a ranking
-against other launchers, and the absolute window time moves with the host: the
-same machine recorded 362 ms for 0.1.3 on a different day without any change to
-the window path, so a number that looks slower here is the machine, not the
-launcher. The working set and handle count are the figures that stay stable.
-
-## What's new in 0.4.3
-
-- **Back in the taskbar.** The forced `WS_EX_TOOLWINDOW` rewrite is gone, so a
-  normal launch keeps a taskbar button and Alt+Tab entry again. The window also
-  carries a real title (`Kaelis`), which was empty before, so the shell has a
-  name for it instead of the raw process name. Minimize is an ordinary minimize
-  on every platform; the tray icon remains, and its **Hide** is the explicit way
-  to put the window away. Deleting the style hook also removes an unsafe window
-  subclass and its retry path from every frame.
-- **The game stays at high priority.** A launched JVM is promoted once, right
-  after spawn, and is never demoted. The foreground hook, its message-loop
-  thread, the idle demotion, and the EcoQoS throttle on the game are all gone,
-  so alt-tabbing no longer drops the world loading in the background to idle.
-  `REALTIME_PRIORITY_CLASS` is still not used: it needs elevation and can starve
-  input and audio. High is the highest class that is both reachable and safe.
-- **One version everywhere.** Every crate now inherits the workspace version
-  instead of carrying its own. 0.4.2 shipped a launcher that reported itself as
-  0.4.2 in the tray, About card, update check, and report metadata; 0.4.3's
-  single value cannot drift again. The release and link scripts read that one
-  value.
-- **Lighter.** The shipped Windows executable is **17,232,896 B** (**16.4 MB**),
-  4,608 B smaller than 0.4.2's, with the same icon and both renderers.
-- **Tests:** 282, with `cargo fmt --check` and Clippy `-D warnings` clean.
-
-## What's new in 0.4.2
-
-- **The taskbar is really gone this time.** 0.4.1 wrote `WS_EX_TOOLWINDOW`
-  once, and both winit and Explorer recompute the style when the window is
-  shown, so the button came back. The window procedure now edits every
-  `WM_STYLECHANGING` for `GWL_EXSTYLE`, keeping `WS_EX_TOOLWINDOW` and dropping
-  `WS_EX_APPWINDOW`, so no later style write can restore the button. The
-  viewport also asks the toolkit for a taskbar-less window
-  (`ViewportBuilder::with_taskbar(false)`), which deletes the tab at creation
-  and after an Explorer restart. Verified against the running release: the
-  visible window has `WS_EX_TOOLWINDOW`, no `WS_EX_APPWINDOW`, and the shell's
-  taskbar exposes no Kaelis item — before and after a hide/show cycle.
-- **Everything from 0.4.1.**
-
-## What's new in 0.4.1
-
-- **The window bar is only a handle.** The selected channel's name is gone from
-  the strip: the rail already shows it and the page below repeats it. The bar
-  keeps the drag surface and the three window controls.
-- **The game in front runs at high priority.** A launched JVM is promoted to
-  `HIGH_PRIORITY_CLASS` while it loads and while it owns the foreground, and is
-  demoted to `IDLE_PRIORITY_CLASS` only after it has been in front once and the
-  user switches away. A JVM loading mods and a world is therefore never
-  throttled before its window appears, and a background instance still gives up
-  the fast cores through EcoQoS. A Windows test spawns a child process and
-  asserts both classes. Unix does not let an unprivileged process raise another
-  process's priority, so there is no equivalent switch to flip there.
-- **Parallel reference processing.** The default flags add
-  `-XX:+ParallelRefProcEnabled` beside the heap and G1 settings, so
-  weak-reference cleanup uses every collector worker instead of one. No region
-  size, pause target, or thread count is pinned.
-- **The icon is back.** The executable embeds `assets/kaelis.ico` again and the
-  window sets the same 64 px mark, so Explorer, dialogs, and the tray menu show
-  the brand instead of a generic executable. The ICO costs 46,732 B; the
-  rebuilt executable is **18,357,760 B**, the same size as 0.4.0's.
-- **Scope, stated plainly:** the launcher can give a game the highest practical
-  scheduling priority and tune its JVM, but it cannot overclock a CPU or GPU and
-  it cannot make Minecraft's single render thread multi-core. No timer that
-  protects disk, network, or correctness was removed.
-- **Tests:** 283 (the window-icon test returns with the icon, and the taskbar
-  style rewrite is asserted as a pure function).
-
-## What's new in 0.4.0
-
-- **An idle launcher is off the schedule.** A hidden or unfocused Kaelis asks
-  Windows for background processing mode and EcoQoS, so its threads sit at the
-  bottom of the CPU priority, its disk and memory priorities are at their
-  minimums, and the scheduler is free to run it on efficiency cores at a low
-  clock. With the lowest memory priority the OS also pages it out: the working
-  set falls from ~81 MB to ~32 MB, and to ~19 MB after a tray wake.
-- **A hidden launcher no longer burns a core.** Hiding the window left the
-  toolkit waiting for a paint an invisible window can never deliver, so its
-  event loop spun at 5.13 % of a core in a 60-second hidden sample. The
-  window is now minimized before it is hidden — which is the state the toolkit
-  checks before scheduling another paint — so a hidden launcher costs 0 ms of
-  CPU in every 2-second window after start-up, with no frames and no timers.
-- **Updates install instantly, without a console.** The verified download is
-  renamed into place *inside* the running launcher (Windows permits renaming a
-  running image), and the new build starts with the pid it must wait for. The
-  batch script, its one-second poll, and the black console window a restarted
-  build used to flash are all gone from the normal path; the script remains only
-  as the fallback for an install that refuses the rename.
-- **The instance governor is event-driven.** Background instances were demoted
-  by a timer that woke every 1.5 s and could be up to 1.5 s late; a foreground
-  hook now demotes the moment the user switches away and promotes the moment
-  they come back, and a demoted instance also gives up the fast cores through
-  EcoQoS. Between switches the governor thread blocks in the message queue and
-  costs nothing.
-- **`--replace-pid`** is the internal hand-off the updater uses: it waits on the
-  replaced process's handle rather than polling for its pid to disappear.
-- **Dependencies.** `windows-sys` was unified on 0.61 across all four crates
-  (two versions were being linked before).
-- **Tests:** 281 passing (was 279), including the in-place swap and the backup
-  cleanup that the instant updater depends on.
-
-### From 0.3.7
-
-- **No keyboard shortcuts.** `Ctrl/Cmd + 1…5`, `Ctrl + F`, and `Ctrl + S` are
-  gone together with `tab_from_shortcuts` and the shortcut labels in the rail
-  tooltips, the Instances count line, the Settings scale row, and the item
-  tooltips. Nothing is consumed before the widgets see it. Standard text
-  editing is untouched: Tab still moves focus, Escape still dismisses a preview,
-  and the clipboard still pastes into a field.
-- **Six captions and nine decorative labels removed.** The window bar carries
-  only the tab name and three controls — no `PLAYING` pill and no status
-  sentence; `ACTIVE INSTANCE` and its `Manage content` button are gone from
-  Overview; `Your instances` is gone from Instances, which now starts with its
-  filter row; `BROWSE`, `INSTANCE`, and the `Loader` labels are gone from
-  Content, along with the `MC 1.21.1` and `fabric` chips that repeated what the
-  instance box already said, the `50 of 50` counter, the `Add files…` button
-  beside Folders, and the `Detected fabric` pill that repeated the combo box.
-- **Helper sentences deleted.** `Name it to begin.`, `Pick a Minecraft version.`,
-  `Java installs on first play.`, `Name it above, pick a version, and Play
-  provisions Java and the client.`, the `Mods, packs, shaders, and worlds stay
-  together.` line, and the whole **Zero-setup services** card are gone. The
-  Create button refuses and explains itself in its own tooltip instead.
-- **Copy:** the tagline is **Minecraft Launcher** (app, README, site title, and
-  hero), the sidebar credits **Rust** instead of `Rust 2024`, and both create
-  surfaces say **Create instance**.
-
-### From 0.3.6
-
-- **The Content screen has no boxes left to read.** The All / Installed / Not
-  installed filter row is gone, and with it the two pills that sat beside every
-  result title: an `Install` action already means the project is absent and an
-  `Erase` already means it is present, so the pills repeated the button. The
-  provider is still in the Details preview, where a single project is being
-  examined. The filter enum and its plumbing are deleted rather than hidden, so
-  nothing dead is left behind, and each row now lays out two fewer widgets.
-- **Search fields are capped, not stretched.** The mod search, the results
-  refine, the installed filter, and the instance filter stop at 420/320/300/330
-  points instead of filling whatever width the window has, and the sort control
-  shares the refine row. On a 1440 px display that is most of a row of empty
-  surface removed from three bars.
-- **Every text button is tighter.** Default padding drops from 12×4 to 9×3, and
-  the fixed Install width from 96 to 78 points (the longest state label plus the
-  compact padding), so Create, Play, Install, Erase, Copy, and Search all lose
-  the same dead margin without changing the 26 pt control height or the row
-  alignment.
-- **The window bar is a handle and a title.** Header padding drops from 7 to 4
-  points and the tab name from 14 to 12.5; the status sentence moved to the
-  footer, where it truncates instead of pushing the FPS readout and the full
-  text stays one hover away.
-
-### From 0.3.5
-
-- **The window can be made short again.** The minimum height drops from 520 to
-  320 points, and the restore check reads the same constant, so a window you
-  resize small reopens small instead of snapping back to 1080×700. The floor
-  is what the chrome actually needs: header, footer, margins, and the 220 pt
-  body floor the Content browser sets for its panes. Everything below that
-  scrolls. Read back from the running window, the drag limit is 760×320.
-- **The sidebar stops overlapping itself.** The identity card is replaced by the
-  30 px avatar button when the tab list leaves less than 88 pt below it, so a
-  short window still shows all five tabs. Signed out, that disc reads `K`
-  instead of the `N` it was taking from the words "No account".
-- **Two waits removed.** A typing pause in the Content browser now starts its
-  search after 200 ms instead of 450 ms, and on macOS and Linux the launcher
-  notices a finished game every 100 ms instead of every 300 ms (Windows was
-  already event-driven). Neither changes what is sent or how often a game is
-  polled while it runs.
-
-### From 0.3.4
-
-- **Smoothly rounded corners, from the compositor.** The window asks Windows 11
-  for rounded corners and a border-less edge, so the rounding happens at
-  composition time and costs the launcher nothing per frame: no transparent
-  surface, no per-pixel alpha, no extra draw. Windows 10 ignores the request and
-  keeps its own default, as do macOS and Linux.
-- **The window controls are drawn as strokes.** Minimize, maximize or restore,
-  and close are painted lines in the system's own shapes instead of font
-  glyphs, so they stay crisp at every scale factor and no longer depend on the
-  icons a font happens to carry. Close keeps the system's red hover.
-- **Every drop shadow is gone.** Cards, menus, and popups are separated by flat
-  surfaces and hairlines only: fewer feathered shapes to tessellate, and no
-  pixels lit in a dark room that an OLED panel would otherwise switch off.
-- **The window surface is opaque.** The launcher paints every pixel it owns, so
-  requesting per-pixel transparency bought nothing and cost a full-surface
-  alpha blend on every frame. Measured on the development host, window time and
-  working set move within host noise either way; what changed is that work was
-  removed rather than added.
-
-### From 0.3.3
-
-- **Every component sits at its newest patch release.** `openssl-probe` 0.2.2,
-  `roxmltree` 0.21.2, and `rustix` 1.1.6 replace their previous patch versions.
-  No behaviour changes were needed; the launcher is built, linted, and tested
-  against the newest versions crates.io offers inside the ranges the project
-  already allows.
-
-### From 0.3.2
-
-- **The launcher remembers how it was left.** The window reopens at the size it
-  was last settled on, and the switches reopen where they were set: version-list
-  snapshots, alpha and beta versions, required dependencies, the search
-  providers, and search-as-you-type. A maximized window is never recorded, so
-  restoring never pins the launcher to a full screen, and a corrupt or
-  implausible saved size falls back to the default that fits a 1366×768 laptop.
-- **The window is a frameless overlay.** There is no native title bar: the
-  launcher's own header is the handle. Drag anywhere on the strip to move the
-  window, double-click it to maximize or restore, and use one control each to
-  minimize, maximize or restore, and close. Close ends the process immediately,
-  with the current geometry written first. On Windows minimize still hides to
-  the tray. Resizing works from all eight edges and corners, with the cursor
-  changing over each grip.
-- **Shorter copy everywhere.** Descriptions on Instances, Content, and Settings
-  are one line each and say the same thing they did before.
-
-### From 0.3.1
-
-- **Play repairs the instance before it launches.** Missing pieces are found
-  with filesystem checks only — no network round trip — and then filled from
-  Mojang's own metadata: the version-matched Java runtime, the version
-  metadata, the client jar, any missing library, the asset index, missing game
-  assets, and a Fabric-family loader. The launch continues by itself once the
-  gap is closed, so a fresh machine, a half-finished download, or a deleted
-  library is no longer a dead end. A gap Kaelis cannot fill on its own — a
-  Forge or NeoForge loader — is reported with the reason instead of failing
-  deep inside the game's log.
-- **Minecraft's own telemetry is forced off.** Every launch rewrites the
-  instance's `options.txt` to `telemetryOptIn:false` (and the legacy
-  `snooperEnabled`) while preserving every other line and its order. Kaelis
-  itself still collects nothing.
-- **A configured Java that moved no longer fails a launch.** The configured
-  path is tried first; when it no longer resolves, the instance runtime, the
-  `PATH`, and then an installed JDK are used, and only a machine with none of
-  those reports the problem by name.
-- **Quieter idle timers.** The temp sweep runs every 15 minutes over an hour of
-  grace instead of every 5, and a completed install writes a small marker so a
-  healthy instance starts without walking its asset tree.
-
-### From 0.3.0
-
-- **Every platform has an installable build.** Windows keeps the portable ZIP
-  and per-user setup. macOS now ships `Kaelis-macos-universal.dmg`, one image
-  that holds the universal app and an Applications shortcut. Linux now ships
-  `Kaelis-linux-x64.deb` for `apt install ./…` and
-  `Kaelis-linux-x64.AppImage` for a single portable file; the tarball remains
-  for a plain binary and desktop entry.
-- **One tag builds, hashes, and serves all of them.** The release workflow
-  produces every artifact from the same commit, writes one combined
-  `SHA256SUMS.txt`, and the Pages deploy fetches all platforms before hydrating
-  the page. The download cards show real sizes and hashes, and CI fails if any
-  artifact link stops resolving.
-- **No new runtime or daemon.** The DMG and `.deb` carry the same binary the
-  tarball does. The AppImage adds only its `AppRun` wrapper and icon; it uses the
-  desktop's GTK and app-indicator libraries instead of duplicating them, so the
-  package stays the smallest form that still installs cleanly.
-
-### From 0.2.12
-
-- **Tray minimize and junk cleanup are no longer optional.** Both are core
-  Kaelis behaviour, so Settings no longer offers a switch that can turn either
-  one off. On Windows, minimize always hides to the tray; junk is erased at
-  every start and after every game on every platform. A saved `false` in an
-  older settings file is ignored, so an old file cannot re-enable the clutter.
-- **“Erase” sits in the middle of its capsule.** The content action row used a
-  top-aligned layout, which pushed the label above the button's centre while
-  **Install** sat centred. The row now centres every action, and the destructive
-  button's label is exactly 12 px from each side.
-- **Shorter Settings copy.** The startup entry stands alone under **Startup**,
-  automation labels fit one line, and the service note is one sentence. The
-  retired window and cleanup switches leave no empty card behind.
-
-### From 0.2.11
-
-- **The instance card no longer says “Never played”.** An instance that has
-  never been started shows only what it contains: its mod, pack, shader, and
-  world counts. A played instance still shows its relative session time, and
-  the counts read naturally — `1 pack · 1 world`, never `1 packs` or `1 worlds`.
-- **Auto Erase Junk reaches ReplayMod and Forge logs.** Disposable cleanup now
-  also clears the ReplayMod frame cache (recordings themselves stay), the
-  `fml-client-latest.log` and `fml-server-latest.log` files Forge and NeoForge
-  leave beside an instance, and Windows' `ehthumbs.db` thumbnail cache. Saves,
-  recordings, mods, configs, screenshots, and unknown folders are untouched.
-- **One less line of clutter.** The freed chip keeps the content row on a single
-  baseline at every card height, so scanning a long instance list is quieter
-  and slightly faster to read.
-
-### From 0.2.10
-
-- **Only Windows is offered the install action.** The update check and the
-  release link remain everywhere, but macOS and Linux ship as archives that are
-  unpacked deliberately, so they no longer show an **Update** label that could
-  only answer "already up to date".
-- **A failed swap restores the launcher.** If the verified build cannot be
-  copied into place — an antivirus lock that outlasts the retry window, a file
-  that vanished mid-swap — the script starts the existing executable instead of
-  exiting silently, so a failed install never leaves the user with no window.
-- **Updates install themselves.** The footer already said when a newer Kaelis
-  existed; the version now carries an **Update** action. One click downloads
-  the published Windows build, hashes it while it streams in, and refuses it
-  unless the SHA-256 matches the checksum in the same release. Only then does
-  the launcher write a short swap script, end itself instantly, and restart
-  into the new version; a failed copy rolls the old executable back. Downloads
-  verify every download, and an install inside a protected folder (such as
-  `Program Files`) is reported instead of being half-replaced; the version
-  link still opens the release page for those installs and for macOS and Linux.
-  A stale staging file is deleted at the next start, so an interrupted attempt
-  never accumulates in the temp folder.
-- **The tray is dark and one click.** Windows paints tray menus itself, so
-  Kaelis now sets the process-wide dark menu mode before the menu exists. The
-  menu is **Show / Minimize**, **Play last instance**, one separator, and
-  **Quit** — three actions, no submenus. The icon itself toggles the window,
-  including a window that is minimised to the taskbar.
-- **Minimize means tray.** The title-bar minimize button hides the window and
-  trims its working set instead of adding a taskbar button. **Show / Minimize**
-  in the tray does the same, and a single click restores the window. 0.2.10
-  added a Settings toggle for this; 0.2.12 retired it, so minimize always uses
-  the tray.
-- **The detected loader is a real control-height pill.** Its height is the same
-  as the combo box and every button beside it, with the text on the row's
-  centre line, so Content no longer shows a short box floating above a toolbar.
-- **Start with Windows, silently.** A Settings toggle adds one per-user
-  sign-in entry that opens Kaelis hidden in the tray. It is a plain registry
-  value — no service, no scheduled task, no splash, no window over the desktop —
-  and it can also be changed with `kaelis --startup on` or `off`.
-- **A reopened launcher still knows what is running.** Each game writes its
-  process id and creation time when it spawns. On the next start those records
-  are checked against the live process table, so the card shows Quit (not Play),
-  a second JVM cannot open the same world, and Quit ends the adopted game.
-  A normal launch still clears its record when the JVM exits.
-- **Auto-clean is broader and safer.** It now also clears OS thumbnail files in
-  content folders, the official launcher's account/profile files, `cache`,
-  `.architectury-transformer` scratch, and typed-command history. It no longer
-  deletes a `tmp…` folder it merely guesses at: saves, mods, configs,
-  screenshots, and unknown folders always survive.
-- **Content browsing is nearly twice as dense.** A result is now two lines:
-  title plus provider/installed state, then author, downloads, loader support,
-  and version. Descriptions and categories live in the hover and Details panel.
-  The icon is 32 px, gutters are tighter, and the action area no longer overlaps
-  long metadata, so a screenful holds roughly twice as many mods.
-- **Update checks start themselves.** A background request asks GitHub for the
-  newest tag after the first window is up. When it is newer, the footer version
-  turns into a single-line link to that release. The check is anonymous, does
-  not block the window, stays silent when offline, and never installs anything
-  on its own.
-
-### From 0.2.6
-
-- **Quit ends the process now.** The tray's Quit and the title-bar close drop
-  the tray icon and exit immediately instead of queuing a frame on a hidden
-  window and unwinding every editor, worker, and runtime handle first. Settings
-  are already written when they change and game logs are RAM-only, so nothing
-  is lost, and no ghost icon is left in the notification area.
-- **Play becomes Quit while the game runs.** A running instance's card turns
-  its action into a red Quit, and the Overview's **Launch selected** does the
-  same for the active instance. One click asks the launch task that already owns
-  the JVM to end it — no process scan, no `taskkill` child, no wait for a window
-  close — and the card returns to Play when the exit event lands, usually within
-  a frame. A stop clicked while Java is still being prepared is kept and applied
-  the moment the process exists.
-- **Modrinth leads the catalogue.** Modrinth cards are listed before the
-  CurseForge mirror in every order: Best match, Most downloaded, and Name A-Z.
-  Download totals are not comparable between the two — the mirror counts every
-  pack that ever embedded a project — so CurseForge can no longer outrank an
-  exact Modrinth match. Duplicate projects still collapse to the Modrinth card.
-- **A three-action tray.** Show Kaelis, Play last instance, and Quit, with one
-  separator for a single glance. (0.2.7 forces the native menu dark and turns
-  the first action into Show / Minimize.)
-
-### From 0.2.5
-
-- **Show Kaelis always appears, even over a running game.** Hiding no longer
-  goes through egui's viewport at all: on Windows the real window is hidden with
-  Win32, so the toolkit's visible/minimised state can never go stale and leave a
-  blank frame behind. Every route — the tray menu, a left click on the tray
-  icon, **Launch last instance**, a second launcher, or a Start-menu click —
-  runs one native path that shows the window, restores it if minimised, lifts it
-  above the game with a topmost round trip, and forces foreground through the
-  game's input thread. Measured from a hidden window: back on screen in 119 ms.
-- **Smart multi-instance power.** Every JVM Kaelis starts is registered with a
-  governor. The game whose window owns the foreground runs at normal priority;
-  every other instance drops to the idle priority class within 1.5 s and returns
-  to normal the moment it is focused again. Nothing is suspended and no session
-  is disconnected — a background instance simply stops competing with the one
-  being played.
-- **Deeper hibernation, fewer wake-ups.** Starting a game hides the launcher and
-  empties its working set immediately; losing focus for 90 s does the same while
-  the window stays open. The timer is armed once per focus loss and never
-  re-armed, so an idle launcher truly schedules no frames. Restoring faults the
-  pages back in on demand. Idle HTTP now keeps at most two sockets for 15 s
-  instead of 90.
-- **Auto Erase Junk reaches the last traces.** Mod download caches
-  (`downloads/`), and the client's typed slash-command history are now removed
-  with logs, crash dumps, loader caches, natives, server packs, heap dumps, and
-  staging files — at every start, after every game, and from `--clean`.
-- **Cleaner control rows.** Create is the one accent action in its row at the
-  same height and width as Import/Export, Apply sits at control height, and the
-  Overview account and release cards share one bottom line.
-
-### From 0.2.4
-
-- Tray restore first ran from the tray thread, the icon became a left-click
-  target, and game-start hibernation used a working-set trim instead of only a
-  hidden window.
-- The HTTP pool was cut to two idle sockets with a 15 s timeout, and the create
-  and apply rows were aligned to one control height.
-
-### From 0.2.3
-
-- **One copy of every game file.** Verified downloads are hard-linked into a
-  content-addressed store before the next instance asks for them, so a second
-  instance of the same version links the assets, libraries, client jar, and Java
-  runtime instead of downloading or storing them again. Entries that no instance
-  references are pruned; there is no copy, move, or second decompression. A
-  store on another volume falls back to a normal download.
-- **Reopening Kaelis always brings it back.** A second launch hands its arguments
-  to the running window and exits in about 80 ms; the channel is retried for two
-  seconds so a double-click during a cold start still lands, and a native window
-  wake covers a lost channel. Clicking the tray icon itself restores the window,
-  exactly like the tray action (now **Show / Minimize**), including while a game
-  is running.
-- **Auto Erase Junk found the rest.** Staging files are removed even when they
-  keep their real name (`sodium.jar.part`), and the official launcher's UI state
-  and saved Microsoft credential file no longer survive in an instance.
-  `kaelis --clean [--json]` runs the whole pass headlessly. (0.2.5 also removed a
-  crashed loader's `tmp…` folder by name; 0.2.7 no longer guesses and keeps every
-  unfamiliar folder.)
-
-### From 0.2.2
-
-- **CurseForge is a real catalogue now.** Without a key, search reads the public
-  mirror of the official v1 API — same paths, JSON, pagination, hashes, and
-  dependency metadata as `api.curseforge.com` — so a typed name returns a page of
-  projects instead of one exact match, and paging, resource packs, and shaders
-  all work. An approved key in `CF_API_KEY` aims the identical calls at the
-  official endpoint.
-- **The named project ranks first.** Search asks for downloads order, because the
-  endpoint's default order ignores relevance (`jei` used to return
-  `seamless-ores` first).
-- **Dependency graphs come for free.** Required mods install keyless, from the
-  same file metadata the official API publishes.
-- **Less traffic.** Catalogue pages are cached for a minute, and installs address
-  files by their real id, which removes one metadata lookup per install.
-- **Degrades, never empties.** If the mirror is unreachable, an exact project
-  name, link, or id still resolves through the public index, and the launcher
-  says so instead of showing an empty list.
-- **A release republishes the site.** Publishing a tag now dispatches the Pages
-  deploy, which fetches that release's downloads and hydrates the page, instead
-  of waiting for a separate push.
-
-<img width="1080" height="700" alt="Content studio" src="site/assets/app-content.png" />
-
-## Quick start
-
-Requirements: Rust 1.85 or newer and a C/C++ linker for the selected target.
-
-| Platform | Toolchain | Extra packages |
-| --- | --- | --- |
-| Windows 10/11 | `stable-x86_64-pc-windows-msvc` | Visual Studio Build Tools with the C++ workload |
-| macOS 11+ | `stable-aarch64-apple-darwin` or `stable-x86_64-apple-darwin` | Xcode command line tools |
-| Linux | `stable-x86_64-unknown-linux-gnu` | `libgtk-3-dev libayatana-appindicator3-dev libxkbcommon-dev libwayland-dev libx11-dev` |
-
-```bash
-git clone https://github.com/fuvji/kaelis.git
-cd kaelis
-cargo build --release -p kaelis-launcher
-```
-
-Run `target/release/kaelis` (`kaelis.exe` on Windows), or launch a saved
-instance directly:
-
-```bash
-kaelis --play fabric-1-21
-```
-
-Install it like a desktop app:
-
-```bash
-# macOS: Kaelis.app in dist/, ad-hoc signed, then a drag-to-Applications DMG
-./packaging/macos/bundle.sh              # add --universal for Intel + Apple silicon
-./packaging/macos/dmg.sh
-
-# Linux: per-user install, or tarball + .deb + AppImage in dist/
-./packaging/linux/install.sh
-./packaging/linux/package.sh --no-build
-```
-
-The Linux build needs `libgtk-3-dev` and `libayatana-appindicator3-dev` because
-the tray icon talks to the desktop's app-indicator service; without a tray the
-launcher still runs and reports it in the status line. Java is found in this
-order: the instance's configured path, the runtime Kaelis provisioned, `PATH`,
-then the standard JDK install folders (`/usr/lib/jvm`, `/Library/Java/…`,
-`C:\Program Files\Java\…`), so a Dock- or menu-launched app that inherits no
-shell environment still starts the game.
-
-Portable instance archives work from the CLI too:
-
-```bash
-kaelis --duplicate fabric-1-21 --with-worlds
-kaelis --export-instance fabric-1-21 ~/fabric-1-21.kaelis.zip
-kaelis --import-instance ~/fabric-1-21.kaelis.zip
-```
-<img width="1080" height="700" alt="modpacks" src="https://github.com/user-attachments/assets/161668d6-006e-41b5-951f-d4c98abb049c" />
-
-Both Modrinth and CurseForge are supported, and neither needs a key or account.
-CurseForge is read through the public mirror of its v1 API: the same paths,
-JSON, pagination, and file metadata as the official endpoint. Typing a name
-searches the real catalogue, a project link or id resolves exactly, and every
-install comes from the official ForgeCDN with hash and required-dependency
-checks. Nothing to configure, and nothing stored.
-
-If you hold an approved CurseForge key, exporting `CF_API_KEY` aims the same
-calls at the official endpoint, which adds its per-key quota without changing
-anything else in the launcher.
-
-Sites without an API — SpigotMC, Planet Minecraft, 9Minecraft, GitHub release
-pages, private packs — are covered by the link and local-file paths instead of
-scrapers, so traffic stays predictable and within each site's terms.
-
-## Accounts
-
-Offline profiles need only a name. Microsoft sign-in needs no setup: **Account →
-Sign in with Microsoft** shows a short code, copies it, opens the Microsoft page,
-and finishes by itself once the page is approved. That is the public Xbox Live
-client the Xbox app signs in with, so there is no Azure registration, no client
-ID to paste, and no client secret anywhere in the app.
-
-Every sign-in is exchanged through Xbox Live → XSTS → Minecraft Services, so an
-account without Java Edition is refused instead of failing later at launch. The
-refresh token lives in the OS credential store (Credential Manager, Keychain,
-Secret Service) and restores the session on the next start without a code; the
-Minecraft access token stays in zeroizing memory and is never written to disk.
-
-## Keyboard
-
-| Keys | Does |
-| --- | --- |
-| `Ctrl+1` … `Ctrl+5` | Jump to Overview, Instances, Content, Account, or Settings |
-| `Tab` / `Shift+Tab` | Move focus; a focused navigation row draws a visible ring |
-| `Ctrl+F` | Focus the search field on Instances or Content |
-| `Ctrl+S` | Save the open instance editor |
-| `Esc` | Close the open dialog, or clear the content search |
-| `Ctrl+V` | Paste a copied picture as instance artwork, or text into the focused search field |
-
-On macOS, use `Cmd` wherever `Ctrl` is listed; `Esc` and `Tab` are unchanged.
+An idle launcher schedules no frames, and a hidden one is off the schedule
+entirely. Window time moves with host load; working set, handles, and idle CPU
+are the figures that stay put.
 
 ## Command line
 
-Every operation the interface performs is also a headless command. Add `--json`
-to a report and the output is one machine-readable document on stdout, with
-diagnostics on stderr, so scripts and MCP servers can parse it without a GUI.
+Every screen has a headless equivalent. `--json` prints one machine-readable
+document on stdout, so scripts and agents can parse it without a GUI.
 
 | Command | Does |
 | --- | --- |
-| `kaelis` | Opens the desktop launcher |
+| `kaelis` | Open the launcher |
 | `kaelis --version [--json]` | Build identity, platform, site and checksum URLs |
-| `kaelis --status [--json]` | Data root, instance and account counts, active identity, resolved Java |
-| `kaelis --clean [--json]` | Erase junk from every instance, share files that predate the store, prune unreferenced cache |
-| `kaelis --list-instances [--json]` | Every instance: id, name, version, loader, mod count |
-| `kaelis --list-versions [--show-alpha] [--show-beta] [--hide-snapshots] [--json]` | Newest Mojang versions |
-| `kaelis --accounts [--json]` | Every saved identity, its kind, profile id, and the active one |
-| `kaelis --use-account <name> [--json]` | Switches the saved identity the next launch uses |
+| `kaelis --status [--json]` | Data root, instance and account counts, resolved Java |
+| `kaelis --clean [--json]` | Erase junk, share legacy files, prune the cache |
+| `kaelis --list-instances [--json]` | Every instance: id, name, version, loader, mods |
+| `kaelis --list-versions [--show-alpha] [--show-beta] [--hide-snapshots]` | Newest Mojang versions |
+| `kaelis --accounts [--json]` | Every saved identity and the active one |
+| `kaelis --use-account <name>` | Switch the identity the next launch uses |
 | `kaelis --offline <name> [--json]` | Offline profile and its skin head URL |
-| `kaelis --play <instance> [--offline <name>]` | Launches with the managed runtime and the saved offline identity |
-| `kaelis --check-updates <instance> [--json]` | Newest compatible Modrinth version for every installed mod |
-| `kaelis --update-mods <instance> [--json]` | Downloads, verifies, and installs every available mod update |
-| `kaelis --install-mod <instance> <provider:project>` | Installs a mod and its required dependencies; a bare slug means Modrinth, and a CurseForge slug or numeric id both work |
-| `kaelis --repair <instance>` | Reinstalls missing required dependencies |
-| `kaelis --import-modpack <instance> <pack file>` | Imports an `.mrpack` or `.zip` pack into an instance |
-| `kaelis --export-instance <instance> <out.kaelis.zip>` | Writes one portable archive |
-| `kaelis --import-instance <archive.kaelis.zip>` | Imports it under a free id |
-| `kaelis --duplicate <instance> [--with-worlds] [--json]` | Copies an instance under a free id; worlds are opt-in |
+| `kaelis --play <instance> [--offline <name>]` | Launch with the managed runtime |
+| `kaelis --check-updates <instance> [--json]` | Newest compatible mod version for every jar |
+| `kaelis --update-mods <instance> [--json]` | Download, verify, and install those updates |
+| `kaelis --install-mod <instance> <provider:project>` | Install a mod and its dependencies |
+| `kaelis --repair <instance>` | Reinstall missing required dependencies |
+| `kaelis --import-modpack <instance> <pack>` | Import an `.mrpack` or `.zip` pack |
+| `kaelis --export-instance <instance> <out.kaelis.zip>` | Write one portable archive |
+| `kaelis --import-instance <archive>` | Import it under a free id |
+| `kaelis --duplicate <instance> [--with-worlds]` | Copy an instance; worlds are opt-in |
 
-```bash
-kaelis --list-instances --json
-kaelis --status --json
-kaelis --accounts --json
-kaelis --use-account Builder
-kaelis --check-updates fabric-1-21 --json
-kaelis --play fabric-1-21 --offline Steve
-kaelis --install-mod fabric-1-21 curseforge:reeses-sodium-options
-```
+Exit codes are stable: `0` success, `2` bad arguments, anything else a runtime
+failure. A second GUI launch hands its arguments to the running window.
 
-Exit codes are stable: `0` success, `2` bad arguments, other non-zero values are
-runtime failures. A second GUI launch hands its arguments to the running window
-instead of opening a duplicate.
+## Accounts
 
-## Workspace
+Offline profiles need only a name. Microsoft sign-in needs no setup: it shows a
+short code, opens the Microsoft page, and finishes when the page is approved —
+no Azure registration, no client id, no secret. Every sign-in is exchanged
+through Xbox Live → XSTS → Minecraft Services, so an account without Java
+Edition is refused at sign-in rather than at launch. The refresh token lives in
+the OS credential store; the access token stays in zeroising memory.
 
-```text
-crates/
-  kaelis-core/       brand, instance metadata, JVM flags, user automation
-                     rules and their runner, junk cleaner, RAM-only log,
-                     single-instance mutex, memory sweeper
-  kaelis-api/        Mojang versions, Modrinth, CurseForge, downloads,
-                     Fabric/Quilt provisioning, mrpack import, portable
-                     instance archives, repair, hashing, auth, launch
-  kaelis-gui/        egui interface, content studio, instance editor, tray,
-                     brand mark (one geometry for window, tray, and site)
-  kaelis-launcher/   CLI and desktop entry point
-site/                static product site and brand assets
-```
-<img width="1080" height="700" alt="settings" src="https://github.com/user-attachments/assets/0c718cb2-0401-4c60-b75a-4a9dde368fab" />
+## Latest release · 0.4.4
 
-Instances are plain JSON under the platform data directory:
-`%APPDATA%\kaelis\Kaelis\data\instances` on Windows,
-`~/Library/Application Support/gg.kaelis.Kaelis/instances` on macOS, and
-`~/.local/share/kaelis/instances` on Linux. Set `KAELIS_DATA_DIR` to relocate
-all launcher state; each data root also gets its own single-instance guard, so a
-portable copy never blocks the installed one.
+- **Proprietary licence.** Free to download and use; redistribution and
+  modification are no longer permitted. Earlier builds keep their terms.
+- **The packages carry it.** The portable ZIP, installer, and portable guide all
+  ship the Kaelis licence instead of the MIT text.
+- **A product README.** One line per feature; full history in
+  [CHANGELOG.md](CHANGELOG.md).
+- **Compact site copy.** Shorter cards, FAQ answers, and metadata.
 
-## Design rules
+Full history in [CHANGELOG.md](CHANGELOG.md).
 
-- Native first: every hot path stays in Rust; the UI is immediate-mode and
-  paints only when needed — forced repaints run at 60 FPS only while an install
-  or progress bar is on screen, and an idle launcher is fully event-driven.
-- Bounded everything: image decodes, log lines, dependency walks, download
-  concurrency, archive extraction, and retry loops all have hard limits.
-- One pass per download: SHA-1 is computed from the stream while bytes are
-  written, so a verified install never re-reads the file it just saved.
-- Explicit automation: repair, duplicate resolution, the junk cleaner, and
-  every user command are visible settings with conservative safety proofs,
-  never silent mutations of user data.
-- No hidden state: no cache daemon, no persistent event log, no telemetry endpoint.
-- Small releases: fat LTO, one codegen unit, stripped symbols, abort on panic.
+## Licence
 
-## Verification
+Proprietary · © 2026 Kaelis Labs · [@epufk](https://github.com/fuvji)
 
-```bash
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
-cargo fmt --all -- --check
-```
-
-The workspace currently passes 244 tests (126 api, 49 core, 57 gui, 12
-launcher), and Clippy is clean with warnings denied on Windows, macOS, and
-Linux.
-
-The release path also generates `dist/KAELIS-LINKS.txt`, publishes the same
-bytes as [`site/downloads/KAELIS-LINKS.txt`](site/downloads/KAELIS-LINKS.txt),
-and builds a fresh per-user Windows installer. The index lists every runtime endpoint,
-download, installation path, and project link; `tools/links.ps1` regenerates it,
-prunes legacy link files, and `-Verify` probes the static links. `tools/release.ps1`
-runs it automatically after hashing the new artifacts.
-
-## Website
-
-The product site is a single dependency-free HTML document in
-[`site/`](site/index.html). The Pages workflow at
-[`.github/workflows/pages.yml`](.github/workflows/pages.yml) deploys that
-directory on a push to `main` and on a published release; enable GitHub Pages →
-GitHub Actions once in the repository settings. Because the EXE, ZIP, and Setup
-are release assets rather than git objects, the workflow fetches them into
-`site/downloads` and runs [`tools/hydrate-site.ps1`](tools/hydrate-site.ps1) so
-the visible sizes and hashes always describe the files actually being served.
-Brand artwork lives in [`site/assets/kaelis-mark.svg`](site/assets/kaelis-mark.svg); every raster icon and the social card is regenerated from the same geometry with `tools/make-brand-assets.ps1` (1024 px master, 16–256 px ICO, 192/512 PWA icons, 180 px touch icon, 1200x630 card). The mark is a plate-free two-plane dart (`#70a5ff` / `#2e70e8`), so the SVG, ICO, PWA icons, window icon, and site all share one transparent glyph. The film is rebuilt with `tools/build-film.ps1`: six painted stills, a slow push with editorial cuts, a scored 31.7-second 1080p60 MP4, a fresh poster, and captions generated from the same timing table; `tools/narrate.ps1` holds the narration lines and voice direction.
-
-Preview it locally with the same MIME types the host sends:
-
-```bash
-powershell -NoProfile -File tools/serve-site.ps1 -Port 8088
-```
-
-The directory also carries `robots.txt`, `sitemap.xml` (page, screenshots, and
-the intro video), `manifest.webmanifest`, and `.well-known/security.txt`. The CI
-workflow fails when a `href`/`src` in the page does not resolve, when
-`SHA256SUMS.txt` stops matching the binaries beside it, or when the manifest
-references a missing icon.
-
-Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml):
-a `v*` tag builds Windows, macOS (universal), and Linux, publishes one release
-with every artifact, the generated `KAELIS-LINKS.txt`, and a combined
-`SHA256SUMS.txt`. The Windows job installs NSIS, so `Kaelis-Setup.exe` is rebuilt
-from the same fresh binary as the portable download rather than reusing an old
-local setup. The macOS job produces both the ZIP and the DMG; the Linux job
-smoke-tests the tarball, the `.deb`, and the AppImage before publishing. The
-publish job dispatches the site deploy so the page can never serve the previous
-release under a new version number. `tools/release.ps1` is the same Windows path
-used locally.
-
-<img width="1080" height="700" alt="Overview" src="site/assets/app-overview.png" />
-
-<img width="1240" height="430" alt="account-skin" src="https://github.com/user-attachments/assets/9d54e89e-e081-4bc1-a7d4-005c93bb83b6" />
-
-## License
-
-MIT · Kaelis Labs · [@epufk](https://github.com/fuvji)
+Free to download and use. Not free to redistribute, modify, or repackage. See
+[LICENSE](LICENSE).
 
 Kaelis is not affiliated with Mojang Studios, Microsoft, Modrinth, or
 CurseForge. Minecraft is a trademark of Mojang Studios.

@@ -1,21 +1,69 @@
-MIT License
+Kaelis Proprietary License
 
-Copyright (c) 2026 Kaelis Labs
+Copyright (c) 2026 Kaelis Labs. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Kaelis is proprietary software. It is licensed, not sold. By downloading,
+installing, or using a Kaelis build you agree to these terms. If you do not
+agree, do not use the software.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. GRANT
+
+Kaelis Labs grants you a personal, worldwide, royalty-free, non-exclusive,
+non-transferable, revocable licence to install and use unmodified official
+builds, for personal or internal business use, on devices you own or control.
+One licence covers any number of installations you make for yourself.
+
+2. RESTRICTIONS
+
+Unless Kaelis Labs gives you written permission, you may not:
+
+  a. copy, publish, distribute, sublicense, sell, rent, or lend the software,
+     an installer, or a build;
+  b. modify, translate, or create derivative works of the software;
+  c. reverse engineer, decompile, or disassemble the software, except to the
+     extent applicable law expressly permits despite this restriction;
+  d. remove, obscure, or alter any copyright, trademark, or attribution notice;
+  e. use the software, the Kaelis name, or its marks to offer a commercial
+     service to third parties, or in any way that suggests endorsement.
+
+3. NO SOURCE LICENCE
+
+No licence to the source code is granted. Access to any source, build notes, or
+repository state does not convey a right to reuse, redistribute, or create
+derivative works from it.
+
+4. THIRD-PARTY COMPONENTS
+
+Kaelis downloads and runs third-party software: Minecraft, Java runtimes, mod
+loaders, mods, and resource packs. Those remain under their own licences and
+terms, and this licence does not extend to them. Kaelis is not affiliated with
+Mojang Studios, Microsoft, Modrinth, or CurseForge. Minecraft is a trademark of
+Mojang Studios.
+
+5. UPDATES
+
+An update replaces the licensed build and stays subject to these terms. Nothing
+downloads or installs without your action.
+
+6. NO WARRANTY
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+7. LIMITATION OF LIABILITY
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, KAELIS LABS IS NOT LIABLE FOR ANY
+INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR FOR ANY
+LOSS OF DATA, PROFITS, OR GOODWILL, ARISING FROM THE USE OF OR INABILITY TO USE
+THE SOFTWARE. Nothing here limits liability that cannot be limited by law.
+
+8. TERMINATION
+
+This licence ends automatically if you breach it. On termination you must stop
+using the software and delete every copy you hold. Sections 2, 3, 6, and 7
+survive termination.
+
+9. CONTACT
+
+Licensing questions: https://github.com/fuvji/kaelis/issues
