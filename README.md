@@ -15,7 +15,7 @@ Native Rust for Windows, macOS, and Linux.</p>
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.4.4-70a5ff">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.4.5-70a5ff">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8">
   <img alt="Idle CPU" src="https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950">
   <img alt="License" src="https://img.shields.io/badge/license-proprietary-8b949e">
@@ -151,15 +151,16 @@ through Xbox Live → XSTS → Minecraft Services, so an account without Java
 Edition is refused at sign-in rather than at launch. The refresh token lives in
 the OS credential store; the access token stays in zeroising memory.
 
-## Latest release · 0.4.4
+## What's new in 0.4.5
 
-- **Proprietary licence.** Free to download and use; redistribution and
-  modification are no longer permitted. Earlier builds keep their terms.
-- **The packages carry it.** The portable ZIP, installer, and portable guide all
-  ship the Kaelis licence instead of the MIT text.
-- **A product README.** One line per feature; full history in
-  [CHANGELOG.md](CHANGELOG.md).
-- **Compact site copy.** Shorter cards, FAQ answers, and metadata.
+- **No console, ever.** A GUI launch detaches Windows' console instead of
+  hiding it, so no restore — tray Show, game exit, or an error — can surface a
+  black console in front of the launcher.
+- **The launcher always returns.** A window hidden for a game comes back when
+  the last instance exits, including a crash. The restore only accepts the
+  launcher's own window; consoles and IME helpers are never candidates.
+- **A deliberate tray hide stays hidden.** Only the launcher's own game
+  hand-off restores the window; Hide and sign-in starts are left alone.
 
 Full history in [CHANGELOG.md](CHANGELOG.md).
 

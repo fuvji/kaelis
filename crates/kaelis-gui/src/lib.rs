@@ -5737,7 +5737,11 @@ impl KaelisApp {
                 }
                 // A second launch happens from a window the user restored to
                 // the tray; let it stay visible rather than fighting them.
-                if count == 1 {
+                // Only a window that is actually in front is put away for the
+                // game. A launcher the user already hid (tray Hide, sign-in
+                // start) must stay hidden when the game ends, so it is not
+                // marked as game-hidden and no restore is scheduled for it.
+                if count == 1 && platform::window_is_shown() {
                     self.hidden_for_game = true;
                     platform::hide_for_game(context);
                     // The launcher now has no visible frame: give its pages

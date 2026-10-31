@@ -19,6 +19,14 @@ static WINDOW_SHOWN: AtomicBool = AtomicBool::new(true);
 /// clears it so the startup watcher cannot hide the window again.
 static STARTUP_SUPPRESS: AtomicBool = AtomicBool::new(false);
 
+/// Set only by a hide that exists for one running game.
+///
+/// The game-exit worker restores the real window even when the toolkit never
+/// paints another frame. That fallback must not undo a deliberate tray hide,
+/// so it is gated on this flag: the tray Hide path clears it, and a restore
+/// consumes it before showing anything.
+static HIDDEN_FOR_GAME: AtomicBool = AtomicBool::new(false);
+
 /// Windows' background-mode latch: one atomic load instead of two syscalls.
 #[cfg(windows)]
 static IDLE_MODE: AtomicBool = AtomicBool::new(false);
@@ -342,6 +350,13 @@ fn wide(text: &str) -> Vec<u16> {
 /// frame. X11, Wayland, and macOS are minimised instead, because an unmapped
 /// window there cannot be relied on to process the queued restore.
 pub(crate) fn hide_for_game(context: &egui::Context) {
+    HIDDEN_FOR_GAME.store(true, Ordering::Relaxed);
+    hide_window_now(context);
+}
+
+/// Put the window away without claiming it belongs to a game. Used by the
+/// tray's Hide action, whose window must stay down when a game ends.
+fn hide_window_now(context: &egui::Context) {
     #[cfg(windows)]
     {
         let _ = context;
@@ -385,7 +400,10 @@ fn hide_window(window: windows_sys::Win32::Foundation::HWND) {
 /// The tray's Hide action: hide a visible launcher and give its pages back.
 /// One entry point so the menu never disagrees with the window state.
 pub(crate) fn hide_to_tray(context: &egui::Context) {
-    hide_for_game(context);
+    // A deliberate hide is not a game hand-off: it must survive the exit of
+    // whatever game happens to be running, so the game-exit restore skips it.
+    HIDDEN_FOR_GAME.store(false, Ordering::Relaxed);
+    hide_window_now(context);
     trim_working_set();
 }
 
@@ -592,6 +610,9 @@ pub(crate) fn wake(context: &egui::Context) {
     // served last, and the restore itself is the one thing that must not be.
     set_idle_mode(false);
     STARTUP_SUPPRESS.store(false, Ordering::Relaxed);
+    // The user asked for the window, so the next game-exit fallback has
+    // nothing left to restore.
+    HIDDEN_FOR_GAME.store(false, Ordering::Relaxed);
     #[cfg(windows)]
     restore_windows_window();
     WINDOW_SHOWN.store(true, Ordering::Relaxed);
@@ -606,11 +627,30 @@ pub(crate) fn wake(context: &egui::Context) {
 /// Kept separate from [`wake`] for callers that have no egui context (the game
 /// exit worker restores the real window, and the next frame paints it).
 pub(crate) fn restore_now() {
+    // Only a window that this process hid for a game comes back here. A tray
+    // hide, a sign-in start, or a window the user minimized must stay down.
+    if !HIDDEN_FOR_GAME.swap(false, Ordering::Relaxed) {
+        return;
+    }
     set_idle_mode(false);
     STARTUP_SUPPRESS.store(false, Ordering::Relaxed);
     #[cfg(windows)]
     restore_windows_window();
     WINDOW_SHOWN.store(true, Ordering::Relaxed);
+}
+
+/// Whether a window class belongs to something other than the launcher.
+///
+/// A console is never the launcher. That matters because an updater or a
+/// terminal can title a console with the brand, and a title-prefix match would
+/// then restore a black window while the real one stayed hidden — the tray
+/// would look broken instead of the lookup. IME windows are the same kind of
+/// impostor: titled, this process's, and never worth showing.
+#[cfg(windows)]
+fn is_helper_class(class: &str) -> bool {
+    class.eq_ignore_ascii_case("ConsoleWindowClass")
+        || class.eq_ignore_ascii_case("IME")
+        || class.eq_ignore_ascii_case("MSCTFIME UI")
 }
 
 #[cfg(windows)]
@@ -623,6 +663,9 @@ fn main_window() -> Option<windows_sys::Win32::Foundation::HWND> {
     struct Target {
         pid: u32,
         expected: Vec<u16>,
+        /// The console this process may have been given. It is never the
+        /// launcher, whatever its title says.
+        console: isize,
         /// The launcher window: title starts with the brand.
         found: isize,
         /// Any titled, non-console window of this process. Used only when the
@@ -646,6 +689,9 @@ fn main_window() -> Option<windows_sys::Win32::Foundation::HWND> {
         // SAFETY: `parameter` is the `&mut Target` passed to EnumWindows below
         // and lives for the duration of the enumeration.
         let target = unsafe { &mut *(parameter as *mut Target) };
+        if window as isize == target.console {
+            return 1;
+        }
         let mut pid = 0_u32;
         // SAFETY: the handle comes from EnumWindows and the out-pointer is valid.
         unsafe { GetWindowThreadProcessId(window, &mut pid) };
@@ -663,11 +709,12 @@ fn main_window() -> Option<windows_sys::Win32::Foundation::HWND> {
         let mut class = [0_u16; 64];
         // SAFETY: the buffer is valid for its declared length.
         let class_length = unsafe { GetClassNameW(window, class.as_mut_ptr(), class.len() as i32) };
-        let console = class_length > 0 && {
-            let name = String::from_utf16_lossy(&class[..class_length as usize]);
-            name.eq_ignore_ascii_case("ConsoleWindowClass")
-        };
-        if !console && target.fallback == 0 {
+        let helper = class_length > 0
+            && is_helper_class(&String::from_utf16_lossy(&class[..class_length as usize]));
+        if helper {
+            return 1;
+        }
+        if target.fallback == 0 {
             target.fallback = window as isize;
         }
         // Prefix, not equality: the launcher may append an instance name.
@@ -683,10 +730,15 @@ fn main_window() -> Option<windows_sys::Win32::Foundation::HWND> {
         1
     }
 
+    // SAFETY: no arguments, always succeeds. A process with no console (the
+    // GUI detaches its own, see `hide_own_console`) gets a null handle, which
+    // matches nothing.
+    let console = unsafe { windows_sys::Win32::System::Console::GetConsoleWindow() as isize };
     let mut target = Target {
         // SAFETY: no arguments, always succeeds.
         pid: unsafe { GetCurrentProcessId() },
         expected: kaelis_core::brand::LAUNCHER_NAME.encode_utf16().collect(),
+        console,
         found: 0,
         fallback: 0,
     };
@@ -712,7 +764,18 @@ fn restore_windows_window() {
         ShowWindow, SwitchToThisWindow,
     };
 
-    let Some(window) = main_window() else {
+    // A click can land in the moment between the tray icon existing and the
+    // window being created. A short bounded wait turns that race into a normal
+    // restore instead of a click that appears to do nothing.
+    let mut window = main_window();
+    for _ in 0..5 {
+        if window.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        window = main_window();
+    }
+    let Some(window) = window else {
         return;
     };
     // SAFETY: `window` belongs to this process; every call below accepts a
@@ -766,5 +829,26 @@ fn restore_windows_window() {
         if GetForegroundWindow() != window {
             SwitchToThisWindow(window, 1);
         }
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::is_helper_class;
+
+    #[test]
+    fn a_console_is_never_the_launcher() {
+        // The regression: a console titled with the brand used to win the
+        // title match, so the tray restored a black window.
+        assert!(is_helper_class("ConsoleWindowClass"));
+        assert!(is_helper_class("consolewindowclass"));
+        assert!(is_helper_class("IME"));
+        assert!(is_helper_class("MSCTFIME UI"));
+    }
+
+    #[test]
+    fn the_toolkit_window_is_a_candidate() {
+        assert!(!is_helper_class("Window Class"));
+        assert!(!is_helper_class(""));
     }
 }

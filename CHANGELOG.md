@@ -2,6 +2,25 @@
 
 Every released change, newest first. The product page keeps only the latest.
 
+## 0.4.5
+
+- **The console cannot come back.** A GUI launch now detaches the console
+  Windows attaches to a console-subsystem binary, even when it was started from
+  a terminal. A hidden console still exists and can be restored as a black
+  window in front of the launcher; a detached one cannot. `--help`, `--version`,
+  and the headless commands keep their terminal output.
+- **Every restore targets the launcher.** The window lookup rejects consoles,
+  IME windows, and other helper windows before the title match, and prefers the
+  process's real launcher window over any titled fallback.
+- **The launcher always returns after a game.** The game-exit fallback restores
+  a game-hidden window even when the toolkit never paints another frame, so a
+  quit, a crash, or a launch error leaves the launcher on screen.
+- **Deliberate hides survive a game.** Tray Hide and a sign-in start clear the
+  game-hidden flag, so the exit of a running instance no longer pops a window the
+  user put away.
+- **No extra work at exit.** The normal quit path starts no helper process,
+  script, or console; the restore is a bounded window lookup and a single show.
+
 ## 0.4.4
 
 - **Proprietary licence.** Kaelis is now freeware: free to download and use, not

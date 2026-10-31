@@ -254,28 +254,34 @@ fn main() -> ExitCode {
     }
 }
 
-/// Hide the console Windows creates for a double-clicked GUI binary.
+/// Drop the console Windows attaches to a GUI launch.
 ///
 /// The process deliberately keeps the console subsystem so `--help`, `--play`
-/// and the headless commands still print when run from a terminal. A console
-/// shared with the launching shell has more than one attached process and is
-/// left untouched; an explorer-created console belongs only to us and is
-/// hidden, so the desktop app opens without a black window behind it.
+/// and the headless commands still print when run from a terminal. A GUI
+/// launch, by contrast, detaches the console instead of hiding it: a hidden
+/// console still exists, still belongs to this process, and can still be
+/// restored in front of the launcher as a black window. Once detached there is
+/// nothing left to restore.
+///
+/// Detaching is unconditional for a GUI launch, even when the console is shared
+/// with a terminal: the terminal keeps its own window and its own commands,
+/// while this process stops owning a console. `--help`, `--version`, and the
+/// headless commands never reach this function.
 #[cfg(windows)]
 fn hide_own_console() {
-    use windows_sys::Win32::System::Console::{GetConsoleProcessList, GetConsoleWindow};
+    use windows_sys::Win32::System::Console::{FreeConsole, GetConsoleWindow};
     use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, ShowWindow};
 
-    // SAFETY: both calls only read the current process console and toggle the
-    // visibility of the window handle the OS just returned.
+    // SAFETY: these calls read this process's own console and change its
+    // attachment; the window handle is checked before it is used.
     unsafe {
         let window = GetConsoleWindow();
         if window.is_null() {
             return;
         }
-        let mut processes = [0_u32; 2];
-        let attached = GetConsoleProcessList(processes.as_mut_ptr(), processes.len() as u32);
-        if attached <= 1 {
+        if FreeConsole() == 0 {
+            // Detaching is the goal; a host that refuses it still gets no
+            // console window in front of the launcher.
             ShowWindow(window, SW_HIDE);
         }
     }
