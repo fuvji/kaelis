@@ -518,32 +518,115 @@
     .hash { grid-template-columns: 1fr; }
   }
 
-  /* Aurora and a tighter layout ---------------------------------------- */
+  /* Smooth geometry, texture, and the benchmark lab -------------------- */
+  :root {
+    --r-xs: 6px; --r-sm: 10px; --r-md: 14px; --r-lg: 20px;
+    --r-xl: 28px; --r-pill: 999px;
+  }
+  .btn, .btn-quiet { border-radius: var(--r-pill); }
+  .skip { border-radius: var(--r-sm); }
+  .shot, .film { border-radius: var(--r-xl); }
+  .previews figure { border-radius: var(--r-lg); }
+  details.checks, .cmd { border-radius: var(--r-md); }
+  .bench, .support-card { border-radius: var(--r-xl); }
+  .stats { border-radius: var(--r-lg); }
+  .hero .shot { border-radius: var(--r-xl); }
+  @supports (corner-shape: squircle) {
+    .shot, .film, .bench, .support-card, .previews figure, .stats { corner-shape: squircle; }
+  }
+
   html { background: #06070a; }
   body { background: transparent; }
   .aurora {
     position: fixed; inset: 0; z-index: -1; overflow: hidden;
-    pointer-events: none; contain: strict; background: #06070a;
+    pointer-events: none; contain: strict;
+    background:
+      radial-gradient(ellipse at 12% 16%, rgba(35, 74, 180, 0.34), transparent 52%),
+      radial-gradient(ellipse at 86% 6%, rgba(0, 122, 108, 0.2), transparent 48%),
+      radial-gradient(ellipse at 48% 108%, rgba(82, 55, 180, 0.22), transparent 56%),
+      #06070a;
   }
   .aurora i {
-    position: absolute; display: block; width: 58vmax; height: 58vmax;
-    border-radius: 50%; filter: blur(72px); opacity: 0.5;
+    position: absolute; display: block; width: 72vmax; height: 72vmax;
+    border-radius: 50%; filter: none; opacity: 0.78;
     will-change: transform; transform: translate3d(0, 0, 0);
     animation: drift 26s ease-in-out infinite alternate;
   }
-  .aurora i:nth-child(1) { left: -14%; top: -20%; background: #2c5cff; }
-  .aurora i:nth-child(2) { right: -20%; top: 0%; background: #00a896; animation-duration: 34s; animation-delay: -9s; }
-  .aurora i:nth-child(3) { left: 20%; bottom: -32%; background: #6d4dff; animation-duration: 30s; animation-delay: -16s; }
+  .aurora i:nth-child(1) {
+    left: -20%; top: -28%;
+    background: radial-gradient(circle, rgba(44, 92, 255, 0.58) 0%, rgba(44, 92, 255, 0.17) 38%, transparent 70%);
+  }
+  .aurora i:nth-child(2) {
+    right: -24%; top: -8%;
+    background: radial-gradient(circle, rgba(0, 168, 150, 0.4) 0%, rgba(0, 168, 150, 0.1) 40%, transparent 70%);
+    animation-duration: 38s; animation-delay: -11s;
+  }
+  .aurora i:nth-child(3) {
+    left: 18%; bottom: -42%;
+    background: radial-gradient(circle, rgba(109, 77, 255, 0.44) 0%, rgba(109, 77, 255, 0.13) 42%, transparent 72%);
+    animation-duration: 32s; animation-delay: -18s;
+  }
   .aurora::after {
     content: ""; position: absolute; inset: 0;
-    background: linear-gradient(180deg, rgba(6, 7, 10, 0.42), rgba(6, 7, 10, 0.88) 55%, #06070a 100%);
+    background: linear-gradient(180deg, rgba(6, 7, 10, 0.22), rgba(6, 7, 10, 0.64) 52%, #06070a 100%);
+  }
+  .grain {
+    position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    opacity: 0.16; background-image: url("assets/grain.svg");
+    background-size: 180px 180px; mix-blend-mode: soft-light;
   }
   @keyframes drift {
     from { transform: translate3d(-3%, -2%, 0) scale(1); }
-    to { transform: translate3d(6%, 5%, 0) scale(1.18); }
+    to { transform: translate3d(6%, 5%, 0) scale(1.16); }
   }
   @media (prefers-reduced-motion: reduce) { .aurora i { animation: none; } }
-  @media (max-width: 700px) { .aurora i { filter: blur(46px); opacity: 0.4; } }
+  @media (max-width: 700px) { .aurora i { filter: none; opacity: 0.5; width: 88vmax; height: 88vmax; } }
+
+  /* Benchmark lab ------------------------------------------------------ */
+  .bench { overflow: hidden; }
+  .bench-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+  .bench-body { margin-top: 0; }
+  .bench-method { color: var(--dim); font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; }
+  .bench-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(210px, 0.75fr); gap: clamp(18px, 3vw, 32px); align-items: center; margin-top: 22px; }
+  .bench-plot { min-width: 0; }
+  .bench-scale { display: flex; justify-content: space-between; padding: 0 86px 0 56px; margin-bottom: 8px; color: var(--dim); font-family: var(--mono); font-size: 9.5px; font-variant-numeric: tabular-nums; }
+  .bench-row { grid-template-columns: 56px minmax(0, 1fr) 86px; }
+  .bench-track { height: 10px; border-radius: 2px; background: #14171c; }
+  .bench-bar { border-radius: 0 4px 4px 0; }
+  .bench-bar.old { background: #343b46; }
+  .bench-bar.mid { background: #5c6a7d; }
+  .bench-bar.new { background: linear-gradient(90deg, #5d8df0, #a5c3ff); box-shadow: 0 0 20px rgba(125, 167, 255, 0.2); }
+  .bench-trend { min-width: 0; border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px; background: rgba(9, 11, 15, 0.55); }
+  .bench-trend svg { width: 100%; height: auto; display: block; margin-top: 6px; overflow: visible; }
+  .trend-grid { stroke: #1b2029; stroke-width: 1; }
+  .trend-area { fill: rgba(125, 167, 255, 0.1); }
+  .trend-line { fill: none; stroke: var(--accent); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+  .trend-dot { fill: var(--accent); stroke: #0b0d12; stroke-width: 2; }
+  .trend-label { fill: var(--dim); font-family: var(--mono); font-size: 9px; }
+  .bench-trend p { margin: 10px 0 0; color: var(--muted); font-size: 12.5px; }
+  .bench-foot { align-items: center; gap: 10px 18px; }
+  .bench-delta-group { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .bench-delta-note { color: var(--dim); font-size: 12px; }
+  .bench-delta[data-tone="flat"] { color: var(--muted); }
+  .bench-data { margin-top: 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: rgba(9, 11, 15, 0.42); }
+  .bench-data summary { cursor: pointer; padding: 12px 16px; color: var(--muted); font-size: 12.5px; }
+  .bench-data summary:hover { color: var(--text); }
+  .bench-data table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .bench-data th, .bench-data td { padding: 9px 16px; text-align: right; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  .bench-data th:first-child, .bench-data td:first-child { text-align: left; }
+  .bench-data th { color: var(--dim); font-weight: 500; }
+  .bench-data td { color: var(--muted); }
+  @media (max-width: 760px) {
+    .bench-grid { grid-template-columns: 1fr; }
+    .bench-trend { border-top: 1px solid var(--line); padding-top: 14px; }
+    .bench-scale { padding: 0 76px 0 44px; }
+    .bench-row { grid-template-columns: 44px minmax(0, 1fr) 76px; }
+  }
+  @media (max-width: 700px) {
+    .bench-foot { align-items: flex-start; }
+    .bench-delta { font-size: 1.5rem; }
+  }
+  main > section:not(.hero) { content-visibility: auto; contain-intrinsic-size: auto 620px; }
 
   :root { --max: 1120px; --pad: clamp(16px, 4vw, 32px); }
   .head-in { height: 56px; gap: 20px; }
@@ -603,6 +686,7 @@
 </head>
 <body>
 <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+<div class="grain" aria-hidden="true"></div>
 <a class="skip" href="#main">Skip to content</a>
 
 <header class="head">
@@ -691,7 +775,7 @@
         </div>
       </div>
       <p class="note">
-        The same host, fixture and build are used for every number. The current
+        The same host, fixture and harness are used for every number. The current
         0.4.6 table and its method are in the
         <a href="https://github.com/fuvji/kaelis#performance">repository README</a>.
       </p>
@@ -700,36 +784,82 @@
     <section id="benchmarks" aria-labelledby="benchmarks-title">
       <div class="sec-head">
         <div>
-          <span class="mono">Benchmarks</span>
+          <span class="mono">Benchmark lab</span>
           <h2 id="benchmarks-title">Lighter, measured.</h2>
         </div>
-        <p>One machine, one fixture, one script. Pick a metric; the bars are the historical 0.3.7 → 0.4.0 table, with current 0.4.6 numbers below.</p>
+        <p>Same machine, same fixture, same harness. Pick a metric; every bar starts at zero and every release uses three runs.</p>
       </div>
       <div class="bench" data-bench>
-        <div class="bench-tabs" role="tablist" aria-label="Benchmark metric">
-          <button type="button" role="tab" aria-selected="true" data-metric="memory">Memory</button>
-          <button type="button" role="tab" aria-selected="false" data-metric="cpu">Idle CPU</button>
-          <button type="button" role="tab" aria-selected="false" data-metric="window">Window</button>
-          <button type="button" role="tab" aria-selected="false" data-metric="cli">CLI</button>
-        </div>
-        <div class="bench-body">
-          <div class="bench-row">
-            <span class="bench-name">0.3.7</span>
-            <div class="bench-track"><span class="bench-bar old" data-bar="old"></span></div>
-            <b class="bench-value" data-value="old">80.8 MB</b>
+        <div class="bench-head">
+          <div class="bench-tabs" role="tablist" aria-label="Benchmark metric">
+            <button type="button" role="tab" aria-selected="true" data-metric="memory">Memory</button>
+            <button type="button" role="tab" aria-selected="false" data-metric="window">Startup</button>
+            <button type="button" role="tab" aria-selected="false" data-metric="cli">CLI</button>
           </div>
-          <div class="bench-row">
-            <span class="bench-name">0.4.0</span>
-            <div class="bench-track"><span class="bench-bar new" data-bar="new"></span></div>
-            <b class="bench-value" data-value="new">31.9 MB</b>
-          </div>
+          <span class="bench-method">Windows x64 · 3 runs · median</span>
         </div>
-        <div class="bench-foot">
-          <span class="bench-delta" data-delta aria-live="polite">−60%</span>
-          <span class="bench-caption" data-caption>Idle working set, window shown</span>
+        <div class="bench-grid">
+          <div class="bench-plot" id="bench-plot" role="tabpanel" aria-live="polite">
+            <div class="bench-scale"><span>0</span><span data-scale>87 MB</span></div>
+            <div class="bench-body">
+              <div class="bench-row">
+                <span class="bench-name">0.3.7</span>
+                <div class="bench-track"><span class="bench-bar old" data-bar="037" style="width:100%"></span></div>
+                <b class="bench-value" data-value="037">86.6 MB</b>
+              </div>
+              <div class="bench-row">
+                <span class="bench-name">0.4.5</span>
+                <div class="bench-track"><span class="bench-bar mid" data-bar="045" style="width:22.4%"></span></div>
+                <b class="bench-value" data-value="045">19.4 MB</b>
+              </div>
+              <div class="bench-row">
+                <span class="bench-name">0.4.6</span>
+                <div class="bench-track"><span class="bench-bar new" data-bar="046" style="width:21.8%"></span></div>
+                <b class="bench-value" data-value="046">18.9 MB</b>
+              </div>
+            </div>
+            <div class="bench-foot">
+              <div class="bench-delta-group">
+                <span class="bench-delta" data-delta aria-live="polite">−67.7 MB</span>
+                <span class="bench-delta-note" data-delta-note>−78% vs 0.3.7</span>
+              </div>
+              <span class="bench-caption" data-caption>Idle working set, window shown</span>
+            </div>
+          </div>
+          <aside class="bench-trend" aria-labelledby="trend-title">
+            <span class="mono" id="trend-title">Memory trend</span>
+            <svg viewBox="0 0 220 84" role="img" aria-labelledby="trend-svg-title trend-svg-desc">
+              <title id="trend-svg-title">Idle memory by Kaelis release</title>
+              <desc id="trend-svg-desc">0.3.7 used 86.6 megabytes, 0.4.5 used 19.4, and 0.4.6 uses 18.9 while the window is shown.</desc>
+              <line class="trend-grid" x1="12" y1="14" x2="208" y2="14"/>
+              <line class="trend-grid" x1="12" y1="42" x2="208" y2="42"/>
+              <line class="trend-grid" x1="12" y1="68" x2="208" y2="68"/>
+              <path class="trend-area" d="M12 14 L110 55.9 L206 56.2 L206 68 L12 68 Z"/>
+              <path class="trend-line" d="M12 14 L110 55.9 L206 56.2"/>
+              <circle class="trend-dot" cx="12" cy="14" r="3"/>
+              <circle class="trend-dot" cx="110" cy="55.9" r="3"/>
+              <circle class="trend-dot" cx="206" cy="56.2" r="3"/>
+              <text class="trend-label" x="12" y="80">0.3.7</text>
+              <text class="trend-label" x="110" y="80" text-anchor="middle">0.4.5</text>
+              <text class="trend-label" x="206" y="80" text-anchor="end">0.4.6</text>
+            </svg>
+            <p>86.6 MB → 18.9 MB. The window opens in essentially the same time; the memory win is the part that stays put.</p>
+          </aside>
         </div>
       </div>
-      <p class="note">0.4.6 measured on 2026-11-10 with <code>target/bench-lite.ps1</code>: 297 ms to a window, 63 ms for <code>--version</code>, 18.9 MB idle and 0.00% idle CPU. The chart above is the earlier 0.3.7 → 0.4.0 table from <code>tools/bench.ps1</code>; the two harnesses are not mixed.</p>
+      <details class="bench-data" id="bench-data">
+        <summary>Read the numbers</summary>
+        <table>
+          <caption>Median of three runs on one Windows x64 host, empty data root</caption>
+          <thead><tr><th scope="col">Release</th><th scope="col">Memory</th><th scope="col">Startup</th><th scope="col">CLI</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">0.3.7</th><td>86.6 MB</td><td>285.3 ms</td><td>62.5 ms</td></tr>
+            <tr><th scope="row">0.4.5</th><td>19.4 MB</td><td>288.8 ms</td><td>63.0 ms</td></tr>
+            <tr><th scope="row">0.4.6</th><td>18.9 MB</td><td>296.8 ms</td><td>63.1 ms</td></tr>
+          </tbody>
+        </table>
+      </details>
+      <p class="note">Measured on 2026-11-10 with <code>target/bench-lite.ps1</code>, three runs per build. Memory is the clear win; window and CLI differences are within run-to-run noise on this host, so they are not presented as speedups. Binary sizes are within 20 KB across the three releases.</p>
     </section>
 
     <section id="performance" aria-labelledby="performance-title">
@@ -1199,43 +1329,54 @@
       });
     }
 
-    // The chart is fed from the README table, not from invented competitor
-    // numbers. Switching a metric rewrites widths, values, delta and caption.
-    var benchmarks = {
-      memory: { before: 80.8, after: 31.9, unit: "MB", digits: 1, caption: "Idle working set, window shown" },
-      cpu: { before: 5.13, after: 0.57, unit: "% of a core", digits: 2, caption: "Idle CPU, hidden for 60 s" },
-      window: { before: 313, after: 311, unit: "ms", digits: 0, caption: "Process start to a painted window" },
-      cli: { before: 79, after: 78, unit: "ms", digits: 0, caption: "--version, process spawn included" }
+    // The benchmark lab uses the same harness for every release. Bars start at
+    // zero; the value is printed directly, so a tiny difference cannot read as
+    // a dramatic one. Memory is the only metric with a real win, and the copy
+    // says so instead of colouring a flat result green.
+    var versions = [
+      { id: "037", label: "0.3.7", memory: 86.6, window: 285.3, cli: 62.5 },
+      { id: "045", label: "0.4.5", memory: 19.4, window: 288.8, cli: 63.0 },
+      { id: "046", label: "0.4.6", memory: 18.9, window: 296.8, cli: 63.1 }
+    ];
+    var metrics = {
+      memory: { unit: "MB", digits: 1, scale: "87 MB", caption: "Idle working set, window shown", note: "−78% vs 0.3.7", tone: "good" },
+      window: { unit: "ms", digits: 1, scale: "300 ms", caption: "Process start to a painted window", note: "within run-to-run noise", tone: "flat" },
+      cli: { unit: "ms", digits: 1, scale: "64 ms", caption: "--version, process spawn included", note: "within run-to-run noise", tone: "flat" }
     };
     var bench = document.querySelector("[data-bench]");
     if (bench) {
-      var oldBar = bench.querySelector('[data-bar="old"]');
-      var newBar = bench.querySelector('[data-bar="new"]');
-      var oldValue = bench.querySelector('[data-value="old"]');
-      var newValue = bench.querySelector('[data-value="new"]');
       var delta = bench.querySelector("[data-delta]");
+      var deltaNote = bench.querySelector("[data-delta-note]");
       var caption = bench.querySelector("[data-caption]");
+      var scale = bench.querySelector("[data-scale]");
+      var bars = bench.querySelectorAll("[data-bar]");
+      var values = bench.querySelectorAll("[data-value]");
       var formatValue = function (value, metric) {
-        var unit = metric.unit.charAt(0) === "%" ? "" : " ";
-        return value.toFixed(metric.digits) + unit + metric.unit;
+        return value.toFixed(metric.digits) + " " + metric.unit;
       };
       var renderBench = function (key) {
-        var metric = benchmarks[key];
+        var metric = metrics[key];
         if (!metric) return;
-        oldBar.style.width = "100%";
-        newBar.style.width = Math.max((metric.after / metric.before) * 100, 1.5) + "%";
-        oldValue.textContent = formatValue(metric.before, metric);
-        newValue.textContent = formatValue(metric.after, metric);
+        var max = Math.max.apply(null, versions.map(function (item) { return item[key]; }));
+        versions.forEach(function (item, index) {
+          var width = Math.max((item[key] / max) * 100, 1.5);
+          bars[index].style.width = width.toFixed(2) + "%";
+          values[index].textContent = formatValue(item[key], metric);
+        });
+        var oldest = versions[0][key];
+        var current = versions[versions.length - 1][key];
+        var difference = current - oldest;
+        delta.textContent = (difference < 0 ? "−" : "+") + Math.abs(difference).toFixed(metric.digits) + " " + metric.unit;
+        delta.dataset.tone = metric.tone;
+        deltaNote.textContent = metric.note;
         caption.textContent = metric.caption;
-        var change = 1 - metric.after / metric.before;
-        delta.textContent = Math.abs(change) < 0.02
-          ? "−" + (metric.before - metric.after) + " " + metric.unit
-          : "−" + Math.round(change * 100) + "%";
+        scale.textContent = metric.scale;
       };
-      var metrics = bench.querySelectorAll("[data-metric]");
-      metrics.forEach(function (button) {
+      bench.querySelectorAll("[data-metric]").forEach(function (button) {
         button.addEventListener("click", function () {
-          metrics.forEach(function (other) { other.setAttribute("aria-selected", String(other === button)); });
+          bench.querySelectorAll("[data-metric]").forEach(function (other) {
+            other.setAttribute("aria-selected", String(other === button));
+          });
           renderBench(button.dataset.metric);
         });
       });

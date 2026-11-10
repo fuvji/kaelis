@@ -101,22 +101,22 @@ and the [URL & install index](https://fuvji.github.io/kaelis/downloads/KAELIS-LI
 
 ## Performance
 
-Measured on one machine on 2026-11-10, 0.4.5 against 0.4.6, with the same
+Measured on one machine on 2026-11-10, 0.3.7, 0.4.5 and 0.4.6, with the same
 `target/bench-lite.ps1` harness and three runs per build.
 
-| Metric | 0.4.5 | 0.4.6 |
-| --- | --- | --- |
-| `kaelis --version` | 63.0 ms median | 63.1 ms median |
-| Window, empty data root | 288.8 ms | 296.8 ms |
-| Working set, idle | 19.4 MB | 18.9 MB |
-| Idle CPU, window shown | 0.00% | 0.00% |
+| Metric | 0.3.7 | 0.4.5 | 0.4.6 |
+| --- | --- | --- | --- |
+| `kaelis --version` | 62.5 ms | 63.0 ms | 63.1 ms |
+| Window, empty data root | 285.3 ms | 288.8 ms | 296.8 ms |
+| Working set, idle | 86.6 MB | 19.4 MB | 18.9 MB |
+| Binary size | 16.44 MB | 16.43 MB | 16.45 MB |
+| Idle CPU, window shown | 0.00% | 0.00% | 0.00% |
 
-Window time on this host moves by more than the difference between the two
-builds, so it is not a claim of a faster window. 0.4.6 targets launch latency
-with the native cache, which removes a repeated unzip once a version has been
-prepared; that does not change window creation. The earlier 0.3.7 → 0.4.0 table
-was produced by `tools/bench.ps1` and is not row-for-row comparable with this
-harness.
+The real change is memory: **86.6 MB → 18.9 MB**, a 78% smaller idle working
+set. Window and CLI times move by more than the difference between releases on
+this host, so they are not presented as speedups. Binary size is within 20 KB
+across all three builds. The native cache added in 0.4.6 removes a repeated
+unzip after a version is prepared; it does not change window creation.
 
 An idle launcher schedules no frames, and a hidden one is off the schedule
 entirely. Window time moves with host load; working set and idle CPU are the
@@ -185,7 +185,7 @@ notes below are kept as history.
   DLLs are never reused, and extraction is published with one rename so a
   cancelled launch leaves no half-written cache behind.
 - **The benchmark table is visual.** The product page charts the measured
-  0.3.7 → 0.4.0 numbers, keeps all seven real screenshots, and reveals sections
+  0.3.7 → 0.4.6 numbers, keeps all seven real screenshots, and reveals sections
   on scroll without a framework or a third-party request.
 - **Sponsorship is direct and labelled.** GitHub Sponsors is linked from the
   repository and the page, with one hand-reviewed sponsor slot and no ad
