@@ -125,7 +125,7 @@ jobs:
           for artifact in Kaelis.exe Kaelis-Portable.zip Kaelis-Setup.exe \
                           Kaelis-macos-universal.dmg Kaelis-linux-x64.deb \
                           Kaelis-linux-x64.AppImage Kaelis-linux-x64.tar.gz; do
-            grep -q "downloads/$artifact" site/index.html || {
+            grep -q "download/$artifact" site/index.html || {
               echo "page does not link $artifact"
               exit 1
             }

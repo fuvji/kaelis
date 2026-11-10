@@ -30,8 +30,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          # A release deploy must serve the tagged site, not a newer main.
-          ref: ${{ github.event.release.tag_name || github.ref }}
+          # The page is always deployed from main, which is what CI checked.
+          # Downloads come from the release named by the event, so a release
+          # deploy still serves that release's artifacts on the current page.
+          ref: main
 
       - name: Fetch release downloads
         env:
@@ -60,6 +62,18 @@ jobs:
 
       - name: Refresh download sizes and hashes
         run: pwsh -NoProfile -File tools/hydrate-site.ps1
+
+      - name: Keep the deployed artifact to the page
+        run: |
+          set -euo pipefail
+          # Downloads are served from the GitHub release, not from Pages. The
+          # fetch above exists only so the hydrator can hash real artifacts;
+          # shipping ~100 MB of binaries made every Pages deploy slow.
+          find site/downloads -type f \
+            ! -name 'SHA256SUMS.txt' \
+            ! -name 'KAELIS-LINKS.txt' \
+            ! -name 'README.md' \
+            ! -name 'LICENSE' -delete
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
