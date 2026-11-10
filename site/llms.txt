@@ -2,7 +2,7 @@
 # https://fuvji.github.io/kaelis/llms.txt
 
 > Kaelis is a native Rust Minecraft launcher for Windows, macOS, and Linux.
-> It opens in 311 ms to a full window, keeps a 31.9 MB idle working set, and
+> It opens in 297 ms to a full window, keeps a 18.9 MB idle working set, and
 > uses 0.00% CPU while idle. Instances, mods, modpacks, resource packs, shaders,
 > and accounts live in one immediate-mode window with no telemetry and no
 > background service.

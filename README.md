@@ -15,7 +15,7 @@ Native Rust for Windows, macOS, and Linux.</p>
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.6.0-70a5ff">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.4.6-70a5ff">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8">
   <img alt="Idle CPU" src="https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950">
   <img alt="License" src="https://img.shields.io/badge/license-proprietary-8b949e">
@@ -101,23 +101,26 @@ and the [URL & install index](https://fuvji.github.io/kaelis/downloads/KAELIS-LI
 
 ## Performance
 
-Measured on one machine on 2026-10-28, 0.3.7 against 0.4.0, with the same
-fixtures and `tools/bench.ps1`.
+Measured on one machine on 2026-11-10, 0.4.5 against 0.4.6, with the same
+`target/bench-lite.ps1` harness and three runs per build.
 
-| Metric | 0.3.7 | 0.4.0 |
+| Metric | 0.4.5 | 0.4.6 |
 | --- | --- | --- |
-| `kaelis --version` | 79 ms median | 78 ms median |
-| Window, empty data root | 313 ms | 311 ms |
-| Window, 200-jar instance | 309 ms | 315 ms |
-| Working set, idle | 80.8 MB | 31.9 MB |
-| Handles | 562 | 560 |
+| `kaelis --version` | 63.0 ms median | 63.1 ms median |
+| Window, empty data root | 288.8 ms | 296.8 ms |
+| Working set, idle | 19.4 MB | 18.9 MB |
 | Idle CPU, window shown | 0.00% | 0.00% |
-| Idle CPU, hidden 60 s | 5.13% of a core | 0.57%, 0 ms after start-up |
-| Working set, hidden | 79.4 MB | 32.0 MB |
+
+Window time on this host moves by more than the difference between the two
+builds, so it is not a claim of a faster window. 0.4.6 targets launch latency
+with the native cache, which removes a repeated unzip once a version has been
+prepared; that does not change window creation. The earlier 0.3.7 → 0.4.0 table
+was produced by `tools/bench.ps1` and is not row-for-row comparable with this
+harness.
 
 An idle launcher schedules no frames, and a hidden one is off the schedule
-entirely. Window time moves with host load; working set, handles, and idle CPU
-are the figures that stay put.
+entirely. Window time moves with host load; working set and idle CPU are the
+figures that stay put.
 
 ## Command line
 
@@ -156,6 +159,22 @@ no Azure registration, no client id, no secret. Every sign-in is exchanged
 through Xbox Live → XSTS → Minecraft Services, so an account without Java
 Edition is refused at sign-in rather than at launch. The refresh token lives in
 the OS credential store; the access token stays in zeroising memory.
+
+## What's new in 0.4.6
+
+0.4.6 resumes the 0.4.x line requested for the product; the 0.5.0 and 0.6.0
+notes below are kept as history.
+
+- **A compact aurora page.** The product page is a tighter single column of
+  information with a slow, GPU-composited aurora behind it, a three-across
+  preview grid, two-across feature and performance rows, and no oversized
+  share block. It still loads nothing from a third party.
+- **Packaging reads the real version.** The Linux and macOS packaging scripts
+  read the workspace manifest instead of a crate manifest that only says
+  `version.workspace = true`, so AppImage, DMG and bundle metadata no longer
+  fall back to an empty or placeholder version.
+- **Measured again.** 0.4.6: 297 ms to a window, 63 ms for `--version`, 18.9 MB
+  idle working set and 0.00% idle CPU, from the same harness as 0.4.5.
 
 ## What's new in 0.6.0
 

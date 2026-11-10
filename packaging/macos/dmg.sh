@@ -10,7 +10,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 ROOT="$(pwd)"
-VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' crates/kaelis-launcher/Cargo.toml | head -1)"
+VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
 VERSION="${VERSION:-0.0.0}"
 APP="$ROOT/dist/Kaelis.app"
 STAGE="$ROOT/target/dmg"

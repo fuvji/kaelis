@@ -1,7 +1,7 @@
 {
   "name": "Kaelis — Minecraft launcher",
   "short_name": "Kaelis",
-  "description": "A native Rust Minecraft launcher that opens in 311 ms and idles at 0.00% CPU. Instances, mods, and modpacks in one workspace.",
+  "description": "A native Rust Minecraft launcher that opens in 297 ms and idles at 0.00% CPU. Instances, mods, and modpacks in one workspace.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

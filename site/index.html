@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kaelis — the fastest, lightest Minecraft launcher</title>
-<meta name="description" content="Kaelis is a native Rust Minecraft launcher: a 311 ms window, 31.9 MB idle working set, 0.00% idle CPU. Instances, mods, modpacks, shaders and accounts in one window. No telemetry, no admin rights.">
+<meta name="description" content="Kaelis is a native Rust Minecraft launcher: a 297 ms window, 18.9 MB idle working set, 0.00% idle CPU. Instances, mods, modpacks, shaders and accounts in one window. No telemetry, no admin rights.">
 <meta name="keywords" content="Minecraft launcher, fastest Minecraft launcher, lightest Minecraft launcher, Rust launcher, Fabric launcher, Quilt launcher, mod manager, modpack installer, macOS Minecraft launcher, Linux Minecraft launcher, Kaelis, #Kaelis">
 <meta name="author" content="Kaelis Labs">
 <meta name="theme-color" content="#08090b">
@@ -14,7 +14,7 @@
 <meta property="og:site_name" content="Kaelis">
 <meta property="og:locale" content="en_US">
 <meta property="og:title" content="Kaelis — the fastest, lightest Minecraft launcher">
-<meta property="og:description" content="A native Rust launcher with a 311 ms window, 31.9 MB idle working set and 0.00% idle CPU. One window for instances, content and accounts.">
+<meta property="og:description" content="A native Rust launcher with a 297 ms window, 18.9 MB idle working set and 0.00% idle CPU. One window for instances, content and accounts.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://fuvji.github.io/kaelis/">
 <meta property="og:image" content="https://fuvji.github.io/kaelis/assets/og-kaelis.jpg">
@@ -22,7 +22,7 @@
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Kaelis — the fastest, lightest Minecraft launcher">
-<meta name="twitter:description" content="Native Rust. 311 ms window, 31.9 MB idle, 0.00% idle CPU. #Kaelis">
+<meta name="twitter:description" content="Native Rust. 297 ms window, 18.9 MB idle, 0.00% idle CPU. #Kaelis">
 <meta name="twitter:image" content="https://fuvji.github.io/kaelis/assets/og-kaelis.jpg">
 <link rel="icon" href="assets/kaelis-mark.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" sizes="180x180" href="assets/kaelis-touch.png">
@@ -37,12 +37,12 @@
       "@id": "https://fuvji.github.io/kaelis/#app",
       "name": "Kaelis",
       "alternateName": "Kaelis Minecraft Launcher",
-      "description": "A native Rust Minecraft launcher with one workspace for instances, mods, resource packs, shaders, and modpacks. Opens in 311 ms and idles at 0.00% CPU.",
+      "description": "A native Rust Minecraft launcher with one workspace for instances, mods, resource packs, shaders, and modpacks. Opens in 297 ms and idles at 0.00% CPU.",
       "applicationCategory": "GameApplication",
       "applicationSubCategory": "Minecraft launcher",
       "operatingSystem": "Windows 10, Windows 11, macOS 11, Linux",
       "processorRequirements": "x86_64 or arm64",
-      "softwareVersion": "0.6.0",
+      "softwareVersion": "0.4.6",
       "softwareRequirements": "No runtime to install; Java is provisioned automatically",
       "downloadUrl": "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Portable.zip",
       "installUrl": "https://fuvji.github.io/kaelis/#downloads",
@@ -90,7 +90,7 @@
         {
           "@type": "Question",
           "name": "How fast is Kaelis?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Measured on one machine: 78 ms for --version, 311 ms to a full window, 31.9 MB idle working set, and 0.00% idle CPU." }
+          "acceptedAnswer": { "@type": "Answer", "text": "Measured on one machine: 63 ms for --version, 297 ms to a full window, 18.9 MB idle working set, and 0.00% idle CPU." }
         },
         {
           "@type": "Question",
@@ -517,9 +517,92 @@
     .foot { grid-template-columns: 1fr; }
     .hash { grid-template-columns: 1fr; }
   }
+
+  /* Aurora and a tighter layout ---------------------------------------- */
+  html { background: #06070a; }
+  body { background: transparent; }
+  .aurora {
+    position: fixed; inset: 0; z-index: -1; overflow: hidden;
+    pointer-events: none; contain: strict; background: #06070a;
+  }
+  .aurora i {
+    position: absolute; display: block; width: 58vmax; height: 58vmax;
+    border-radius: 50%; filter: blur(72px); opacity: 0.5;
+    will-change: transform; transform: translate3d(0, 0, 0);
+    animation: drift 26s ease-in-out infinite alternate;
+  }
+  .aurora i:nth-child(1) { left: -14%; top: -20%; background: #2c5cff; }
+  .aurora i:nth-child(2) { right: -20%; top: 0%; background: #00a896; animation-duration: 34s; animation-delay: -9s; }
+  .aurora i:nth-child(3) { left: 20%; bottom: -32%; background: #6d4dff; animation-duration: 30s; animation-delay: -16s; }
+  .aurora::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(6, 7, 10, 0.42), rgba(6, 7, 10, 0.88) 55%, #06070a 100%);
+  }
+  @keyframes drift {
+    from { transform: translate3d(-3%, -2%, 0) scale(1); }
+    to { transform: translate3d(6%, 5%, 0) scale(1.18); }
+  }
+  @media (prefers-reduced-motion: reduce) { .aurora i { animation: none; } }
+  @media (max-width: 700px) { .aurora i { filter: blur(46px); opacity: 0.4; } }
+
+  :root { --max: 1120px; --pad: clamp(16px, 4vw, 32px); }
+  .head-in { height: 56px; gap: 20px; }
+  .links { gap: 18px; font-size: 13px; }
+  .btn { min-height: 40px; padding: 0 16px; font-size: 14px; }
+  .hero {
+    padding-block: clamp(40px, 6vw, 68px) clamp(26px, 4vw, 44px);
+    display: grid; grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+    column-gap: clamp(28px, 4vw, 56px); align-items: center;
+  }
+  .hero .eyebrow, .hero h1, .hero .lede, .hero-actions, .hero-meta { grid-column: 1; }
+  .hero h1 { margin-top: 14px; font-size: clamp(2.7rem, 5.6vw, 4.7rem); max-width: 12ch; }
+  .hero .lede { margin-top: 16px; font-size: clamp(15px, 1.3vw, 17px); max-width: 46ch; }
+  .hero-actions { margin-top: 22px; }
+  .hero-meta { margin-top: 18px; gap: 6px 16px; }
+  .hero .shot { grid-column: 2; grid-row: 1 / span 5; margin: 0; border-radius: 12px; }
+  section { padding-block: clamp(34px, 4.6vw, 58px); }
+  .sec-head { margin-bottom: clamp(18px, 2.6vw, 28px); gap: 8px 24px; }
+  h2 { font-size: clamp(1.65rem, 3.2vw, 2.4rem); }
+  .sec-head p { font-size: 13.5px; }
+  .stats { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; gap: 1px; background: var(--line); }
+  .stat { padding: 15px 18px; border: 0; background: var(--panel); }
+  .stat b { font-size: clamp(1.5rem, 2.6vw, 2.05rem); }
+  .stat small { margin-top: 5px; }
+  .stat p { margin-top: 6px; font-size: 12px; }
+  .rows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .row { grid-template-columns: 34px minmax(0, 1fr); gap: 6px 12px; padding: 17px 18px; }
+  .row:nth-child(odd) { border-right: 1px solid var(--line); }
+  .row .n { grid-row: 1; }
+  .row h3 { grid-column: 2; font-size: 1.02rem; }
+  .row p { grid-column: 2; font-size: 13px; }
+  .previews { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .previews figcaption { padding: 8px 12px; font-size: 9.5px; }
+  .cmds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dl-row { padding: 15px 0; }
+  .dl-note { margin-top: 14px; }
+  .bench { padding: 18px; }
+  .support-card { padding: 18px; }
+  .faq summary { padding: 13px 0; }
+  .faq p { margin-bottom: 14px; }
+  footer { padding-block: 28px 34px; }
+  .legal { margin-top: 20px; }
+  .note { margin-top: 14px; }
+  @media (max-width: 960px) {
+    .hero { grid-template-columns: 1fr; }
+    .hero .shot { grid-column: 1; grid-row: auto; margin-top: 26px; }
+    .rows { grid-template-columns: 1fr; }
+    .row:nth-child(odd) { border-right: 0; }
+    .previews { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 700px) {
+    .previews { grid-template-columns: 1fr; }
+    .cmds { grid-template-columns: 1fr; }
+    .hero h1 { font-size: clamp(2.4rem, 10vw, 3.4rem); }
+  }
 </style>
 </head>
 <body>
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
 <a class="skip" href="#main">Skip to content</a>
 
 <header class="head">
@@ -565,8 +648,8 @@
         <a class="btn btn-ghost" href="#film">Watch the 26 s film</a>
       </div>
       <div class="hero-meta">
-        <span><b>311 ms</b> to a full window</span>
-        <span><b>31.9 MB</b> idle working set</span>
+        <span><b>297 ms</b> to a full window</span>
+        <span><b>18.9 MB</b> idle working set</span>
         <span><b>0.00%</b> idle CPU</span>
         <span><b>0</b> telemetry</span>
       </div>
@@ -587,17 +670,17 @@
       </div>
       <div class="stats">
         <div class="stat">
-          <b>311<span>ms</span></b>
+          <b>297<span>ms</span></b>
           <small>Window · empty data root</small>
           <p>From process start to a painted, interactive window.</p>
         </div>
         <div class="stat">
-          <b>78<span>ms</span></b>
+          <b>63<span>ms</span></b>
           <small>kaelis --version</small>
           <p>A headless command finishes before a terminal refresh.</p>
         </div>
         <div class="stat">
-          <b>31.9<span>MB</span></b>
+          <b>18.9<span>MB</span></b>
           <small>Idle working set</small>
           <p>Not a hundred. Not a browser engine in a trench coat.</p>
         </div>
@@ -608,8 +691,8 @@
         </div>
       </div>
       <p class="note">
-        Measured on one machine on 2026-10-28 with the same fixtures and <code>tools/bench.ps1</code>.
-        The full table, including a 200-jar instance, is in the
+        The same host, fixture and build are used for every number. The current
+        0.4.6 table and its method are in the
         <a href="https://github.com/fuvji/kaelis#performance">repository README</a>.
       </p>
     </section>
@@ -620,7 +703,7 @@
           <span class="mono">Benchmarks</span>
           <h2 id="benchmarks-title">Lighter, measured.</h2>
         </div>
-        <p>One machine, one fixture, one script. Pick a metric; the bars are the same numbers that shipped in the README.</p>
+        <p>One machine, one fixture, one script. Pick a metric; the bars are the historical 0.3.7 → 0.4.0 table, with current 0.4.6 numbers below.</p>
       </div>
       <div class="bench" data-bench>
         <div class="bench-tabs" role="tablist" aria-label="Benchmark metric">
@@ -646,7 +729,7 @@
           <span class="bench-caption" data-caption>Idle working set, window shown</span>
         </div>
       </div>
-      <p class="note">Measured on 2026-10-28 with <code>tools/bench.ps1</code>. 0.6.0 keeps the 0.4.0 baseline, adds the game-process work below, and caches the native extraction; the script does not rank other launchers, because that needs the same host, build and disk cache.</p>
+      <p class="note">0.4.6 measured on 2026-11-10 with <code>target/bench-lite.ps1</code>: 297 ms to a window, 63 ms for <code>--version</code>, 18.9 MB idle and 0.00% idle CPU. The chart above is the earlier 0.3.7 → 0.4.0 table from <code>tools/bench.ps1</code>; the two harnesses are not mixed.</p>
     </section>
 
     <section id="performance" aria-labelledby="performance-title">
@@ -678,14 +761,13 @@
           <h3>JVM flags that fit a client</h3>
           <p>Parallel reference processing and no shared <code>hsperfdata</code> mapping. Region sizes, pause targets, and thread counts stay on HotSpot's ergonomics &mdash; unmeasured GC knobs are not worth the risk.</p>
         </article>
-      </div>
         <article class="row">
           <span class="n">05</span>
           <h3>Natives unpack once</h3>
           <p>The first launch of a version extracts its LWJGL, JNA and Netty natives into a cache keyed by the version document and every native jar's size and mtime. Later launches reuse that directory instead of unzipping it again, and an upgraded jar always produces a new key.</p>
         </article>
       </div>
-      <p class="note">The game-process work shipped in 0.5.0; the native cache is new in 0.6.0. Downloads below point at the latest published tag.</p>
+      <p class="note">The game-process work shipped in the 0.5.0 line; 0.4.6 resumes the 0.4.x numbering and adds the native cache. Downloads point at the latest release.</p>
     </section>
 
     <section id="features" aria-labelledby="features-title">
@@ -916,21 +998,6 @@
       </p>
     </section>
 
-    <section id="share" aria-labelledby="share-title">
-      <div class="share">
-        <div>
-          <p class="hashtag" id="share-title">#Kaelis</p>
-          <p>If Kaelis saved you a gigabyte and a second, pass it on. One post is the whole marketing budget.</p>
-        </div>
-        <div class="share-actions">
-          <a class="btn btn-primary" href="https://twitter.com/intent/tweet?text=Kaelis%20%E2%80%94%20a%20native%20Rust%20Minecraft%20launcher%20that%20opens%20in%20311%20ms%20and%20idles%20at%200.00%25%20CPU.&hashtags=Kaelis,Minecraft,Rust&url=https%3A%2F%2Ffuvji.github.io%2Fkaelis%2F" rel="noreferrer">Post on X</a>
-          <a class="btn btn-ghost" href="https://www.reddit.com/submit?url=https%3A%2F%2Ffuvji.github.io%2Fkaelis%2F&title=Kaelis%20%E2%80%94%20the%20fastest%2C%20lightest%20Minecraft%20launcher" rel="noreferrer">Reddit</a>
-          <button class="btn btn-ghost" type="button" data-share>Share…</button>
-          <button class="btn btn-ghost" type="button" data-copy-link>Copy link</button>
-        </div>
-      </div>
-    </section>
-
     <section id="support" aria-labelledby="support-title">
       <div class="sec-head">
         <div>
@@ -1038,7 +1105,7 @@
       </div>
     </div>
     <div class="legal">
-      <span>© <span id="year">2026</span> Kaelis Labs</span>
+      <span>© <span id="year">2026</span> Kaelis Labs · v0.4.6</span>
       <span>Official site: fuvji.github.io/kaelis</span>
       <span>Not affiliated with Mojang Studios, Microsoft, Modrinth, or CurseForge. Minecraft is a trademark of Mojang Studios.</span>
     </div>
@@ -1093,7 +1160,7 @@
       share.addEventListener("click", function () {
         navigator.share({
           title: "Kaelis — the fastest, lightest Minecraft launcher",
-          text: "Native Rust. 311 ms window, 31.9 MB idle, 0.00% idle CPU. #Kaelis",
+          text: "Native Rust. 297 ms window, 18.9 MB idle, 0.00% idle CPU. #Kaelis",
           url: window.location.href
         }).catch(function () {});
       });

@@ -2,6 +2,29 @@
 
 Every released change, newest first. The product page keeps only the latest.
 
+## 0.4.6
+
+0.4.6 resumes the 0.4.x numbering requested for the product. The 0.5.0 and
+0.6.0 sections below remain as history.
+
+- **The page is compact and alive.** A fixed aurora drifts behind the document,
+  sections use less vertical space, features and performance notes sit in two
+  columns, previews use three, and the oversized share block is gone. The only
+  third-party requests are still the ones a click makes.
+- **Downloads are served by the release.** The page points at
+  `releases/latest/download/…` and the Pages artifact carries the page, its
+  previews and checksum files instead of ~100 MB of installers. Deploys are
+  fast again and every binary has one canonical host.
+- **Packaging reports the real version.** AppImage, DMG and bundle scripts read
+  the workspace manifest, so the version no longer resolves to an empty string
+  or a stale fallback.
+- **Fresh measurements.** 0.4.6: 297 ms to a window, 63 ms for `--version`,
+  18.9 MB idle working set and 0.00% idle CPU on the benchmark host. Window
+  time is within run-to-run noise against 0.4.5; the native cache targets
+  repeated game launches rather than window creation.
+- **Native libraries still unpack once.** The cache keyed by the version
+  document and each native jar's size and mtime stays in this line.
+
 ## 0.6.0
 
 - **Native libraries are unpacked once per version.** The first launch of a
