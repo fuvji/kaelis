@@ -15,10 +15,16 @@ Native Rust for Windows, macOS, and Linux.</p>
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.4.5-70a5ff">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.5.0-70a5ff">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8">
   <img alt="Idle CPU" src="https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950">
   <img alt="License" src="https://img.shields.io/badge/license-proprietary-8b949e">
+</p>
+
+<p align="center">
+  <a href="https://twitter.com/intent/tweet?text=Kaelis%20%E2%80%94%20a%20native%20Rust%20Minecraft%20launcher%20that%20opens%20in%20311%20ms%20and%20idles%20at%200.00%25%20CPU.&hashtags=Kaelis,Minecraft,Rust&url=https%3A%2F%2Ffuvji.github.io%2Fkaelis%2F">Share <b>#Kaelis</b></a> ·
+  <a href="https://www.reddit.com/submit?url=https%3A%2F%2Ffuvji.github.io%2Fkaelis%2F&title=Kaelis%20%E2%80%94%20the%20fastest%2C%20lightest%20Minecraft%20launcher">Reddit</a> ·
+  <a href="https://github.com/fuvji/kaelis/stargazers">Star on GitHub</a>
 </p>
 
 <img width="1080" height="700" alt="Accounts tab: the active identity and every saved offline or Microsoft account" src="site/assets/app-accounts.png" />
@@ -39,7 +45,7 @@ away.
 | **Keyless catalogue** | All of Modrinth and CurseForge. No API key, no account. |
 | **Managed Java** | The runtime the version names, installed on first play. |
 | **Portable instances** | `.kaelis.zip` round trip, plus Prism/MultiMC, CurseForge, and `.mrpack` imports. |
-| **High-priority games** | Every JVM is promoted at spawn and stays high for its whole life. |
+| **Realtime-priority games** | Every JVM is promoted at spawn — realtime where Windows grants it, high everywhere else — and the launcher holds a 0.5 ms timer for as long as it runs. |
 | **Runs in parallel** | Per-instance guards let different instances run at once. |
 | **Reopens, never doubles** | One process, one tray icon. A second launch restores the window in ~120 ms. |
 | **Hibernates while you play** | Hides and empties its working set; one tray click brings it back. |
@@ -151,16 +157,18 @@ through Xbox Live → XSTS → Minecraft Services, so an account without Java
 Edition is refused at sign-in rather than at launch. The refresh token lives in
 the OS credential store; the access token stays in zeroising memory.
 
-## What's new in 0.4.5
+## What's new in 0.5.0
 
-- **No console, ever.** A GUI launch detaches Windows' console instead of
-  hiding it, so no restore — tray Show, game exit, or an error — can surface a
-  black console in front of the launcher.
-- **The launcher always returns.** A window hidden for a game comes back when
-  the last instance exits, including a crash. The restore only accepts the
-  launcher's own window; consoles and IME helpers are never candidates.
-- **A deliberate tray hide stays hidden.** Only the launcher's own game
-  hand-off restores the window; Hide and sign-in starts are left alone.
+- **Realtime games.** A launched JVM is promoted to `REALTIME_PRIORITY_CLASS`
+  and, when the desktop refuses that privilege, to `HIGH_PRIORITY_CLASS`. It is
+  also opted out of EcoQoS, so a backgrounded game keeps the fast cores.
+- **A 0.5 ms tick.** The scheduler resolution is locked for exactly the life of
+  the game and released on every exit path, with a 1 ms `timeBeginPeriod`
+  fallback.
+- **Leaner JVM flags.** Parallel reference processing, no shared `hsperfdata`
+  mapping, and HotSpot's own region, survivor, and thread ergonomics. GC pause
+  targets and explicit-GC suppression stay out because they are unmeasured.
+- **Instant first frame.** The older-build scan moved off the window thread.
 
 Full history in [CHANGELOG.md](CHANGELOG.md).
 

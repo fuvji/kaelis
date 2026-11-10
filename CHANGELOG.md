@@ -2,6 +2,36 @@
 
 Every released change, newest first. The product page keeps only the latest.
 
+## 0.5.0
+
+- **Games run at realtime priority.** A launched JVM is promoted to
+  `REALTIME_PRIORITY_CLASS` immediately after spawn and stays there for its
+  whole life. The class needs `SeIncreaseBasePriorityPrivilege`, so an ordinary
+  desktop refuses it and the same call settles on `HIGH_PRIORITY_CLASS`; the
+  game is never left at normal priority either way.
+- **No power throttling on the game.** The same promotion clears Windows'
+  EcoQoS execution-speed bit on the game process, so a backgrounded or
+  full-screen session keeps the performance cores instead of being parked on
+  efficiency cores at a reduced clock.
+- **A 0.5 ms scheduler tick while a game runs.** `NtSetTimerResolution(5000)`
+  is requested at spawn and released when the process exits, with
+  `timeBeginPeriod(1)` as the fallback when the export or the request is
+  unavailable. The guard drops on every path, including a crash or Stop, so no
+  fast timer is left behind. Windows 10 2004 and newer scope a request to the
+  calling process; older builds apply it machine-wide.
+- **One client JVM switch.** Parallel reference processing stays, and the
+  shared `hsperfdata` mapping is turned off on every launch. GC pause targets,
+  string deduplication, and `DisableExplicitGC` were considered and left out:
+  none is measured on this project, and suppressing explicit GC can strand the
+  direct buffers some mods allocate. Region sizes, survivor ratios, and thread
+  counts stay on HotSpot's ergonomics.
+- **Instant first frame.** Retiring older builds, the staged-update purge, and
+  the one-time legacy keychain cleanup moved from the start-up thread to the
+  worker pool, so the window is painted while that housekeeping runs.
+- **A faster site.** The product page is one inline document with no fonts,
+  scripts, or blur filters to fetch or compose; every image below the fold is
+  lazy and the film reads no bytes until it is played.
+
 ## 0.4.5
 
 - **The console cannot come back.** A GUI launch now detaches the console

@@ -1713,8 +1713,13 @@ fn run_gui(handoff: Option<HandoffServer>, start_hidden: bool) -> ExitCode {
     // would only spend wake-ups on a directory that is almost always clean.
     let sweeper = kaelis_core::sweeper::spawn_background_sweeper(runtime.handle(), 900, 3600);
     // A newer build retires the copies a portable folder or a manual download
-    // left behind, so only one launcher remains next to the running one.
-    kaelis_core::sweeper::retire_older_builds(env!("CARGO_PKG_VERSION"));
+    // left behind, so only one launcher remains next to the running one. That
+    // walk has no deadline, so it runs on the worker pool while the window is
+    // being created instead of in front of it.
+    let retire = runtime.spawn_blocking(|| {
+        kaelis_core::sweeper::retire_older_builds(env!("CARGO_PKG_VERSION"));
+    });
+    drop(retire);
     let handle = runtime.handle().clone();
     // Capture runs may ask for a larger stage so the marketing stills stay
     // crisp; the shipping default still fits a 1366×768 laptop.

@@ -936,9 +936,14 @@ where
     plan.native_dir.retain_for_child();
     // Raise the JVM once, right after spawn, and never touch it again: the
     // priority class survives for the life of the process, so a game keeps the
-    // high class while it loads, plays, and even while it is alt-tabbed.
+    // realtime class (or high, when the host refuses the privilege) while it
+    // loads, plays, and even while it is alt-tabbed. The same call opts the
+    // process out of EcoQoS so a backgrounded game keeps the fast cores.
     let pid = child.id().unwrap_or_default();
-    crate::power::promote(pid);
+    let _priority = crate::power::promote(pid);
+    // Hold a 0.5 ms scheduler tick for exactly as long as the game lives. Both
+    // guards drop on every return path, including a crash or a stop request.
+    let _latency = crate::power::lock_timer_resolution();
     // Publish the pid and its creation time before the game is visible, so a
     // launcher that dies right now still leaves a recoverable record. The
     // guard deletes it on every return path.

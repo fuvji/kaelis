@@ -1244,17 +1244,25 @@ impl KaelisApp {
         handoff: Option<HandoffServer>,
         start_hidden: bool,
     ) -> Self {
-        // Settings no longer asks for a CurseForge key, so any key an older
-        // build stored is removed once instead of sitting unused.
-        kaelis_api::secrets::forget_legacy_curseforge_key();
-        // A finished update leaves its script and, after an aborted download, a
-        // partial file behind. Only files old enough to be abandoned are
-        // touched, so a swap that is still running is never disturbed.
-        kaelis_api::updater::purge_staging();
-        // An update that replaced this build in place renamed the old one aside
-        // while it was still running, so the backup could only be deleted once
-        // that process was gone — which is now: this start-up waited for it.
-        kaelis_api::updater::purge_old_build();
+        // Start-up housekeeping is disk and keychain work with no deadline, so
+        // it runs on the worker pool while the first frame is being built
+        // instead of in front of it. Every step is idempotent.
+        let housekeeping = runtime.spawn_blocking(|| {
+            // Settings no longer asks for a CurseForge key, so any key an older
+            // build stored is removed once instead of sitting unused.
+            kaelis_api::secrets::forget_legacy_curseforge_key();
+            // A finished update leaves its script and, after an aborted
+            // download, a partial file behind. Only files old enough to be
+            // abandoned are touched, so a swap still running is never
+            // disturbed.
+            kaelis_api::updater::purge_staging();
+            // An update that replaced this build in place renamed the old one
+            // aside while it was still running, so the backup could only be
+            // deleted once that process was gone — which is now: this start-up
+            // waited for it.
+            kaelis_api::updater::purge_old_build();
+        });
+        drop(housekeeping);
         // Windows paints the tray menu itself, so the dark preference has to
         // be installed before that menu is created.
         platform::enable_dark_menus();

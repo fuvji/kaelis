@@ -34,6 +34,9 @@ windows-sys = { version = "0.61", features = [
     # OpenProcess, SetPriorityClass and power throttling steer background game
     # instances.
     "Win32_System_Threading",
+    # NtSetTimerResolution is resolved from ntdll at runtime instead of being
+    # linked, so the 0.5 ms tick is requested only when the export exists.
+    "Win32_System_LibraryLoader",
     # GetForegroundWindow tells the governor which game owns the screen, and
     # the foreground hook tells it the moment that changes.
     "Win32_UI_Accessibility",

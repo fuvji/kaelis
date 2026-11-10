@@ -1,11 +1,24 @@
 //! JVM flags for a Minecraft client instance.
 //!
-//! Modern HotSpot already defaults to G1 with ergonomic young-generation,
-//! region, and pause sizing. Paper's current guidance is to start modern
-//! runtimes with no GC flags, and Oracle's tuning guide asks for observed GC
-//! evidence before pinning those knobs. The launcher therefore sets only the
-//! heap and the collector, and leaves the rest to the runtime; instance-level
-//! custom flags are appended by the launch path. See ADR-018.
+//! HotSpot already picks G1 with ergonomic region, young-generation, and pause
+//! sizing, so this list does not pin region sizes, pause targets, survivor
+//! ratios, or thread counts: those are server-tuning knobs that mispredict a
+//! client's bursty allocation, and this project has no FPS harness that could
+//! prove one of them helps. The same reasoning rules out `-XX:+DisableExplicitGC`
+//! (a mod that calls `System.gc()` to release direct buffers would then leak
+//! them) and `-XX:+UseStringDeduplication` (a concurrent GC phase paid on every
+//! young collection, unmeasured on low-core machines).
+//!
+//! What remains is the small set of switches that are correct for a 60–240 FPS
+//! window on any modern machine:
+//!
+//! * parallel reference processing, because Minecraft's registries and caches
+//!   produce many weak references;
+//! * no shared `hsperfdata` file mapping, because no launcher tool reads it and
+//!   the JVM otherwise keeps a mapped file updated for its whole life.
+//!
+//! Every switch here is a product flag available in Java 8u20 and newer, so a
+//! legacy instance and a current one get the same arguments.
 const MIN_HEAP_MB: u32 = 512;
 const MAX_HEAP_MB: u32 = 65_536;
 
@@ -28,6 +41,9 @@ pub fn default_flags_with_min(ram_mb: u32, min_ram_mb: u32) -> Vec<String> {
         // references (Minecraft's registries do), it shortens the pause without
         // pinning any region, pause, or thread count.
         "-XX:+ParallelRefProcEnabled".to_owned(),
+        // The JVM otherwise keeps a shared hsperfdata mapping updated on a
+        // timer. Nothing Kaelis starts reads it, so the mapping is pure work.
+        "-XX:+PerfDisableSharedMem".to_owned(),
     ]
 }
 
@@ -76,5 +92,33 @@ mod tests {
                 .any(|flag| flag.contains("UnlockExperimentalVMOptions"))
         );
         assert!(!flags.iter().any(|flag| flag.starts_with("-Xmn")));
+        // Region sizing and survivor ratios are server knobs that mispredict a
+        // client's allocation pattern.
+        assert!(!flags.iter().any(|flag| flag.starts_with("-XX:G1")));
+        assert!(
+            !flags
+                .iter()
+                .any(|flag| flag.starts_with("-XX:SurvivorRatio"))
+        );
+        assert!(!flags.iter().any(|flag| flag.starts_with("-XX:MaxTenuring")));
+    }
+
+    #[test]
+    fn keeps_unmeasured_gc_knobs_out() {
+        let flags = default_flags(4096);
+        assert!(
+            flags.iter().any(|flag| flag == "-XX:+PerfDisableSharedMem"),
+            "hsperfdata mapping should be off"
+        );
+        for rejected in [
+            "-XX:MaxGCPauseMillis=200",
+            "-XX:+UseStringDeduplication",
+            "-XX:+DisableExplicitGC",
+        ] {
+            assert!(
+                !flags.iter().any(|flag| flag == rejected),
+                "{rejected} is unmeasured and must stay out"
+            );
+        }
     }
 }

@@ -3,4 +3,6 @@ User-agent: *
 Allow: /
 
 # Everything is static HTML; crawlers that ignore CSS still get full text.
+# A machine-readable summary is published for answer engines:
+#   https://fuvji.github.io/kaelis/llms.txt
 Sitemap: https://fuvji.github.io/kaelis/sitemap.xml

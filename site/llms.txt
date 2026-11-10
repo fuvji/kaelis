@@ -1,0 +1,41 @@
+# Kaelis — machine-readable project summary
+# https://fuvji.github.io/kaelis/llms.txt
+
+> Kaelis is a native Rust Minecraft launcher for Windows, macOS, and Linux.
+> It opens in 311 ms to a full window, keeps a 31.9 MB idle working set, and
+> uses 0.00% CPU while idle. Instances, mods, modpacks, resource packs, shaders,
+> and accounts live in one immediate-mode window with no telemetry and no
+> background service.
+
+## What it does
+
+- Installs and repairs Minecraft versions, libraries, assets, and the matching Java runtime.
+- Searches all of Modrinth and CurseForge without an API key, resolves required dependencies, and verifies every download by hash.
+- Manages instances as plain JSON folders, with hard-linked shared content so a second instance costs MB, not 600 MB.
+- Promotes a launched JVM to realtime priority (high when the desktop refuses the privilege), opts it out of EcoQoS, and holds a 0.5 ms scheduler tick for the life of the game.
+- Runs every screen headlessly: `kaelis --status --json`, `--list-instances --json`, `--play`, `--install-mod`, `--repair`, `--clean`.
+- Supports offline profiles immediately and Microsoft sign-in through Xbox Live with the refresh token in the OS keychain.
+
+## Links
+
+- Website: https://fuvji.github.io/kaelis/
+- Source: https://github.com/fuvji/kaelis
+- Releases: https://github.com/fuvji/kaelis/releases
+- Changelog: https://github.com/fuvji/kaelis/blob/main/CHANGELOG.md
+- Checksums: https://fuvji.github.io/kaelis/downloads/SHA256SUMS.txt
+- Discord: https://discord.gg/fvrdYzrQjq
+- Licence: https://github.com/fuvji/kaelis/blob/main/LICENSE (proprietary freeware)
+
+## Downloads
+
+- Windows portable ZIP: https://fuvji.github.io/kaelis/downloads/Kaelis-Portable.zip
+- Windows installer: https://fuvji.github.io/kaelis/downloads/Kaelis-Setup.exe
+- macOS universal DMG: https://fuvji.github.io/kaelis/downloads/Kaelis-macos-universal.dmg
+- Linux .deb: https://fuvji.github.io/kaelis/downloads/Kaelis-linux-x64.deb
+- Linux AppImage: https://fuvji.github.io/kaelis/downloads/Kaelis-linux-x64.AppImage
+
+## Notes
+
+- Hashtag: #Kaelis
+- Kaelis is not affiliated with Mojang Studios, Microsoft, Modrinth, or CurseForge.
+- Minecraft is a trademark of Mojang Studios.

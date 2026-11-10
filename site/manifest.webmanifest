@@ -1,14 +1,13 @@
 {
   "name": "Kaelis — Minecraft launcher",
   "short_name": "Kaelis",
-  "description": "A native Rust Minecraft launcher for Windows, macOS, and Linux. Instances, mods, and modpacks in one workspace.",
-  "id": "/kaelis/",
-  "start_url": "/kaelis/",
-  "scope": "/kaelis/",
+  "description": "A native Rust Minecraft launcher that opens in 311 ms and idles at 0.00% CPU. Instances, mods, and modpacks in one workspace.",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#08090c",
-  "theme_color": "#08090c",
+  "background_color": "#08090b",
+  "theme_color": "#08090b",
   "categories": ["games", "utilities"],
   "lang": "en",
   "dir": "ltr",
@@ -63,7 +62,7 @@
     }
   ],
   "shortcuts": [
-    { "name": "Downloads", "url": "/kaelis/#downloads" },
-    { "name": "Previews", "url": "/kaelis/#previews" }
+    { "name": "Downloads", "url": "./#downloads" },
+    { "name": "Previews", "url": "./#previews" }
   ]
 }

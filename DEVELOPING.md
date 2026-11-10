@@ -122,10 +122,37 @@ powershell -NoProfile -File tools/serve-site.ps1 -Port 8088
 ```
 
 The directory also carries `robots.txt`, `sitemap.xml` (page, screenshots, and
-the intro video), `manifest.webmanifest`, and `.well-known/security.txt`. The CI
-workflow fails when a `href`/`src` in the page does not resolve, when
-`SHA256SUMS.txt` stops matching the binaries beside it, or when the manifest
-references a missing icon.
+the intro video), `manifest.webmanifest`, `llms.txt` (a plain-text summary for
+answer engines), and `.well-known/security.txt`. The CI workflow fails when a
+`href`/`src` in the page does not resolve, when `SHA256SUMS.txt` stops matching
+the binaries beside it, or when the manifest references a missing icon.
+
+The page is one inline document: no webfont, no framework, no third-party
+request, and no blur filter in the paint path. The hero image is the only
+preloaded asset, every preview below it is `loading="lazy"`, and the film keeps
+`preload="none"` until its poster is clicked. Keep those three properties when
+editing: they are what make the first paint independent of the network.
+
+### Custom domain
+
+The site uses relative paths throughout, so it runs unchanged at a project
+subpath (`fuvji.github.io/kaelis/`), at a custom domain root, or on any static
+host. A real custom domain is a three-step change, all in the repository:
+
+1. Point a `CNAME` record for the domain at `fuvji.github.io`, add the domain in
+   **Settings → Pages → Custom domain**, and commit a `site/CNAME` file holding
+the bare domain (Pages reads it on every deploy).
+2. Replace the absolute origin in `crates/kaelis-core/src/brand.rs` (`WEBSITE`
+   and the `CHECKSUMS_URL` derived from it), and update every absolute URL in
+   `site/index.html`, `site/sitemap.xml`, `site/robots.txt`, `site/llms.txt`, and
+   `site/.well-known/security.txt`. Those files are the SEO and update surfaces;
+   a stale origin there is how a mirror keeps ranking after a move.
+3. Run `tools/links.ps1` so `KAELIS-LINKS.txt` names the new endpoints, then
+   push. The Pages workflow deploys `site/` as-is.
+
+A host without GitHub Pages works the same way if it serves the folder and
+sends `text/html`, `application/manifest+json`, and `text/vtt` for their files;
+`tools/serve-site.ps1` already does that locally.
 
 Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml):
 a `v*` tag builds Windows, macOS (universal), and Linux, publishes one release
