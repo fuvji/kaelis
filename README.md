@@ -185,7 +185,7 @@ notes below are kept as history.
   DLLs are never reused, and extraction is published with one rename so a
   cancelled launch leaves no half-written cache behind.
 - **The benchmark table is visual.** The product page charts the measured
-  0.3.7 → 0.4.0 numbers, keeps all six real screenshots, and reveals sections
+  0.3.7 → 0.4.0 numbers, keeps all seven real screenshots, and reveals sections
   on scroll without a framework or a third-party request.
 - **Sponsorship is direct and labelled.** GitHub Sponsors is linked from the
   repository and the page, with one hand-reviewed sponsor slot and no ad
