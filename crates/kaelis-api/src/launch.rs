@@ -1362,13 +1362,33 @@ mod tests {
             std::process::id(),
             TEST_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
-        let jar = root.join("org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-natives-windows.jar");
+        // The classifier is filtered by the host platform, so the fixture must
+        // name the host's own natives or the library never reaches the key.
+        let os = if cfg!(target_os = "windows") {
+            "windows"
+        } else if cfg!(target_os = "macos") {
+            "macos"
+        } else {
+            "linux"
+        };
+        let arch = if cfg!(target_arch = "aarch64") {
+            "-arm64"
+        } else if cfg!(target_arch = "x86") {
+            "-32"
+        } else {
+            ""
+        };
+        let classifier = format!("natives-{os}{arch}");
+        let relative = format!("org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-{classifier}.jar");
+        let jar = root.join(&relative);
         std::fs::create_dir_all(jar.parent().unwrap()).unwrap();
         std::fs::write(&jar, b"one").unwrap();
-        let version: Value = serde_json::from_str(
-            r#"{"libraries":[{"name":"org.lwjgl:lwjgl:3.3.3:natives-windows","downloads":{"artifact":{"path":"org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-natives-windows.jar"}}}]}"#,
-        )
-        .unwrap();
+        let version = serde_json::json!({
+            "libraries": [{
+                "name": format!("org.lwjgl:lwjgl:3.3.3:{classifier}"),
+                "downloads": { "artifact": { "path": relative.clone() } }
+            }]
+        });
         let first = native_cache_key(&version, &root);
         std::fs::write(&jar, b"a different jar").unwrap();
         let second = native_cache_key(&version, &root);
