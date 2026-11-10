@@ -335,6 +335,12 @@
     padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px;
     color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums;
   }
+  /* The hydrator rewrites the text inside a data-release slot, so the number
+     lives in an inner span and the unit label stays outside it. Strip the pill
+     from that inner span so the outer one still renders as one fact. */
+  .dl-row .facts span span[data-release] {
+    padding: 0; border: 0; border-radius: 0; color: inherit; font-size: inherit;
+  }
   .dl-row .btn { min-height: 38px; padding-inline: 15px; font-size: 13.5px; }
   .dl-row .btn + .btn { margin-left: 6px; }
   .dl-note { margin: 20px 0 0; color: var(--dim); font-size: 12.5px; }
@@ -692,8 +698,8 @@
             <small>Extract anywhere and run. Instances stay in your profile.</small>
           </div>
           <div class="facts">
-            <span data-release="exe-size">16.4 MB</span> app
-            <span data-release="zip-size">8.0 MB</span> zip
+            <span><span data-release="exe-size">16.4 MB</span> app</span>
+            <span><span data-release="zip-size">8.0 MB</span> zip</span>
             <span>Windows 10 / 11 · x64</span>
           </div>
           <div class="facts"><span>No install</span><span>No admin</span></div>
@@ -707,7 +713,7 @@
             <h3>Windows installer</h3>
             <small>Per-user install, Start menu shortcut, clean uninstaller.</small>
           </div>
-          <div class="facts"><span data-release="setup-size">5.8 MB</span> setup<span>No admin rights</span></div>
+          <div class="facts"><span><span data-release="setup-size">5.8 MB</span> setup</span><span>No admin rights</span></div>
           <div class="facts"><span>Clean uninstall</span></div>
           <div><a class="btn btn-ghost" href="downloads/Kaelis-Setup.exe" download>Download</a></div>
         </div>
@@ -716,7 +722,7 @@
             <h3>macOS disk image</h3>
             <small>Universal binary, drag to Applications. Ad-hoc signed, so the first launch is right-click → Open.</small>
           </div>
-          <div class="facts"><span data-release="dmg-size">17.0 MB</span> dmg<span>Apple silicon + Intel</span></div>
+          <div class="facts"><span><span data-release="dmg-size">17.0 MB</span> dmg</span><span>Apple silicon + Intel</span></div>
           <div class="facts"><span>macOS 11+</span></div>
           <div>
             <a class="btn btn-primary" href="downloads/Kaelis-macos-universal.dmg" download>Download</a>
@@ -728,7 +734,7 @@
             <h3>Linux packages</h3>
             <small>apt, one AppImage, or the tarball. X11 and Wayland.</small>
           </div>
-          <div class="facts"><span data-release="deb-size">8.1 MB</span> deb<span data-release="appimage-size">10.6 MB</span> AppImage</div>
+          <div class="facts"><span><span data-release="deb-size">8.1 MB</span> deb</span><span><span data-release="appimage-size">10.6 MB</span> AppImage</span></div>
           <div class="facts"><span>Desktop entry included</span></div>
           <div>
             <a class="btn btn-primary" href="downloads/Kaelis-linux-x64.deb" download>.deb</a>
