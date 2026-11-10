@@ -218,13 +218,14 @@ mod imp {
 
     impl Drop for LatencyGuard {
         fn drop(&mut self) {
-            if self.state.half_ms {
-                if let Some(set) = nt_set_timer_resolution() {
-                    let mut current = 0_u32;
-                    // SAFETY: releasing the request this process holds; the
-                    // out-parameter is valid and the status is advisory.
-                    unsafe { set(self.state.previous, 0, &mut current) };
-                }
+            // One `if let` over the pair, not a nested `if`: the crate is on
+            // edition 2021, where let-chains in `if` conditions are not
+            // available, and Clippy rejects the collapsible nest on Windows.
+            if let (true, Some(set)) = (self.state.half_ms, nt_set_timer_resolution()) {
+                let mut current = 0_u32;
+                // SAFETY: releasing the request this process holds; the
+                // out-parameter is valid and the status is advisory.
+                unsafe { set(self.state.previous, 0, &mut current) };
             }
             if self.state.millisecond {
                 // SAFETY: reverses the exact period requested above.
@@ -338,6 +339,7 @@ mod tests {
     fn the_latency_guard_is_always_droppable() {
         let guard = lock_timer_resolution();
         let _ = guard.active();
-        drop(guard);
+        // The guard drops at the end of the scope. An explicit `drop` would be
+        // a `drop_non_drop` on Unix, where the type is a fieldless no-op.
     }
 }
