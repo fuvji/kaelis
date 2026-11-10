@@ -22,7 +22,7 @@ Native Rust for Windows, macOS, and Linux.</p>
 </p>
 
 <p align="center">
-  <a href="https://twitter.com/intent/tweet?text=Kaelis%20%E2%80%94%20a%20native%20Rust%20Minecraft%20launcher%20that%20opens%20in%20311%20ms%20and%20idles%20at%200.00%25%20CPU.&hashtags=Kaelis,Minecraft,Rust&url=https%3A%2F%2Ffuvji.github.io%2Fkaelis%2F">Share <b>#Kaelis</b></a> ·
+  <a href="https://twitter.com/intent/tweet?text=Kaelis%20%E2%80%94%20a%20native%20Rust%20Minecraft%20launcher%20that%20opens%20in%20297%20ms%20and%20idles%20at%200.00%25%20CPU.&hashtags=Kaelis,Minecraft,Rust&url=https%3A%2F%2Ffuvji.github.io%2Fkaelis%2F">Share <b>#Kaelis</b></a> ·
   <a href="https://www.reddit.com/submit?url=https%3A%2F%2Ffuvji.github.io%2Fkaelis%2F&title=Kaelis%20%E2%80%94%20the%20fastest%2C%20lightest%20Minecraft%20launcher">Reddit</a> ·
   <a href="https://github.com/fuvji/kaelis/stargazers">Star on GitHub</a>
 </p>
@@ -32,6 +32,9 @@ Native Rust for Windows, macOS, and Linux.</p>
 Instances, mods, modpacks, resource packs, shaders, and accounts in one window.
 Files stay local, nothing runs in the background, and the library is one screen
 away.
+
+**For contributors and agents:** [project brain](docs/brain/Kaelis%20Brain.md) ·
+[agent contract](AGENTS.md).
 
 ## Features
 
@@ -84,9 +87,9 @@ link and local-file import, never scrapers.
 
 | Platform | Downloads |
 | --- | --- |
-| **Windows 10 / 11 · x64** | [Portable ZIP](https://fuvji.github.io/kaelis/downloads/Kaelis-Portable.zip) · [Kaelis.exe](https://fuvji.github.io/kaelis/downloads/Kaelis.exe) · [Installer](https://fuvji.github.io/kaelis/downloads/Kaelis-Setup.exe) |
-| **macOS 11+** | [Universal DMG](https://fuvji.github.io/kaelis/downloads/Kaelis-macos-universal.dmg) · [ZIP](https://fuvji.github.io/kaelis/downloads/Kaelis-macos-universal.zip) |
-| **Linux · x64** | [.deb](https://fuvji.github.io/kaelis/downloads/Kaelis-linux-x64.deb) · [AppImage](https://fuvji.github.io/kaelis/downloads/Kaelis-linux-x64.AppImage) · [tar.gz](https://fuvji.github.io/kaelis/downloads/Kaelis-linux-x64.tar.gz) |
+| **Windows 10 / 11 · x64** | [Portable ZIP](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Portable.zip) · [Kaelis.exe](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe) · [Installer](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Setup.exe) |
+| **macOS 11+** | [Universal DMG](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.dmg) · [ZIP](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.zip) |
+| **Linux · x64** | [.deb](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.deb) · [AppImage](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.AppImage) · [tar.gz](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.tar.gz) |
 
 No admin rights, no runtime to install, no account to create. The Windows build
 is unsigned, so SmartScreen may ask once; the macOS build is ad-hoc signed, so

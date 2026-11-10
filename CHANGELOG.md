@@ -2,6 +2,26 @@
 
 Every released change, newest first. The product page keeps only the latest.
 
+## Unreleased
+
+- **The benchmark lab compares three releases on one harness.** 0.3.7, 0.4.5 and
+  0.4.6 now share a zero-baseline chart, a memory-trend line and a data table.
+  The real memory result is 86.6 MB → 18.9 MB (−78%); startup and CLI are
+  labelled as flat/noise instead of being sold as wins.
+- **A smoother web system.** A 6/10/14/20/28 px radius scale, pill controls, a
+  static grain texture and a transform-only aurora keep the page softer without
+  adding a third-party request or a paint filter. Below-fold sections use
+  `content-visibility` to reduce initial rendering work.
+- **Compatible dependencies refreshed.** `cargo update` moved 24 crates to their
+  newest semver-compatible patches, including openssl, rustls-pki-types, toml,
+  uuid and zstd. CI on three platforms is the compile gate.
+- **A project brain for humans and agents.** `AGENTS.md` and `docs/brain/` hold
+  architecture, release, benchmark, web, decision, roadmap and current-state
+  notes, with a sync path into Obsidian.
+- **Download and share links corrected.** README install links now point at
+  GitHub Releases, where the binaries actually live, and the share copy uses the
+  current 297 ms figure.
+
 ## 0.4.6
 
 0.4.6 resumes the 0.4.x numbering requested for the product. The 0.5.0 and

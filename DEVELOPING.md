@@ -45,6 +45,21 @@ order: the instance's configured path, the runtime Kaelis provisioned, `PATH`,
 then the standard JDK install folders (`/usr/lib/jvm`, `/Library/Java/…`,
 `C:\Program Files\Java\…`), so a Dock- or menu-launched app that inherits no
 
+## Project brain
+
+`docs/brain/` is the shared source of truth for humans and agents: architecture,
+build/release contract, benchmark protocol, web system, decisions, roadmap and
+current state. It is Obsidian-compatible (title-case notes, wikilinks,
+properties) and stays flat when synced to a vault:
+
+```powershell
+powershell -NoProfile -File tools/sync-brain.ps1 -VaultPath "<vault>" -Subfolder "01-Projects/Kaelis/Brain"
+# or set KAELIS_VAULT once
+```
+
+The root [`AGENTS.md`](AGENTS.md) points every agent at the same notes. Update
+the affected note in the same commit as the change it describes.
+
 ## Workspace
 
 ```text
@@ -92,9 +107,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
-The workspace currently passes 244 tests (126 api, 49 core, 57 gui, 12
-launcher), and Clippy is clean with warnings denied on Windows, macOS, and
-Linux.
+CI runs `cargo test --workspace` and Clippy with warnings denied on Windows,
+macOS, and Linux. This Windows host cannot link locally because `dlltool.exe`
+is missing from the installed GNU toolchain, so CI is the compile evidence.
 
 The release path also generates `dist/KAELIS-LINKS.txt`, publishes the same
 bytes as [`site/downloads/KAELIS-LINKS.txt`](site/downloads/KAELIS-LINKS.txt),
