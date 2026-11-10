@@ -97,6 +97,9 @@ struct LaunchPlan {
 struct NativeTempDir {
     path: PathBuf,
     cleanup_on_drop: bool,
+    /// A directory published into the natives cache. It must survive the end
+    /// of the launch so the next start of the same version can reuse it.
+    cached: bool,
 }
 
 impl NativeTempDir {
@@ -105,11 +108,22 @@ impl NativeTempDir {
         Ok(Self {
             path,
             cleanup_on_drop: true,
+            cached: false,
         })
     }
 
     fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Use an already complete cache directory. It is never deleted by this
+    /// launch, by a cancellation, or by the drop at the end of the game.
+    fn reuse(path: PathBuf) -> Self {
+        Self {
+            path,
+            cleanup_on_drop: false,
+            cached: true,
+        }
     }
 
     fn retain_for_child(&mut self) {
@@ -119,7 +133,9 @@ impl NativeTempDir {
 
     fn cleanup(&mut self) {
         self.cleanup_on_drop = false;
-        let _ = std::fs::remove_dir_all(&self.path);
+        if !self.cached {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
     }
 }
 
@@ -274,6 +290,90 @@ fn collect_jars(root: &Path, output: &mut Vec<PathBuf>) -> Result<(), std::io::E
         }
     }
     Ok(())
+}
+
+const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+fn fnv1a(mut hash: u64, bytes: &[u8]) -> u64 {
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
+}
+
+/// A stable fingerprint of a version's native set: the version document plus
+/// the size and modification time of every native jar it names. A re-downloaded
+/// or upgraded library gets a new key, so an old directory can never serve a
+/// stale DLL.
+fn native_cache_key(version: &Value, libraries_root: &Path) -> u64 {
+    let mut hash = fnv1a(FNV_OFFSET, version.to_string().as_bytes());
+    if let Some(libraries) = version.get("libraries").and_then(Value::as_array) {
+        for library in libraries {
+            let Some(relative) = native_classifier(library) else {
+                continue;
+            };
+            hash = fnv1a(hash, relative.as_bytes());
+            if let Ok(metadata) = libraries_root.join(&relative).metadata() {
+                hash = fnv1a(hash, &metadata.len().to_le_bytes());
+                if let Some(age) = metadata
+                    .modified()
+                    .ok()
+                    .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                {
+                    hash = fnv1a(hash, &age.as_nanos().to_le_bytes());
+                }
+            }
+        }
+    }
+    hash
+}
+
+/// The natives directory for one version, reusing a complete extraction when
+/// nothing it depends on has changed.
+///
+/// Every launch used to unzip the LWJGL, JNA, and Netty natives into a fresh
+/// temporary directory, even when the jars had not moved since the previous
+/// launch. Extraction now lands in a staging directory and is published with a
+/// single rename, so a cancelled or failed launch never leaves a half-written
+/// cache behind, and two launches that race on the same key agree on one
+/// winner.
+fn native_directory(
+    version: &Value,
+    libraries_root: &Path,
+    native_root: &Path,
+    sequence: u64,
+) -> Result<NativeTempDir, LaunchError> {
+    let cache_root = native_root.join("natives-cache");
+    std::fs::create_dir_all(&cache_root)?;
+    let key = native_cache_key(version, libraries_root);
+    let cached = cache_root.join(format!("{key:016x}"));
+    let complete = cached.join(".complete");
+    if complete.is_file() {
+        return Ok(NativeTempDir::reuse(cached));
+    }
+    let staging_path =
+        cache_root.join(format!(".{key:016x}-{}-{sequence}.tmp", std::process::id()));
+    // A process id can be reused after a crash, so an abandoned staging
+    // directory must never block the next extraction for the same slot.
+    if staging_path.exists() {
+        let _ = std::fs::remove_dir_all(&staging_path);
+    }
+    let mut staging = NativeTempDir::create(staging_path)?;
+    extract_natives(version, libraries_root, staging.path())?;
+    std::fs::write(staging.path().join(".complete"), b"kaelis natives\n")?;
+    match std::fs::rename(staging.path(), &cached) {
+        Ok(()) => {
+            staging.path = cached;
+            staging.cached = true;
+            staging.cleanup_on_drop = false;
+            Ok(staging)
+        }
+        // Another launch published the same key while this one extracted.
+        Err(_) if complete.is_file() => Ok(NativeTempDir::reuse(cached)),
+        Err(error) => Err(LaunchError::Io(error)),
+    }
 }
 
 fn native_classifier(library: &Value) -> Option<String> {
@@ -469,13 +569,11 @@ fn prepare_launch_plan(
     let native_root = kaelis_core::sweeper::temp_root();
     std::fs::create_dir_all(&native_root)?;
     let sequence = NATIVE_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let native_dir = NativeTempDir::create(
-        native_root.join(format!("natives-{}-{sequence}", std::process::id())),
-    )?;
-    extract_natives(
+    let native_dir = native_directory(
         &version,
         &instance.root.join("libraries"),
-        native_dir.path(),
+        &native_root,
+        sequence,
     )?;
 
     let mut jars = Vec::new();
@@ -1255,6 +1353,52 @@ mod tests {
                 OsString::from(crate::runtime::java_binary_name())
             ),
         }
+    }
+
+    #[test]
+    fn native_cache_key_tracks_the_versions_native_jars() {
+        let root = std::env::temp_dir().join(format!(
+            "kaelis-native-key-{}-{}",
+            std::process::id(),
+            TEST_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        let jar = root.join("org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-natives-windows.jar");
+        std::fs::create_dir_all(jar.parent().unwrap()).unwrap();
+        std::fs::write(&jar, b"one").unwrap();
+        let version: Value = serde_json::from_str(
+            r#"{"libraries":[{"name":"org.lwjgl:lwjgl:3.3.3:natives-windows","downloads":{"artifact":{"path":"org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-natives-windows.jar"}}}]}"#,
+        )
+        .unwrap();
+        let first = native_cache_key(&version, &root);
+        std::fs::write(&jar, b"a different jar").unwrap();
+        let second = native_cache_key(&version, &root);
+        assert_ne!(first, second, "a changed native jar kept the same key");
+        assert_eq!(
+            native_cache_key(&version, &root),
+            second,
+            "the key is not stable between calls"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_cached_natives_directory_survives_cleanup() {
+        let path = std::env::temp_dir().join(format!(
+            "kaelis-native-cache-{}-{}",
+            std::process::id(),
+            TEST_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        std::fs::write(path.join("lwjgl.dll"), b"native").unwrap();
+        {
+            let mut directory = NativeTempDir::reuse(path.clone());
+            directory.cleanup();
+        }
+        assert!(
+            path.join("lwjgl.dll").is_file(),
+            "a reusable cache was deleted after the game exited"
+        );
+        let _ = std::fs::remove_dir_all(&path);
     }
 
     #[test]

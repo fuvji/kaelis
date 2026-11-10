@@ -15,7 +15,7 @@ Native Rust for Windows, macOS, and Linux.</p>
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.5.0-70a5ff">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.6.0-70a5ff">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8">
   <img alt="Idle CPU" src="https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950">
   <img alt="License" src="https://img.shields.io/badge/license-proprietary-8b949e">
@@ -156,6 +156,23 @@ no Azure registration, no client id, no secret. Every sign-in is exchanged
 through Xbox Live → XSTS → Minecraft Services, so an account without Java
 Edition is refused at sign-in rather than at launch. The refresh token lives in
 the OS credential store; the access token stays in zeroising memory.
+
+## What's new in 0.6.0
+
+- **Natives unpack once.** The first launch of a version extracts its LWJGL,
+  JNA and Netty natives into a cache keyed by the version document and each
+  native jar's size and mtime. Later launches reuse the directory instead of
+  unzipping the same jars again; a changed jar produces a new key, so stale
+  DLLs are never reused, and extraction is published with one rename so a
+  cancelled launch leaves no half-written cache behind.
+- **The benchmark table is visual.** The product page charts the measured
+  0.3.7 → 0.4.0 numbers, keeps all six real screenshots, and reveals sections
+  on scroll without a framework or a third-party request.
+- **Sponsorship is direct and labelled.** GitHub Sponsors is linked from the
+  repository and the page, with one hand-reviewed sponsor slot and no ad
+  script, cookie or affiliate redirect.
+
+Full history in [CHANGELOG.md](CHANGELOG.md).
 
 ## What's new in 0.5.0
 

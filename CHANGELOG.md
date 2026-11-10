@@ -2,6 +2,24 @@
 
 Every released change, newest first. The product page keeps only the latest.
 
+## 0.6.0
+
+- **Native libraries are unpacked once per version.** The first launch of a
+  version extracts LWJGL, JNA and Netty natives into a cache keyed by the
+  version document plus every native jar's size and modification time. Later
+  launches reuse that directory, so a repeat start no longer unzips the same
+  jars. An upgraded or re-downloaded jar produces a new key, so an old cache
+  can never serve a stale DLL, and a staging directory is published with one
+  rename so a cancelled launch leaves nothing half-written behind.
+- **The product page charts its own benchmarks.** The measured 0.3.7 → 0.4.0
+  table is now an interactive chart, with the same numbers the README prints
+  and no invented competitor baseline. Two more real screenshots complete the
+  preview grid, and section reveals respect `prefers-reduced-motion`.
+- **Sponsorship is direct and disclosed.** GitHub Sponsors is linked from the
+  repository and the page, and one hand-reviewed sponsor slot replaces the ad
+  network the project deliberately does not use. No new requests, scripts or
+  cookies are added to the page.
+
 ## 0.5.0
 
 - **Games run at realtime priority.** A launched JVM is promoted to

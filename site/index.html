@@ -9,6 +9,7 @@
 <meta name="author" content="Kaelis Labs">
 <meta name="theme-color" content="#08090b">
 <meta name="color-scheme" content="dark">
+<script>document.documentElement.classList.add("js");</script>
 <link rel="canonical" href="https://fuvji.github.io/kaelis/">
 <meta property="og:site_name" content="Kaelis">
 <meta property="og:locale" content="en_US">
@@ -41,7 +42,7 @@
       "applicationSubCategory": "Minecraft launcher",
       "operatingSystem": "Windows 10, Windows 11, macOS 11, Linux",
       "processorRequirements": "x86_64 or arm64",
-      "softwareVersion": "0.5.0",
+      "softwareVersion": "0.6.0",
       "softwareRequirements": "No runtime to install; Java is provisioned automatically",
       "downloadUrl": "https://fuvji.github.io/kaelis/downloads/Kaelis-Portable.zip",
       "installUrl": "https://fuvji.github.io/kaelis/#downloads",
@@ -410,6 +411,86 @@
   .foot-col a:hover { color: var(--text); }
   .legal { margin-top: 32px; padding-top: 18px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 12px; }
 
+  /* Motion ------------------------------------------------------------- */
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: none; }
+  }
+  .hero .eyebrow, .hero h1, .hero .lede, .hero-actions, .hero-meta {
+    animation: rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .hero h1 { animation-delay: 60ms; }
+  .hero .lede { animation-delay: 120ms; }
+  .hero-actions { animation-delay: 180ms; }
+  .hero-meta { animation-delay: 240ms; }
+  .hero .shot { animation: rise 800ms cubic-bezier(0.2, 0.7, 0.2, 1) 260ms both; }
+  .js .reveal {
+    opacity: 0; transform: translateY(14px);
+    transition: opacity 600ms cubic-bezier(0.2, 0.7, 0.2, 1), transform 600ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .js .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .hero .eyebrow, .hero h1, .hero .lede, .hero-actions, .hero-meta, .hero .shot { animation: none; }
+    .js .reveal, .js .reveal.in { opacity: 1; transform: none; transition: none; }
+  }
+
+  /* Benchmarks --------------------------------------------------------- */
+  .bench {
+    border: 1px solid var(--line-strong); border-radius: 14px;
+    background: linear-gradient(180deg, #0c0e13, #090a0d);
+    padding: clamp(18px, 3vw, 28px);
+  }
+  .bench-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .bench-tabs button {
+    border: 1px solid var(--line); border-radius: 999px; background: transparent;
+    color: var(--muted); font: inherit; font-size: 12.5px; padding: 7px 14px; cursor: pointer;
+    transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease;
+  }
+  .bench-tabs button:hover { color: var(--text); border-color: var(--line-strong); }
+  .bench-tabs button[aria-selected="true"] {
+    background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 620;
+  }
+  .bench-body { display: grid; gap: 14px; margin-top: 28px; }
+  .bench-row {
+    display: grid; grid-template-columns: 56px minmax(0, 1fr) 96px;
+    align-items: center; gap: 14px;
+  }
+  .bench-name { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--dim); }
+  .bench-track { height: 12px; border-radius: 999px; background: #14171c; overflow: hidden; }
+  .bench-bar {
+    display: block; height: 100%; width: 0; border-radius: inherit;
+    transition: width 700ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .bench-bar.old { background: #3a414c; }
+  .bench-bar.new { background: linear-gradient(90deg, #5d8df0, var(--accent)); box-shadow: 0 0 24px rgba(125, 167, 255, 0.25); }
+  .bench-value { font-size: 13px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+  .bench-foot {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 16px;
+    margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line);
+  }
+  .bench-delta { font-size: clamp(1.6rem, 3vw, 2.3rem); font-weight: 580; letter-spacing: -0.04em; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .bench-caption { color: var(--muted); font-size: 13px; }
+
+  /* Support ------------------------------------------------------------ */
+  .support { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .support-card {
+    display: grid; gap: 10px; padding: 24px;
+    border: 1px solid var(--line); border-radius: 14px; background: var(--panel);
+    transition: border-color 180ms ease, transform 180ms ease;
+  }
+  .support-card:hover { border-color: var(--line-strong); transform: translateY(-2px); }
+  .support-card strong { font-size: clamp(1.15rem, 1.8vw, 1.45rem); font-weight: 600; letter-spacing: -0.02em; }
+  .support-card p { margin: 0; color: var(--muted); font-size: 14px; }
+  .support-card .mono { color: var(--accent); }
+  .support-cta { margin-top: 6px; color: var(--accent); font-size: 14px; font-weight: 600; }
+  .support-card--primary { border-color: rgba(125, 167, 255, 0.35); background: linear-gradient(180deg, rgba(125, 167, 255, 0.08), var(--panel)); }
+  .previews figure { transition: border-color 180ms ease, transform 180ms ease; }
+  .previews figure:hover { transform: translateY(-2px); }
+  @media (max-width: 700px) {
+    .support { grid-template-columns: 1fr; }
+    .bench-row { grid-template-columns: 44px minmax(0, 1fr) 84px; }
+  }
+
   @media (max-width: 960px) {
     .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .stat:nth-child(2) { border-right: 0; }
@@ -452,9 +533,11 @@
     </a>
     <nav class="links" aria-label="Primary">
       <a href="#measured">Speed</a>
+      <a href="#benchmarks">Benchmarks</a>
       <a href="#features">Features</a>
       <a href="#previews">Previews</a>
       <a href="#downloads">Downloads</a>
+      <a href="#support">Support</a>
       <a href="#faq">FAQ</a>
     </nav>
     <div class="head-actions">
@@ -531,10 +614,45 @@
       </p>
     </section>
 
+    <section id="benchmarks" aria-labelledby="benchmarks-title">
+      <div class="sec-head">
+        <div>
+          <span class="mono">Benchmarks</span>
+          <h2 id="benchmarks-title">Lighter, measured.</h2>
+        </div>
+        <p>One machine, one fixture, one script. Pick a metric; the bars are the same numbers that shipped in the README.</p>
+      </div>
+      <div class="bench" data-bench>
+        <div class="bench-tabs" role="tablist" aria-label="Benchmark metric">
+          <button type="button" role="tab" aria-selected="true" data-metric="memory">Memory</button>
+          <button type="button" role="tab" aria-selected="false" data-metric="cpu">Idle CPU</button>
+          <button type="button" role="tab" aria-selected="false" data-metric="window">Window</button>
+          <button type="button" role="tab" aria-selected="false" data-metric="cli">CLI</button>
+        </div>
+        <div class="bench-body">
+          <div class="bench-row">
+            <span class="bench-name">0.3.7</span>
+            <div class="bench-track"><span class="bench-bar old" data-bar="old"></span></div>
+            <b class="bench-value" data-value="old">80.8 MB</b>
+          </div>
+          <div class="bench-row">
+            <span class="bench-name">0.4.0</span>
+            <div class="bench-track"><span class="bench-bar new" data-bar="new"></span></div>
+            <b class="bench-value" data-value="new">31.9 MB</b>
+          </div>
+        </div>
+        <div class="bench-foot">
+          <span class="bench-delta" data-delta aria-live="polite">−60%</span>
+          <span class="bench-caption" data-caption>Idle working set, window shown</span>
+        </div>
+      </div>
+      <p class="note">Measured on 2026-10-28 with <code>tools/bench.ps1</code>. 0.6.0 keeps the 0.4.0 baseline, adds the game-process work below, and caches the native extraction; the script does not rank other launchers, because that needs the same host, build and disk cache.</p>
+    </section>
+
     <section id="performance" aria-labelledby="performance-title">
       <div class="sec-head">
         <div>
-          <span class="mono">What 0.5 changes</span>
+          <span class="mono">What changed</span>
           <h2 id="performance-title">The game gets the machine.</h2>
         </div>
         <p>Every lever is applied at spawn, held for the life of the process, and released on exit.</p>
@@ -561,7 +679,13 @@
           <p>Parallel reference processing and no shared <code>hsperfdata</code> mapping. Region sizes, pause targets, and thread counts stay on HotSpot's ergonomics &mdash; unmeasured GC knobs are not worth the risk.</p>
         </article>
       </div>
-      <p class="note">In the repository now; the next tagged build carries it. Downloads below point at the latest published tag.</p>
+        <article class="row">
+          <span class="n">05</span>
+          <h3>Natives unpack once</h3>
+          <p>The first launch of a version extracts its LWJGL, JNA and Netty natives into a cache keyed by the version document and every native jar's size and mtime. Later launches reuse that directory instead of unzipping it again, and an upgraded jar always produces a new key.</p>
+        </article>
+      </div>
+      <p class="note">The game-process work shipped in 0.5.0; the native cache is new in 0.6.0. Downloads below point at the latest published tag.</p>
     </section>
 
     <section id="features" aria-labelledby="features-title">
@@ -650,6 +774,14 @@
         <figure>
           <img src="assets/app-settings.png" width="1080" height="700" loading="lazy" decoding="async" alt="Settings tab: heap, automation, integrations, and community links">
           <figcaption><span>Settings</span><span>Heap · automation · keys</span></figcaption>
+        </figure>
+        <figure>
+          <img src="assets/app-modpacks.png" width="1080" height="700" loading="lazy" decoding="async" alt="Modpacks tab: browse CurseForge and Modrinth packs with loader and version filters">
+          <figcaption><span>Modpacks</span><span>Browse · install · update</span></figcaption>
+        </figure>
+        <figure>
+          <img src="assets/app-editor.png" width="1080" height="700" loading="lazy" decoding="async" alt="Instance editor: name, Minecraft version, loader, memory and Java path in one panel">
+          <figcaption><span>Instance editor</span><span>Version · loader · memory</span></figcaption>
         </figure>
       </div>
     </section>
@@ -799,6 +931,31 @@
       </div>
     </section>
 
+    <section id="support" aria-labelledby="support-title">
+      <div class="sec-head">
+        <div>
+          <span class="mono">Support</span>
+          <h2 id="support-title">Free, and funded in the open.</h2>
+        </div>
+        <p>No ads, no trackers, no paid tier. Sponsorship keeps the runners and the signing work paid.</p>
+      </div>
+      <div class="support">
+        <a class="support-card support-card--primary" href="https://github.com/sponsors/fuvji" rel="noreferrer">
+          <span class="mono">GitHub Sponsors</span>
+          <strong>Fund the next release</strong>
+          <p>Monthly or one-time, billed by GitHub. Cancel whenever you like; the download stays free either way.</p>
+          <span class="support-cta">Sponsor Kaelis ↗</span>
+        </a>
+        <div class="support-card">
+          <span class="mono">Sponsor slot · open</span>
+          <strong>Put your project here.</strong>
+          <p>One labelled card, plain HTML, no script and no cookie. Reviewed by hand; Minecraft servers, mods and tooling welcome.</p>
+          <a class="support-cta" href="https://github.com/fuvji/kaelis/issues/new?title=Sponsorship%3A%20" rel="noreferrer">Ask about a placement ↗</a>
+        </div>
+      </div>
+      <p class="note">The page loads nothing from a third party. A sponsor is a direct placement, never an ad auction, and <a href="https://github.com/fuvji/kaelis/blob/main/SPONSORS.md" rel="noreferrer">the policy is public</a>.</p>
+    </section>
+
     <section id="faq" aria-labelledby="faq-title">
       <div class="sec-head">
         <div>
@@ -856,6 +1013,7 @@
       <div class="foot-col">
         <small>Product</small>
         <a href="#performance">Performance</a>
+        <a href="#benchmarks">Benchmarks</a>
         <a href="#features">Features</a>
         <a href="#previews">Previews</a>
         <a href="#film">Film</a>
@@ -875,6 +1033,7 @@
         <a href="https://discord.gg/fvrdYzrQjq" rel="noreferrer">Discord</a>
         <a href="https://github.com/fuvji/kaelis/blob/main/CHANGELOG.md" rel="noreferrer">Changelog</a>
         <a href="https://github.com/fuvji/kaelis/blob/main/LICENSE" rel="noreferrer">License</a>
+        <a href="https://github.com/sponsors/fuvji" rel="noreferrer">Sponsor</a>
         <a href="llms.txt">llms.txt</a>
       </div>
     </div>
@@ -952,6 +1111,68 @@
       document.body.appendChild(area);
       area.select();
       try { document.execCommand("copy"); done(); } finally { document.body.removeChild(area); }
+    }
+    // One observer, no scroll handler. Elements are only hidden when the
+    // class was set before paint, so a blocked script leaves the page intact.
+    var revealables = document.querySelectorAll(
+      "section .sec-head, section .stats, section .rows, section .previews, section .film, section .dl, section .cmds, section .share, section .faq, section .bench, section .support"
+    );
+    if ("IntersectionObserver" in window && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      var observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("in");
+          observer.unobserve(entry.target);
+        });
+      }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
+      revealables.forEach(function (node, index) {
+        node.classList.add("reveal");
+        node.style.transitionDelay = Math.min(index % 4, 3) * 60 + "ms";
+        observer.observe(node);
+      });
+    }
+
+    // The chart is fed from the README table, not from invented competitor
+    // numbers. Switching a metric rewrites widths, values, delta and caption.
+    var benchmarks = {
+      memory: { before: 80.8, after: 31.9, unit: "MB", digits: 1, caption: "Idle working set, window shown" },
+      cpu: { before: 5.13, after: 0.57, unit: "% of a core", digits: 2, caption: "Idle CPU, hidden for 60 s" },
+      window: { before: 313, after: 311, unit: "ms", digits: 0, caption: "Process start to a painted window" },
+      cli: { before: 79, after: 78, unit: "ms", digits: 0, caption: "--version, process spawn included" }
+    };
+    var bench = document.querySelector("[data-bench]");
+    if (bench) {
+      var oldBar = bench.querySelector('[data-bar="old"]');
+      var newBar = bench.querySelector('[data-bar="new"]');
+      var oldValue = bench.querySelector('[data-value="old"]');
+      var newValue = bench.querySelector('[data-value="new"]');
+      var delta = bench.querySelector("[data-delta]");
+      var caption = bench.querySelector("[data-caption]");
+      var formatValue = function (value, metric) {
+        var unit = metric.unit.charAt(0) === "%" ? "" : " ";
+        return value.toFixed(metric.digits) + unit + metric.unit;
+      };
+      var renderBench = function (key) {
+        var metric = benchmarks[key];
+        if (!metric) return;
+        oldBar.style.width = "100%";
+        newBar.style.width = Math.max((metric.after / metric.before) * 100, 1.5) + "%";
+        oldValue.textContent = formatValue(metric.before, metric);
+        newValue.textContent = formatValue(metric.after, metric);
+        caption.textContent = metric.caption;
+        var change = 1 - metric.after / metric.before;
+        delta.textContent = Math.abs(change) < 0.02
+          ? "−" + (metric.before - metric.after) + " " + metric.unit
+          : "−" + Math.round(change * 100) + "%";
+      };
+      var metrics = bench.querySelectorAll("[data-metric]");
+      metrics.forEach(function (button) {
+        button.addEventListener("click", function () {
+          metrics.forEach(function (other) { other.setAttribute("aria-selected", String(other === button)); });
+          renderBench(button.dataset.metric);
+        });
+      });
+      renderBench("memory");
     }
   })();
 </script>
