@@ -28,20 +28,18 @@ function Format-Size([long]$bytes) {
     return "$bytes B"
 }
 
-# Windows is packaged by the local release script, so its three artifacts are
-# required. The Linux and macOS artifacts are built only by the release
-# workflow; the page keeps its last-known fallback when they are not fetched.
+# Windows is one executable. The Linux and macOS artifacts are built only by
+# the release workflow; the page keeps its last-known fallback when they are not
+# fetched.
 $artifacts = [ordered]@{
     "exe"      = "Kaelis.exe"
-    "zip"      = "Kaelis-Portable.zip"
-    "setup"    = "Kaelis-Setup.exe"
     "dmg"      = "Kaelis-macos-universal.dmg"
     "maczip"   = "Kaelis-macos-universal.zip"
     "deb"      = "Kaelis-linux-x64.deb"
     "appimage" = "Kaelis-linux-x64.AppImage"
     "targz"    = "Kaelis-linux-x64.tar.gz"
 }
-$required = @("exe", "zip", "setup")
+$required = @("exe")
 
 foreach ($key in $artifacts.Keys) {
     $name = $artifacts[$key]

@@ -5,16 +5,13 @@ Linux. Every artifact is the same launcher; pick the form that fits your OS.
 
 ## Windows 10 / 11 · x64
 
-1. Run `Kaelis.exe`, or extract `Kaelis-Portable.zip` into a folder you can write
-   to (a USB stick works).
-2. Double-click it. No installer, no runtime, and no first-run download of the
-   launcher itself.
+1. Put `Kaelis.exe` in a folder you can write to (a USB stick works).
+2. Double-click it. No installer, no archive, no runtime, and no first-run
+   download of the launcher itself.
 
-`Kaelis-Setup.exe` is the optional per-user installer with a Start menu shortcut
-and uninstaller; it needs no administrator rights. The portable build keeps
-instances, settings, and the managed Java runtime in the platform data root
-shown by `kaelis --status --json`; set `KAELIS_DATA_DIR` to keep everything
-beside the executable instead.
+The executable keeps instances, settings, and the managed Java runtime in the
+platform data root shown by `kaelis --status --json`; set `KAELIS_DATA_DIR` to
+keep everything beside the executable instead.
 
 ## macOS 11+ · Apple silicon and Intel
 

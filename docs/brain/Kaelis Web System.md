@@ -23,7 +23,6 @@ artifact row is a direct link when scripting is off.
 
 | Token | Value | Use |
 |---|---:|---|
-| `--r-xs` | 6 px | tiny details |
 | `--r-sm` | 10 px | skip link, small controls |
 | `--r-md` | 14 px | commands, disclosures |
 | `--r-lg` | 20 px | previews, stats, support |
@@ -48,8 +47,8 @@ zero edge and a small 4 px value edge so length stays readable.
 - The picker detects Windows, macOS or Linux from `userAgentData` / `platform`
   and offers the native artifact. iPadOS (a touch-capable `MacIntel`) and Linux
   ARM are deliberately not mapped to the x64-only Linux packages.
-- Windows recommends the portable ZIP; macOS the universal DMG; Linux the
-  AppImage. Every format remains available in the rows below.
+- Windows recommends the single EXE; macOS the universal DMG; Linux the
+  AppImage. Every platform row remains available below.
 - No new request: the picker only rewrites local links.
 - macOS ZIP and Linux `tar.gz` have their own hydrated size/hash slots. The
   static fallbacks match the v0.4.6 release digests, not the older files that may
@@ -70,7 +69,10 @@ zero edge and a small 4 px value edge so length stays readable.
 ## Performance rules
 
 - Hero screenshot is the only preloaded image; previews are lazy.
-- Film has `preload="none"`.
+- Film has `preload="none"`. Its 147,409 B poster is not requested until the
+  film is within 300 px; a 520×944 Chromium check saw it absent at the top and
+  present after scroll. The play control links to the MP4 before JavaScript.
+- Sections paint immediately; there is no reveal observer or `js` marker.
 - `content-visibility: auto` on below-fold sections.
 - No third-party embeds; no ad network. Sponsorship is a hand-reviewed link.
 - Preview cards use a small perspective tilt on fine pointers only; the

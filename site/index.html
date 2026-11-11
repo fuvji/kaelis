@@ -9,7 +9,6 @@
 <meta name="author" content="Kaelis Labs">
 <meta name="theme-color" content="#08090b">
 <meta name="color-scheme" content="dark">
-<script>document.documentElement.classList.add("js");</script>
 <link rel="canonical" href="https://fuvji.github.io/kaelis/">
 <meta property="og:site_name" content="Kaelis">
 <meta property="og:locale" content="en_US">
@@ -44,7 +43,7 @@
       "processorRequirements": "x86_64 or arm64",
       "softwareVersion": "0.4.6",
       "softwareRequirements": "No runtime to install; Java is provisioned automatically",
-      "downloadUrl": "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Portable.zip",
+      "downloadUrl": "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe",
       "installUrl": "https://fuvji.github.io/kaelis/#downloads",
       "screenshot": "https://fuvji.github.io/kaelis/assets/app-overview.png",
       "license": "https://github.com/fuvji/kaelis/blob/main/LICENSE",
@@ -95,7 +94,7 @@
         {
           "@type": "Question",
           "name": "Which platforms are supported?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Windows 10 and 11 ship as an installer and a portable ZIP. macOS 11+ and Linux build from the same Rust workspace with one command." }
+          "acceptedAnswer": { "@type": "Answer", "text": "Windows 10 and 11 ship as one portable EXE. macOS 11+ and Linux build from the same Rust workspace with one command." }
         }
       ]
     }
@@ -302,6 +301,8 @@
   /* Film --------------------------------------------------------------- */
   .film { position: relative; margin: 0; border: 1px solid var(--line-strong); border-radius: 14px; overflow: hidden; background: #05060a; }
   .film video { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+  .film-poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+  .film[data-playing="true"] .film-poster { display: none; }
   .film-play {
     position: absolute; inset: 0;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
@@ -373,20 +374,6 @@
   }
   .cmd button:hover { color: var(--text); background: #12141a; }
 
-  /* Share -------------------------------------------------------------- */
-  .share { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr); gap: 32px; align-items: center; }
-  .hashtag {
-    margin: 0;
-    font-family: var(--mono);
-    font-size: clamp(3rem, 9vw, 7rem);
-    line-height: 0.9;
-    letter-spacing: -0.06em;
-    color: var(--accent);
-  }
-  .share p { margin: 16px 0 0; color: var(--muted); max-width: 42ch; font-size: 14.5px; }
-  .share-actions { display: flex; flex-wrap: wrap; gap: 10px; }
-  .share-actions .btn { min-height: 42px; }
-
   /* FAQ ---------------------------------------------------------------- */
   .faq { border-top: 1px solid var(--line-strong); }
   .faq details { border-bottom: 1px solid var(--line); }
@@ -411,27 +398,8 @@
   .legal { margin-top: 32px; padding-top: 18px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 12px; }
 
   /* Motion ------------------------------------------------------------- */
-  @keyframes rise {
-    from { opacity: 0; transform: translateY(16px); }
-    to { opacity: 1; transform: none; }
-  }
-  .hero .eyebrow, .hero h1, .hero .lede, .hero-actions, .hero-meta {
-    animation: rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
-  }
-  .hero h1 { animation-delay: 60ms; }
-  .hero .lede { animation-delay: 120ms; }
-  .hero-actions { animation-delay: 180ms; }
-  .hero-meta { animation-delay: 240ms; }
-  .hero .shot { animation: rise 800ms cubic-bezier(0.2, 0.7, 0.2, 1) 260ms both; }
-  .js .reveal {
-    opacity: 0; transform: translateY(14px);
-    transition: opacity 600ms cubic-bezier(0.2, 0.7, 0.2, 1), transform 600ms cubic-bezier(0.2, 0.7, 0.2, 1);
-  }
-  .js .reveal.in { opacity: 1; transform: none; }
-  @media (prefers-reduced-motion: reduce) {
-    .hero .eyebrow, .hero h1, .hero .lede, .hero-actions, .hero-meta, .hero .shot { animation: none; }
-    .js .reveal, .js .reveal.in { opacity: 1; transform: none; transition: none; }
-  }
+  /* Content paints immediately. Only pointer-driven transforms remain, and
+     the reduced-motion block below freezes those too. */
 
   /* Benchmarks --------------------------------------------------------- */
   .bench {
@@ -494,7 +462,6 @@
     .stat:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
     .foot { grid-template-columns: 1fr 1fr; }
     .foot-brand { grid-column: 1 / -1; }
-    .share { grid-template-columns: 1fr; }
     .dl-row { grid-template-columns: minmax(0, 1fr) auto; }
     .dl-row .facts { grid-column: 1 / -1; }
   }
@@ -505,7 +472,7 @@
     .row p { grid-column: 2 / -1; }
     .dl-row { grid-template-columns: 1fr; }
     .dl-row .btn { justify-self: start; }
-    .dl-row .btn, .share-actions .btn { min-height: 44px; }
+    .dl-row .btn { min-height: 44px; }
   }
   @media (max-width: 520px) {
     .stats { grid-template-columns: 1fr; }
@@ -517,7 +484,7 @@
 
   /* Smooth geometry, texture, and the benchmark lab -------------------- */
   :root {
-    --r-xs: 6px; --r-sm: 10px; --r-md: 14px; --r-lg: 20px;
+    --r-sm: 10px; --r-md: 14px; --r-lg: 20px;
     --r-xl: 28px; --r-pill: 999px;
   }
   .btn, .btn-quiet { border-radius: var(--r-pill); }
@@ -1073,18 +1040,20 @@
         <p>No bytes are fetched until you press play.</p>
       </div>
       <figure class="film" data-film data-playing="false">
-        <video id="kaelis-film" controls playsinline preload="none" poster="media/kaelis-intro-poster.jpg" width="1920" height="1080" aria-label="Kaelis in 26 seconds">
+        <video id="kaelis-film" controls playsinline preload="none" width="1920" height="1080" aria-label="Kaelis in 26 seconds">
           <source src="media/kaelis-intro.mp4" type="video/mp4">
           <track kind="captions" src="media/kaelis-intro.vtt" srclang="en" label="English">
           Your browser cannot play this video. <a href="media/kaelis-intro.mp4">Download the MP4</a>.
         </video>
-        <button class="film-play" type="button" data-film-play aria-label="Play the 26 second film">
+        <img class="film-poster" data-film-poster data-src="media/kaelis-intro-poster.jpg" width="1920" height="1080" decoding="async" fetchpriority="low" alt="">
+        <noscript><img class="film-poster" src="media/kaelis-intro-poster.jpg" width="1920" height="1080" alt=""></noscript>
+        <a class="film-play" href="media/kaelis-intro.mp4" data-film-play aria-label="Play the 26 second film">
           <span>
             <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M4 2.8 13 8l-9 5.2z"/></svg>
             Play the film
           </span>
           <span class="mono">1080p60 · 26 s</span>
-        </button>
+        </a>
       </figure>
       <div class="film-meta">
         <span>1080p60 · 5.2 MB</span>
@@ -1104,15 +1073,15 @@
       <div class="dl-smart" data-download-picker>
         <div class="dl-smart-copy">
           <span class="mono">Smart download <em class="dl-detect" data-download-detect hidden>detected</em></span>
-          <strong data-download-title aria-live="polite">Windows · portable ZIP</strong>
-          <p data-download-copy>Windows 10 / 11 x64 · extract and run · no admin.</p>
+          <strong data-download-title aria-live="polite">Windows · EXE</strong>
+          <p data-download-copy>Windows 10 / 11 x64 · one file · no installer or admin.</p>
         </div>
         <div class="dl-smart-os" role="group" aria-label="Choose your platform">
           <button type="button" data-os="windows" aria-pressed="true">Windows</button>
           <button type="button" data-os="macos" aria-pressed="false">macOS</button>
           <button type="button" data-os="linux" aria-pressed="false">Linux</button>
         </div>
-        <a class="btn btn-primary" data-download-go href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Portable.zip" download>
+        <a class="btn btn-primary" data-download-go href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe" download>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5M5 19h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span data-download-go-label>Download for Windows</span>
         </a>
@@ -1120,28 +1089,17 @@
       <div class="dl">
         <div class="dl-row">
           <div>
-            <h3>Windows portable ZIP <span class="mono" style="color:var(--accent)">recommended</span></h3>
-            <small>Extract anywhere and run. Instances stay in your profile.</small>
+            <h3>Windows executable</h3>
+            <small>One portable Kaelis.exe. No installer, no archive, no admin.</small>
           </div>
           <div class="facts">
-            <span><span data-release="exe-size">16.4 MB</span> app</span>
-            <span><span data-release="zip-size">8.0 MB</span> zip</span>
+            <span><span data-release="exe-size">16.4 MB</span> exe</span>
             <span>Windows 10 / 11 · x64</span>
           </div>
           <div class="facts"><span>No install</span><span>No admin</span></div>
           <div>
-            <a class="btn btn-primary" href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Portable.zip" download>Download</a>
-            <a class="btn btn-ghost" href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe" download>.exe</a>
+            <a class="btn btn-primary" href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe" download>Download</a>
           </div>
-        </div>
-        <div class="dl-row">
-          <div>
-            <h3>Windows installer</h3>
-            <small>Per-user install, Start menu shortcut, clean uninstaller.</small>
-          </div>
-          <div class="facts"><span><span data-release="setup-size">5.8 MB</span> setup</span><span>No admin rights</span></div>
-          <div class="facts"><span>Clean uninstall</span></div>
-          <div><a class="btn btn-ghost" href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Setup.exe" download>Download</a></div>
         </div>
         <div class="dl-row">
           <div>
@@ -1180,8 +1138,6 @@
         <div class="body">
           <p>Every artifact is hashed at release time. Published files: <a href="https://github.com/fuvji/kaelis/releases/latest/download/SHA256SUMS.txt">SHA256SUMS.txt</a> and the generated <a href="https://github.com/fuvji/kaelis/releases/latest/download/KAELIS-LINKS.txt">URL &amp; installation index</a>.</p>
           <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">2d5b03bae73066e0fdf0366bdc62cd48a68e506d3f57cc431680538cb1db0370</code></div>
-          <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">69d185b9a476bebc80f369fe9faf82863cb072f938083498d01d9960121464eb</code></div>
-          <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">b1ed1b81f4d5bbd20a7e42d8a4690406dfb48e07101495fd877dd8729012d209</code></div>
           <div class="hash"><span>Kaelis-macos-universal.dmg</span><code data-release="dmg-hash">7f67e99de3bda42ee6695d7577062d7769d60b9fde50101128cad531b795e5f9</code></div>
           <div class="hash"><span>Kaelis-macos-universal.zip</span><code data-release="maczip-hash">81bf7cb9c2124047941eab7bd9d43321d848374d911ef1aadc51b95c4a1f8d89</code></div>
           <div class="hash"><span>Kaelis-linux-x64.deb</span><code data-release="deb-hash">83adfeacc9bb672357b15aa7d9d8993eba8cbf63f62b142a7256782e2401cf5d</code></div>
@@ -1267,7 +1223,7 @@
         </details>
         <details>
           <summary>Can I run it without installing?</summary>
-          <p>Yes. Use the portable ZIP. Set <code>KAELIS_DATA_DIR</code> to keep instances and settings beside the executable.</p>
+          <p>Yes. Windows ships as one portable EXE. Set <code>KAELIS_DATA_DIR</code> to keep instances and settings beside the executable.</p>
         </details>
         <details>
           <summary>Will realtime priority hurt the rest of the desktop?</summary>
@@ -1302,8 +1258,7 @@
       </div>
       <div class="foot-col">
         <small>Downloads</small>
-        <a href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Portable.zip" download>Windows portable</a>
-        <a href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Setup.exe" download>Windows installer</a>
+        <a href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe" download>Windows EXE</a>
         <a href="https://github.com/fuvji/kaelis/releases/latest/download/SHA256SUMS.txt">Checksums</a>
         <a href="https://github.com/fuvji/kaelis/releases/latest/download/KAELIS-LINKS.txt">URL &amp; install index</a>
         <a href="https://github.com/fuvji/kaelis/releases" rel="noreferrer">All releases</a>
@@ -1332,10 +1287,10 @@
     // static picker and every direct row below still work on their own.
     var platforms = {
       windows: {
-        title: "Windows · portable ZIP",
-        copy: "Windows 10 / 11 x64 · extract and run · no admin.",
+        title: "Windows · EXE",
+        copy: "Windows 10 / 11 x64 · one file · no installer or admin.",
         action: "Download for Windows",
-        url: "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Portable.zip"
+        url: "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe"
       },
       macos: {
         title: "macOS · universal DMG",
@@ -1394,21 +1349,31 @@
     var year = document.getElementById("year");
     if (year) year.textContent = new Date().getFullYear();
 
-    // The film is a poster and a button until someone asks for it, so the page
-    // never spends 5 MB of bandwidth on a visitor who only wanted a download.
+    // The film is a poster and a play link until someone asks for it, so the
+    // page never spends 5 MB of bandwidth on a visitor who only wanted a download.
     var frame = document.querySelector("[data-film]");
     var film = document.getElementById("kaelis-film");
     var play = document.querySelector("[data-film-play]");
     if (frame && film && play) {
-      play.addEventListener("click", function () {
+      play.addEventListener("click", function (event) {
+        event.preventDefault();
         frame.dataset.playing = "true";
         var started = film.play();
         if (started && started.catch) started.catch(function () {});
       });
-      film.addEventListener("pause", function () {
-        // Leaving the controls visible is deliberate; the overlay only ever
-        // covers the poster, so resuming uses the native control bar.
-      });
+
+      var poster = document.querySelector("[data-film-poster]");
+      if (poster) {
+        var loadPoster = function () {
+          if (!poster.getAttribute("src")) poster.src = poster.dataset.src;
+          window.removeEventListener("scroll", maybeLoadPoster);
+        };
+        var maybeLoadPoster = function () {
+          if (frame.getBoundingClientRect().top <= window.innerHeight + 300) loadPoster();
+        };
+        window.addEventListener("scroll", maybeLoadPoster, { passive: true });
+        maybeLoadPoster();
+      }
     }
 
     document.querySelectorAll("[data-copy]").forEach(function (button) {
@@ -1423,28 +1388,6 @@
       });
     });
 
-    document.querySelectorAll("[data-copy-link]").forEach(function (button) {
-      button.addEventListener("click", function () {
-        copy(window.location.href, function () {
-          button.textContent = "Copied";
-          setTimeout(function () { button.textContent = "Copy link"; }, 1400);
-        });
-      });
-    });
-
-    var share = document.querySelector("[data-share]");
-    if (share && navigator.share) {
-      share.addEventListener("click", function () {
-        navigator.share({
-          title: "Kaelis — the fastest, lightest Minecraft launcher",
-          text: "Native Rust. 297 ms window, 18.9 MB idle, 0.00% idle CPU. #Kaelis",
-          url: window.location.href
-        }).catch(function () {});
-      });
-    } else if (share) {
-      share.hidden = true;
-    }
-
     function copy(text, done) {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(done, function () {});
@@ -1456,26 +1399,6 @@
       area.select();
       try { document.execCommand("copy"); done(); } finally { document.body.removeChild(area); }
     }
-    // One observer, no scroll handler. Elements are only hidden when the
-    // class was set before paint, so a blocked script leaves the page intact.
-    var revealables = document.querySelectorAll(
-      "section .sec-head, section .stats, section .rows, section .previews, section .film, section .dl, section .cmds, section .share, section .faq, section .bench, section .support"
-    );
-    if ("IntersectionObserver" in window && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      var observer = new IntersectionObserver(function (entries) {
-        entries.forEach(function (entry) {
-          if (!entry.isIntersecting) return;
-          entry.target.classList.add("in");
-          observer.unobserve(entry.target);
-        });
-      }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
-      revealables.forEach(function (node, index) {
-        node.classList.add("reveal");
-        node.style.transitionDelay = Math.min(index % 4, 3) * 60 + "ms";
-        observer.observe(node);
-      });
-    }
-
     // The benchmark lab uses the same harness for every release. Bars start at
     // zero; the value is printed directly, so a tiny difference cannot read as
     // a dramatic one. Memory is the only metric with a real win, and the copy

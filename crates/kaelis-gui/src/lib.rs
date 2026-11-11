@@ -1106,9 +1106,9 @@ pub struct KaelisApp {
     /// Whether the compositor has been asked for rounded corners yet, and how
     /// many frames the ask has been retried for.
     #[cfg(windows)]
-    window_rounded: bool,
+    window_frame_cleared: bool,
     #[cfg(windows)]
-    window_round_tries: u8,
+    window_frame_tries: u8,
     /// The window is hidden because a game started, not by the user. Only this
     /// case restores the window automatically when the last game exits.
     hidden_for_game: bool,
@@ -1535,9 +1535,9 @@ impl KaelisApp {
             window_size: launcher_settings.window_size,
             window_size_due: None,
             #[cfg(windows)]
-            window_rounded: false,
+            window_frame_cleared: false,
             #[cfg(windows)]
-            window_round_tries: 0,
+            window_frame_tries: 0,
             ui_switches_saved: UiSwitches {
                 show_snapshots: launcher_settings.show_snapshots,
                 show_alpha: launcher_settings.show_alpha,
@@ -11383,6 +11383,12 @@ impl KaelisApp {
 }
 
 impl eframe::App for KaelisApp {
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        // Keep the first clear dark. The default light clear can flash a pale
+        // line around the undecorated window before the backdrop is painted.
+        [4.0 / 255.0, 5.0 / 255.0, 7.0 / 255.0, 1.0]
+    }
+
     fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
         // The title-bar close button takes the same instant path as Quit. A
         // graceful toolkit shutdown would first paint a frame, then join every
@@ -11540,14 +11546,14 @@ impl eframe::App for KaelisApp {
         self.persist_switches_if_changed();
         self.track_window_size(context);
         #[cfg(windows)]
-        if !self.window_rounded {
+        if !self.window_frame_cleared {
             // The compositor needs the real handle, which exists once the
             // window does. A retry is bounded so a system that never answers
             // cannot turn this into a repaint loop, and a system that answers
             // with an error (Windows 10) is done on the first try.
-            self.window_rounded = platform::round_window_corners();
-            if !self.window_rounded && self.window_round_tries < 20 {
-                self.window_round_tries += 1;
+            self.window_frame_cleared = platform::clear_window_frame();
+            if !self.window_frame_cleared && self.window_frame_tries < 4 {
+                self.window_frame_tries += 1;
                 context.request_repaint();
             }
         }

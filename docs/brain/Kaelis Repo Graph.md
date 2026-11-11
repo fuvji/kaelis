@@ -79,7 +79,7 @@ link without JavaScript.
 
 | Platform | Artifacts | Architecture |
 | --- | --- | --- |
-| Windows 10/11 | portable ZIP, standalone EXE, per-user setup | x64 |
+| Windows 10/11 | standalone portable EXE | x64 |
 | macOS 11+ | universal DMG, universal ZIP | Apple silicon + Intel |
 | Linux | `.deb`, AppImage, `tar.gz` | x64 |
 

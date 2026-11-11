@@ -1874,8 +1874,8 @@ fn native_options(
             //
             // The surface stays opaque on purpose. The launcher paints every
             // pixel it owns, so a transparent window would buy nothing and cost
-            // a full-surface alpha blend on every frame; the rounded corners
-            // come from the compositor instead (see platform::round_window_corners).
+            // a full-surface alpha blend on every frame; the native frame and
+            // rounded clip are removed (see platform::clear_window_frame).
             .with_app_id("kaelis"),
         ..Default::default()
     }

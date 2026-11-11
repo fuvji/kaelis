@@ -20,7 +20,7 @@ updated: 2026-11-11
 ## Repo
 
 - Branch `main`.
-- Site/repo graph commit: `ca11a2c`; this upkeep follows it.
+- Site/repo graph commit: `330f3a0`; this packaging/page pass follows it.
 - Latest tag: `v0.4.6` (2026-11-10T22:02:25Z).
 - Repo graph baseline: `f6da23c`; see [[Kaelis Repo Graph]].
 - Windows release asset: `Kaelis.exe`, 17,250,816 B.
@@ -34,10 +34,18 @@ updated: 2026-11-11
 - Memory 86.6 → 18.9 MB (−78%); startup and CLI flat/noise.
 - Radius 6/10/14/20/28/999 px; static grain; transform-only aurora.
 - Seven 1080×700 previews from the 0.4.6 binary.
-- Smart download picker: Windows portable ZIP, macOS universal DMG, Linux
-  AppImage; every format remains a direct row. No third-party request.
-- Eight artifacts have size/hash slots; static fallbacks now match the v0.4.6
-  release digests, not the older local `site/downloads` copies.
+- Smart download picker: Windows EXE, macOS universal DMG, Linux AppImage;
+  direct rows cover Windows EXE, macOS DMG/ZIP and Linux `.deb`/AppImage/`tar.gz`.
+  No third-party request.
+- Windows ZIP and setup EXE are retired from current links and future releases;
+  the 0.4.6 release keeps them as history.
+- Six artifacts have size/hash slots; static fallbacks match the v0.4.6 release
+  digests, not the older local `site/downloads` copies.
+- The Windows native frame is cleared through DWM attributes and the first clear
+  is dark, so the undecorated window does not flash a pale edge.
+- The film poster is deferred until the film is within 300 px. In a 520×944
+  Chromium check, its 147,409 B was absent from the initial resource list and
+  loaded after scrolling. The play control is a real MP4 link before JavaScript.
 - Preview tilt and the benchmark trend draw are disabled by reduced motion.
 - Superseded preview-card motion rules and the old button easing were removed;
   the later motion block and shared control easing are the only definitions.
@@ -60,10 +68,10 @@ updated: 2026-11-11
 ## Open
 
 - Brain synced into the user's Obsidian vault under `01-Projects/Kaelis/Brain`.
-- CI for `ca11a2c` completed: Windows, macOS and Site assets passed; Ubuntu
-  stopped in `apt-get` before Rust. The 2026-11-11 upkeep retries apt fetches,
-  caps the step at ten minutes and updates the action majors; its run is the
-  gate.
+- CI at `330f3a0` passed Windows, Ubuntu, macOS and Site assets.
+- The single-EXE/frame/lazy-poster pass is the next CI gate.
+- Dependabot opened #1–#6 for major dependency updates; review them instead of
+  merging by default.
 - Plan the first measured 0.4.7 optimization.
 
 ## Links

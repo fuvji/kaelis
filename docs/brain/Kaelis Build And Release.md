@@ -46,8 +46,8 @@ Linux also needs `libgtk-3-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`,
 1. Commit and push `main`; wait for CI.
 2. `git tag v<version>` and push the tag.
 3. Release workflow builds Windows, macOS universal and Linux; publishes:
-   `Kaelis.exe`, portable ZIP, setup EXE, macOS ZIP/DMG, Linux tar/deb/AppImage,
-   `KAELIS-LINKS.txt`, `SHA256SUMS.txt`.
+   `Kaelis.exe`, macOS ZIP/DMG, Linux tar/deb/AppImage, `KAELIS-LINKS.txt`,
+   `SHA256SUMS.txt`. Windows has no installer or archive.
 4. Publish job dispatches the Pages deploy.
 5. Verify:
    - release `latest` resolves the new tag;

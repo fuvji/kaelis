@@ -407,46 +407,58 @@ pub(crate) fn hide_to_tray(context: &egui::Context) {
     trim_working_set();
 }
 
-/// Ask the compositor for smoothly rounded corners and no window border.
+/// Remove the native window frame, border and corner rounding.
 ///
-/// The launcher paints its own header, so it has no frame for the system to
-/// round. Windows 11 rounds a resizable window at composition time when asked,
-/// which costs the launcher nothing per frame — no transparent surface, no
-/// per-pixel alpha, no extra draw call. Windows 10 ignores the request and
-/// keeps its own default, so a failed call is not an error.
+/// The launcher paints its own header and every pixel inside the window. DWM
+/// still draws a pale border and applies a rounded-corner clip to a resizable
+/// window, which reads as a white line across the top and a thick outer corner.
+/// Asking for no border, zero visible frame thickness and no rounding removes
+/// those compositor pixels without a transparent surface or a per-frame draw.
+/// Windows 10 ignores attributes it does not know, so a failed call is not an
+/// error.
 ///
-/// Returns `true` once the launcher's window was found and the request made,
-/// so a caller can retry while the handle does not exist yet and stop after it
-/// does — including on a system that answers with an error.
+/// Returns `true` once the launcher's window was found, so a caller can retry
+/// while the handle does not exist yet and stop after it does.
 #[cfg(windows)]
-pub(crate) fn round_window_corners() -> bool {
+pub(crate) fn clear_window_frame() -> bool {
     use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
 
     /// `DWMWA_WINDOW_CORNER_PREFERENCE`.
     const CORNER_PREFERENCE: u32 = 33;
     /// `DWMWA_BORDER_COLOR`.
     const BORDER_COLOR: u32 = 34;
-    /// `DWMWCP_ROUND`: the rounded-rectangle preference.
-    const ROUND: i32 = 2;
+    /// `DWMWA_VISIBLE_FRAME_BORDER_THICKNESS` (Windows 11 22H2 and newer).
+    const FRAME_THICKNESS: u32 = 37;
+    /// `DWMWCP_DONOTROUND`.
+    const NO_ROUNDING: i32 = 1;
     /// `DWMWA_COLOR_NONE`: draw no border at all.
     const NO_BORDER: u32 = 0xFFFF_FFFE;
+    /// No visible 1 px frame around the client area.
+    const NO_FRAME: u32 = 0;
 
     let Some(window) = main_window() else {
         return false;
     };
-    // SAFETY: `window` belongs to this process, and both pointers are valid
-    // for the four bytes the attribute expects.
+    // SAFETY: `window` belongs to this process, and each pointer is valid for
+    // the size the matching attribute expects. Unsupported attributes on older
+    // Windows builds return an error, which is intentionally ignored.
     unsafe {
-        DwmSetWindowAttribute(
+        let _ = DwmSetWindowAttribute(
             window,
             CORNER_PREFERENCE,
-            std::ptr::from_ref(&ROUND).cast(),
+            std::ptr::from_ref(&NO_ROUNDING).cast(),
             std::mem::size_of::<i32>() as u32,
         );
-        DwmSetWindowAttribute(
+        let _ = DwmSetWindowAttribute(
             window,
             BORDER_COLOR,
             std::ptr::from_ref(&NO_BORDER).cast(),
+            std::mem::size_of::<u32>() as u32,
+        );
+        let _ = DwmSetWindowAttribute(
+            window,
+            FRAME_THICKNESS,
+            std::ptr::from_ref(&NO_FRAME).cast(),
             std::mem::size_of::<u32>() as u32,
         );
     }

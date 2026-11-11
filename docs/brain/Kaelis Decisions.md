@@ -38,6 +38,7 @@ updated: 2026-11-10
 
 ## Packaging
 
+- Windows ships as one portable EXE; no ZIP and no installer.
 - All packagers read root `Cargo.toml`; crate manifests use
   `version.workspace = true`.
 - One version feeds About, tray, update checks and package metadata.
@@ -46,7 +47,9 @@ updated: 2026-11-10
 
 - No ad network; GitHub Sponsors only, labelled.
 - Single inline document; no font/framework/CDN dependency.
-- Rounded geometry, transform-only aurora, static grain, reduced motion.
+- Rounded web geometry, transform-only aurora, static grain, reduced motion.
+  The native Windows frame is removed instead of rounded.
+- Sections paint without a reveal observer; the film poster is lazy.
 - Charts are honest: zero baseline, direct values, data table, flat labelled flat.
 
 ## Brain

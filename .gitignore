@@ -7,7 +7,6 @@
 /tools/binutils/
 /tools/msvcrt/
 /tools/nsis/
-/installer/tools/
 
 # Built launcher artifacts: rebuild with `cargo build --release`.
 # Publish them through GitHub Releases instead of history.
@@ -18,6 +17,7 @@
 /site/downloads/*.AppImage
 /site/downloads/*.dmg
 /site/downloads/*.tar.gz
+/site/downloads/KAELIS-LINKS.txt
 
 # Scratch renders and captures
 /media/tmp/

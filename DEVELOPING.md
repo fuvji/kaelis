@@ -113,7 +113,7 @@ is missing from the installed GNU toolchain, so CI is the compile evidence.
 
 The release path also generates `dist/KAELIS-LINKS.txt`, publishes the same
 bytes as [`site/downloads/KAELIS-LINKS.txt`](site/downloads/KAELIS-LINKS.txt),
-and builds a fresh per-user Windows installer. The index lists every runtime endpoint,
+and packages Windows as one portable executable. The index lists every runtime endpoint,
 download, installation path, and project link; `tools/links.ps1` regenerates it,
 prunes legacy link files, and `-Verify` probes the static links. `tools/release.ps1`
 runs it automatically after hashing the new artifacts.
@@ -124,10 +124,10 @@ The product site is a single dependency-free HTML document in
 [`site/`](site/index.html). The Pages workflow at
 [`.github/workflows/pages.yml`](.github/workflows/pages.yml) deploys that
 directory on a push to `main` and on a published release; enable GitHub Pages →
-GitHub Actions once in the repository settings. Because the EXE, ZIP, and Setup
-are release assets rather than git objects, the workflow fetches them into
-`site/downloads` and runs [`tools/hydrate-site.ps1`](tools/hydrate-site.ps1) so
-the visible sizes and hashes always describe the files actually being served.
+GitHub Actions once in the repository settings. Because the EXE and platform packages are release assets rather than git
+objects, the workflow fetches them into `site/downloads` and runs
+[`tools/hydrate-site.ps1`](tools/hydrate-site.ps1) so the visible sizes and
+hashes always describe the files actually being served.
 Brand artwork lives in [`site/assets/kaelis-mark.svg`](site/assets/kaelis-mark.svg); every raster icon and the social card is regenerated from the same geometry with `tools/make-brand-assets.ps1` (1024 px master, 16–256 px ICO, 192/512 PWA icons, 180 px touch icon, 1200x630 card). The mark is a plate-free two-plane dart (`#70a5ff` / `#2e70e8`), so the SVG, ICO, PWA icons, window icon, and site all share one transparent glyph. The film is rebuilt with `tools/build-film.ps1`: six painted stills, a slow push with editorial cuts, a scored 31.7-second 1080p60 MP4, a fresh poster, and captions generated from the same timing table; `tools/narrate.ps1` holds the narration lines and voice direction.
 
 Preview it locally with the same MIME types the host sends:
@@ -172,9 +172,8 @@ sends `text/html`, `application/manifest+json`, and `text/vtt` for their files;
 Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml):
 a `v*` tag builds Windows, macOS (universal), and Linux, publishes one release
 with every artifact, the generated `KAELIS-LINKS.txt`, and a combined
-`SHA256SUMS.txt`. The Windows job installs NSIS, so `Kaelis-Setup.exe` is rebuilt
-from the same fresh binary as the portable download rather than reusing an old
-local setup. The macOS job produces both the ZIP and the DMG; the Linux job
+`SHA256SUMS.txt`. The Windows job publishes one `Kaelis.exe` and builds no
+installer or archive. The macOS job produces both the ZIP and the DMG; the Linux job
 smoke-tests the tarball, the `.deb`, and the AppImage before publishing. The
 publish job dispatches the site deploy so the page can never serve the previous
 release under a new version number. `tools/release.ps1` is the same Windows path

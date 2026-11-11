@@ -44,8 +44,6 @@ jobs:
           tag="${{ github.event.release.tag_name }}"
           pattern_args=(
             --pattern Kaelis.exe
-            --pattern Kaelis-Portable.zip
-            --pattern Kaelis-Setup.exe
             --pattern Kaelis-macos-universal.zip
             --pattern Kaelis-macos-universal.dmg
             --pattern Kaelis-linux-x64.tar.gz
@@ -62,6 +60,16 @@ jobs:
 
       - name: Refresh download sizes and hashes
         run: pwsh -NoProfile -File tools/hydrate-site.ps1
+
+      - name: Keep Windows checksums to the shipped EXE
+        run: |
+          set -euo pipefail
+          grep -vE 'Kaelis-(Portable\.zip|Setup\.exe)' site/downloads/SHA256SUMS.txt \
+            > site/downloads/SHA256SUMS.filtered
+          mv site/downloads/SHA256SUMS.filtered site/downloads/SHA256SUMS.txt
+
+      - name: Refresh the link index
+        run: pwsh -NoProfile -File tools/links.ps1 -Quiet
 
       - name: Keep the deployed artifact to the page
         run: |

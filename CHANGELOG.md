@@ -4,15 +4,25 @@ Every released change, newest first. The product page keeps only the latest.
 
 ## Unreleased
 
+- **Windows ships as one portable file.** The ZIP and setup EXE are retired from
+  the page, release workflow and packaging scripts. `Kaelis.exe` is the single
+  Windows artifact; the 0.4.6 release keeps its old files as history, but no
+  current link points at them.
+- **The compositor frame is gone.** Windows no longer asks DWM for rounded
+  corners; it removes the native border, visible frame and rounded clip instead,
+  and clears the first frame to the dark backdrop so no pale line flashes.
 - **Upkeep moved to current supported releases.** `webbrowser` 1.2.7 is the
   only compatible crate patch left; the workflows now use `checkout@v6`,
   `upload-pages-artifact@v4` and `softprops/action-gh-release@v3`, all with the
   inputs this repository already passes. A weekly Dependabot pass keeps Cargo
   and Actions current without a manual sweep. Linux dependency installs retry
   transient apt fetches and stop after ten minutes instead of hanging.
-- **Dead CSS is gone.** Two superseded preview-card motion rules and the earlier
-  button easing no longer ship; the later motion block and shared control
-  easing are the only definitions. No visual change.
+- **The page ships less dead code.** Two superseded preview-card motion rules,
+  the earlier button easing, unused share/copy-link handlers, the reveal
+  observer and the `js` marker are gone. The film poster is deferred until the
+  film is within 300 px; in a Chromium check at 520×944, its 147,409 B was absent
+  from the initial resource list and loaded after scrolling. The play control is
+  a real MP4 link without JavaScript. CI now checks the macOS ZIP link too.
 - **Downloads choose the right platform.** The page detects Windows, macOS or
   Linux, recommends the native artifact and keeps every direct row. macOS ZIP
   and Linux `tar.gz` now have hydrated sizes and checksums; the no-JavaScript

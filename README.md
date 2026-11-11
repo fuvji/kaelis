@@ -87,7 +87,7 @@ link and local-file import, never scrapers.
 
 | Platform | Downloads |
 | --- | --- |
-| **Windows 10 / 11 · x64** | [Portable ZIP](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Portable.zip) · [Kaelis.exe](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe) · [Installer](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Setup.exe) |
+| **Windows 10 / 11 · x64** | [Kaelis.exe](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe) — one portable file, no installer |
 | **macOS 11+** | [Universal DMG](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.dmg) · [ZIP](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.zip) |
 | **Linux · x64** | [.deb](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.deb) · [AppImage](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.AppImage) · [tar.gz](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.tar.gz) |
 

@@ -60,6 +60,16 @@ $buildPath = Join-Path $dist "build.json"
 if (Test-Path $buildPath) {
     try { $build = Get-Content -Raw $buildPath | ConvertFrom-Json } catch { $build = $null }
 }
+$buildPlatform = if ($null -ne $build -and $build.platform) {
+    $build.platform
+} else {
+    "windows-x86_64, macos-universal, linux-x86_64"
+}
+$buildTime = if ($null -ne $build -and $build.packaged_at) {
+    $build.packaged_at
+} else {
+    "release build"
+}
 
 function Get-Artifact([string]$path) {
     if (-not (Test-Path $path)) { return $null }
@@ -80,12 +90,6 @@ function Format-Size([long]$bytes) {
 }
 
 $exe = Get-Artifact (Join-Path $downloads "Kaelis.exe")
-$zip = Get-Artifact (Join-Path $downloads "Kaelis-Portable.zip")
-$setup = Get-Artifact (Join-Path $downloads "Kaelis-Setup.exe")
-$setupStale = $false
-if ($setup -and $exe) {
-    $setupStale = (Get-Item (Join-Path $downloads "Kaelis-Setup.exe")).LastWriteTimeUtc -lt (Get-Item (Join-Path $downloads "Kaelis.exe")).LastWriteTimeUtc
-}
 
 $sb = New-Object System.Text.StringBuilder
 function Add([string]$text = "") { [void]$sb.Append($text).Append("`n") }
@@ -106,8 +110,8 @@ function Add-Link([string]$label, [string]$url, [string]$note = "") {
 Add "KAELIS - URL, INSTALLATION, AND LINK INDEX"
 Add "=========================================="
 Add "Launcher      Kaelis $version"
-Add "Platform      $($build.platform)"
-Add "Packaged      $($build.packaged_at)"
+Add "Platform      $buildPlatform"
+Add "Packaged      $buildTime"
 Add "Generator     tools/links.ps1 (run again after any endpoint or release change)"
 Add "Repository    https://github.com/fuvji/kaelis"
 Add "Website       https://fuvji.github.io/kaelis/"
@@ -124,9 +128,7 @@ Add "    https://fuvji.github.io/kaelis/"
 Add "  Download section"
 Add "    https://fuvji.github.io/kaelis/#downloads"
 [void]$curated.Add("https://fuvji.github.io/kaelis/#downloads")
-Add-Link "Windows portable EXE" "https://fuvji.github.io/kaelis/downloads/Kaelis.exe" "Single executable, no installer, no runtime prerequisite."
-Add-Link "Windows portable ZIP" "https://fuvji.github.io/kaelis/downloads/Kaelis-Portable.zip" "EXE + LICENSE + portable README."
-Add-Link "Windows installer" "https://fuvji.github.io/kaelis/downloads/Kaelis-Setup.exe" $(if ($setupStale) { "WARNING: this file bundles an older binary; rebuild with tools/release.ps1." } else { "Per-user install under %LOCALAPPDATA%\Programs\Kaelis; no admin rights." })
+Add-Link "Windows executable" "https://fuvji.github.io/kaelis/downloads/Kaelis.exe" "Single portable executable; no installer, archive, or runtime prerequisite."
 Add-Link "Checksums (SHA-256)" "https://fuvji.github.io/kaelis/downloads/SHA256SUMS.txt" "Verify every download with certutil or sha256sum."
 Add-Link "Download README" "https://fuvji.github.io/kaelis/downloads/README.md" "Portable usage, scripting, and verification."
 Add-Link "This index, published" "https://fuvji.github.io/kaelis/downloads/KAELIS-LINKS.txt" "Same generated content as dist/KAELIS-LINKS.txt."
@@ -138,27 +140,18 @@ Add-Link "Linux x64 build" "https://github.com/fuvji/kaelis/releases/latest/down
 Add-Link "Every release" "https://github.com/fuvji/kaelis/releases" "All tagged builds and assets."
 Add-Link "Latest release" "https://github.com/fuvji/kaelis/releases/latest" "Newest tagged release."
 Add-Link "Latest Windows EXE" "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe"
-Add-Link "Latest Windows ZIP" "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Portable.zip"
-Add-Link "Latest Windows installer" "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Setup.exe"
 
 Add-Head "2. INSTALLATION METHODS"
 Add ""
-Add "  2.1 Windows portable (recommended for a current build)"
-Add "    Download Kaelis-Portable.zip, extract it anywhere you can write, and"
-Add "    run Kaelis.exe. There is no installer and no bundled runtime download"
-Add "    for the launcher itself. To keep instances and settings beside the"
-Add "    executable, set KAELIS_DATA_DIR to that folder before launching."
+Add "  2.1 Windows"
+Add "    Download Kaelis.exe and run it from any folder you can write to."
+Add "    There is no installer, archive, or bundled runtime download for the"
+Add "    launcher itself. To keep instances and settings beside the executable,"
+Add "    set KAELIS_DATA_DIR to that folder before launching."
 Add "    Data: %APPDATA%\kaelis\Kaelis\data (default)"
 Add "          %APPDATA%\kaelis\Kaelis\data\instances"
 Add ""
-Add "  2.2 Windows installer"
-Add "    Download Kaelis-Setup.exe and run it. It installs per user under"
-Add "    %LOCALAPPDATA%\Programs\Kaelis, adds Start menu and desktop shortcuts,"
-Add "    registers an uninstaller, and needs no administrator rights."
-Add "    Uninstall: Settings > Apps > Kaelis, or Uninstall.exe in that folder."
-Add "    The installer carries the same Kaelis.exe build as the download page."
-Add ""
-Add "  2.3 macOS"
+Add "  2.2 macOS"
 Add "    Prebuilt: Kaelis-macos-universal.dmg from the latest release; open the"
 Add "    image and drag Kaelis.app to /Applications. The ZIP holds the same"
 Add "    bundle if you prefer to unpack it yourself."
@@ -167,7 +160,7 @@ Add "                 ./packaging/macos/dmg.sh"
 Add "    Output: dist/Kaelis.app, dist/Kaelis-macos-universal.dmg"
 Add "    Data: ~/Library/Application Support/gg.kaelis.Kaelis/instances"
 Add ""
-Add "  2.4 Linux"
+Add "  2.3 Linux"
 Add "    Prebuilt: Kaelis-linux-x64.deb (apt), .AppImage (portable), or"
 Add "    Kaelis-linux-x64.tar.gz (plain binary)."
 Add "    Debian / Ubuntu: sudo apt install ./Kaelis-linux-x64.deb"
@@ -182,7 +175,7 @@ Add "    Data: ~/.local/share/kaelis/instances"
 Add "    Build packages: libgtk-3-dev libayatana-appindicator3-dev"
 Add "                    libxkbcommon-dev libwayland-dev libx11-dev"
 Add ""
-Add "  2.5 Build from source"
+Add "  2.4 Build from source"
 Add "    Requirements: Rust 1.85+ and a C/C++ linker for the target."
 Add "    Windows: stable-x86_64-pc-windows-msvc + Visual Studio C++ workload"
 Add "    macOS:   stable-aarch64-apple-darwin or stable-x86_64-apple-darwin"
@@ -193,7 +186,7 @@ Add "      cd kaelis"
 Add "      cargo build --release -p kaelis-launcher"
 Add "      target/release/kaelis --version"
 Add ""
-Add "  2.6 Where data lives"
+Add "  2.5 Where data lives"
 Add "    Windows  %APPDATA%\kaelis\Kaelis\data"
 Add "    macOS    ~/Library/Application Support/gg.kaelis.Kaelis"
 Add "    Linux    ~/.local/share/kaelis"
@@ -203,7 +196,7 @@ Add "    resourcepacks, shaderpacks, saves, config, logs, runtime, and versions.
 Add "    Settings: <data>/settings.json. Microsoft refresh tokens: OS keychain"
 Add "    under service 'kaelis'. Access tokens never touch disk."
 Add ""
-Add "  2.7 Command line"
+Add "  2.6 Command line"
 Add "    kaelis                         Open the desktop launcher"
 Add "    kaelis --version [--json]      Build identity and public URLs"
 Add "    kaelis --status [--json]       Data root, instances, accounts, Java"
@@ -332,23 +325,9 @@ if ($exe) {
 } else {
     Add "  site/downloads/Kaelis.exe is missing."
 }
-if ($zip) {
-    Add ""
-    Add "  site/downloads/Kaelis-Portable.zip"
-    Add "    $($zip.Bytes) bytes ($(Format-Size $zip.Bytes))"
-    Add "    $($zip.Sha256)"
-}
-if ($setup) {
-    Add ""
-    Add "  site/downloads/Kaelis-Setup.exe"
-    Add "    $($setup.Bytes) bytes ($(Format-Size $setup.Bytes))"
-    Add "    $($setup.Sha256)"
-    if ($setupStale) { Add "    WARNING: older than Kaelis.exe; rebuild with tools/release.ps1." }
-}
 Add ""
-Add "  dist/Kaelis.exe and dist/Kaelis-Setup.exe are local scratch copies;"
-Add "  site/downloads is the published set. The portable ZIP contains the same"
-Add "  Kaelis.exe plus LICENSE and the portable README."
+Add "  dist/Kaelis.exe is the local scratch copy; site/downloads is the"
+Add "  published set. Windows ships as this one executable only."
 
 Add-Head "7. VERIFY A DOWNLOAD"
 Add "  Windows:"
@@ -359,20 +338,18 @@ Add "  Compare against https://fuvji.github.io/kaelis/downloads/SHA256SUMS.txt."
 Add "  A mismatched file is not a Kaelis release."
 
 Add-Head "8. AUTOMATIC SOURCE AUDIT"
-Add "  Every https:// constant found in the Rust crates and the installer is"
+Add "  Every https:// constant found in the Rust crates is"
 Add "  listed here when it is not already covered above. This catches a new"
 Add "  endpoint that was added without updating this generator."
 Add ""
 $discovered = @{}
 $scanFiles = @()
 $scanFiles += Get-ChildItem (Join-Path $root "crates") -Recurse -Filter *.rs -File
-$installer = Join-Path $root "installer/kaelis.nsi"
-if (Test-Path $installer) { $scanFiles += Get-Item $installer }
 foreach ($file in $scanFiles) {
     $lines = [System.IO.File]::ReadAllLines($file.FullName, $utf8)
     for ($index = 0; $index -lt $lines.Length; $index++) {
         $line = $lines[$index]
-        if ($line -notmatch '\bconst\b' -and $line -notmatch '!define\s+APP_URL') { continue }
+        if ($line -notmatch '\bconst\b') { continue }
         foreach ($match in [regex]::Matches($line, 'https?://[^\s"''<>\)]+')) {
             $url = $match.Value.TrimEnd(',', ';', ':')
             if ($url -match 'example\.(com|net|org)|cdn\.example|attacker\.example|metadata\.example|localhost|127\.0\.0\.1|schema\.org|sitemaps\.org|google\.com/schemas|apple\.com/DTDs') { continue }
