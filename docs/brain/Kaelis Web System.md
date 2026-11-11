@@ -68,9 +68,12 @@ zero edge and a small 4 px value edge so length stays readable.
   ARM are deliberately not mapped to the x64-only Linux packages.
 - Windows recommends the portable EXE with a secondary Setup link; macOS the
   universal DMG; Linux the AppImage. Every platform row remains available below.
-- The downloads header also carries a platform-independent `Download Windows
-  setup` link, so the installer remains discoverable if detection selects macOS
-  or Linux.
+- Windows Setup is always discoverable: the sticky header and hero carry direct
+  actions independent of detection, the downloads header has a text link, and
+  the installer row has an accent rail and `INSTALLER` chip. On macOS/Linux only
+  the platform picker's Setup action is hidden.
+- At 340 px and below the section menu becomes a 36 px hamburger so Setup and
+  Download remain on the header line without horizontal overflow.
 - No new request: the picker only rewrites local links. The selected platform
   tints the recommendation control blue, violet or mint through one CSS
   variable; artifact URLs and labels do not depend on the tint.

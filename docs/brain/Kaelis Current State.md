@@ -16,13 +16,13 @@ updated: 2026-11-11
 
 > [!info] Snapshot
 > Latest release **v0.4.6**; product page live; workspace version 0.4.6.
-> The setup, vault-graph, hero-frame and preview-dialog pass is being published
-> with this Pages run.
+> The setup, vault-graph, hero-frame and preview-dialog pass is live. Windows
+> Setup now has always-visible header and hero actions plus a dedicated row.
 
 ## Repo
 
 - Branch `main`.
-- Site/repo graph commit: `21e9007`; the vault-graph/preview pass follows it.
+- Site commit: `583d614`; Pages run 97 green.
 - Latest tag: `v0.4.6` (2026-11-10T22:02:25Z).
 - Repo graph baseline: `f6da23c`; see [[Kaelis Repo Graph]].
 - Windows release asset: `Kaelis.exe`, 17,250,816 B.
@@ -47,8 +47,9 @@ updated: 2026-11-11
   animation and film pulse are removed.
 - Smart download picker: Windows portable EXE, macOS universal DMG, Linux
   AppImage; Windows also exposes the optional setup. Direct rows cover Windows
-  EXE/setup, macOS DMG/ZIP and Linux `.deb`/AppImage/`tar.gz`. A platform-
-  independent `Download Windows setup` link sits in the downloads header. The
+  EXE/setup, macOS DMG/ZIP and Linux `.deb`/AppImage/`tar.gz`. The sticky header
+  and hero carry platform-independent Setup actions, the downloads header has a
+  text link, and the installer row has an accent rail and `INSTALLER` chip. The
   artifact tile follows the selected platform. No third-party request.
 - The sticky header carries a scroll-driven progress hairline with no scroll
   listener; reduced motion and unsupported timelines hide it.
@@ -70,7 +71,10 @@ updated: 2026-11-11
   geometry. Metadata contrast was lifted from `#6e7580` to `#808996`.
 - `content-visibility: auto` remains only on below-fold sections; the graph
   removed its continuous dash paint loop and the aurora dropped `will-change`.
-- Pages deploy green; direct binary on Pages is 404 by design.
+- Pages deploy run 97 green. Live page is 200 with the header, hero, picker and
+  row Setup links. Local Chromium checks at 320, 390 and 1,440 px, plus the live
+  page at 520 px, show no horizontal overflow. Direct binary on Pages is 404 by
+  design.
 
 ## Dependencies
 
@@ -91,8 +95,8 @@ updated: 2026-11-11
 - Brain synced into the user's Obsidian vault under `01-Projects/Kaelis/Brain`.
 - CI at `21e9007`: Site assets and macOS passed; Windows and Ubuntu were still
   in their release build at the last check.
-- The vault-graph, hero-frame, preview-dialog and setup pass is in the Pages
-  deployment; a post-deploy full-page visual review remains.
+- The setup, vault-graph, hero-frame and preview-dialog pass is live; a
+  full-page visual review beyond the measured layout checks remains.
 - Dependabot opened #1–#6 for major dependency updates; review them instead of
   merging by default.
 - Plan the first measured 0.4.7 optimization.
