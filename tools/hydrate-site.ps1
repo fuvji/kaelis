@@ -28,11 +28,12 @@ function Format-Size([long]$bytes) {
     return "$bytes B"
 }
 
-# Windows is one executable. The Linux and macOS artifacts are built only by
+# Windows is packaged by the local release script; the setup is optional. The Linux and macOS artifacts are built only by
 # the release workflow; the page keeps its last-known fallback when they are not
 # fetched.
 $artifacts = [ordered]@{
     "exe"      = "Kaelis.exe"
+    "setup"    = "Kaelis-Setup.exe"
     "dmg"      = "Kaelis-macos-universal.dmg"
     "maczip"   = "Kaelis-macos-universal.zip"
     "deb"      = "Kaelis-linux-x64.deb"

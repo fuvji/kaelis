@@ -2,22 +2,25 @@
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools/release.ps1
 #   ... -SkipBuild            # repackage an existing target/release binary
+#   ... -SkipInstaller        # portable EXE only, no NSIS setup
 #   ... -Toolchain stable-x86_64-pc-windows-msvc
 #
 # Outputs:
-#   dist/Kaelis.exe, site/downloads/Kaelis.exe          shipped binary
-#   site/downloads/SHA256SUMS.txt                       checksum
-#   dist/build.json                                     build provenance
-#   dist/KAELIS-LINKS.txt                               generated URL index
-#   site/downloads/KAELIS-LINKS.txt                     published copy
-#   site/index.html                                     size/hash slots refreshed
+#   dist/Kaelis.exe, site/downloads/Kaelis.exe              portable binary
+#   dist/Kaelis-Setup.exe, site/downloads/Kaelis-Setup.exe  optional per-user installer
+#   site/downloads/SHA256SUMS.txt                           hashes for every artifact
+#   dist/build.json                                         build provenance
+#   dist/KAELIS-LINKS.txt                                   generated URL index
+#   site/downloads/KAELIS-LINKS.txt                         published copy
+#   site/index.html                                         size/hash slots refreshed
 #
-# Windows ships as one executable. There is no installer, NSIS payload, or
-# portable archive to build, sign, checksum, or upload.
+# Windows ships a portable EXE and an optional per-user setup built from the
+# same download copy. The portable ZIP stays retired.
 
 param(
     [string]$Toolchain = "stable-x86_64-pc-windows-gnu",
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$SkipInstaller
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,6 +62,74 @@ Copy-Item $binary (Join-Path $downloads "Kaelis.exe") -Force
 $exe = Get-Item (Join-Path $downloads "Kaelis.exe")
 $exeHash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
 
+# Optional setup: compile a per-user NSIS installer from the exact download
+# copy. `-SkipInstaller` keeps a local portable-only build possible; CI and tags
+# run the full path.
+$setupPath = Join-Path $downloads "Kaelis-Setup.exe"
+$setup = $null
+$setupHash = $null
+if (-not $SkipInstaller) {
+    $makensis = Join-Path $root "tools/nsis/nsis-3.11/makensis.exe"
+    if (-not (Test-Path $makensis)) {
+        # CI installs NSIS through choco, which deploys to Program Files and does
+        # not always create a makensis shim, so probe both install roots and the
+        # shim/bin directories before falling back to PATH.
+        $probe = @()
+        foreach ($base in @(${env:ProgramFiles(x86)}, $env:ProgramFiles, $env:ChocolateyInstall)) {
+            if ($base) {
+                $probe += (Join-Path $base "NSIS/makensis.exe")
+                $probe += (Join-Path $base "bin/makensis.exe")
+            }
+        }
+        $found = $probe | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if ($found) {
+            $makensis = $found
+        } else {
+            $command = Get-Command makensis -ErrorAction SilentlyContinue
+            $makensis = if ($command) { $command.Source } else { $null }
+        }
+    }
+    if (-not $makensis) {
+        throw "makensis was not found. Install NSIS (choco install nsis) or pass -SkipInstaller."
+    }
+    if (-not (Test-Path (Join-Path $root "assets/kaelis.ico"))) {
+        throw "missing assets/kaelis.ico for the installer"
+    }
+    $stage = Join-Path $root "target/installer"
+    if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $stage | Out-Null
+    Copy-Item $exe.FullName (Join-Path $stage "Kaelis.exe")
+    Copy-Item (Join-Path $root "LICENSE") (Join-Path $stage "LICENSE")
+    Copy-Item (Join-Path $root "site/downloads/README.md") (Join-Path $stage "README.md")
+    Copy-Item (Join-Path $root "assets/kaelis.ico") (Join-Path $stage "kaelis.ico")
+    Copy-Item (Join-Path $root "installer/kaelis.nsi") (Join-Path $stage "kaelis.nsi")
+    # The setup must carry the exact downloadable binary, not a locked or
+    # half-copied file. Fail before compiling rather than shipping a mismatch.
+    $stagedHash = (Get-FileHash (Join-Path $stage "Kaelis.exe") -Algorithm SHA256).Hash.ToLower()
+    if ($stagedHash -ne $exeHash) {
+        throw "installer payload mismatch: staged $stagedHash, download $exeHash"
+    }
+    $version4 = if ($version -match '^(\d+)\.(\d+)\.(\d+)') {
+        "$($Matches[1]).$($Matches[2]).$($Matches[3]).0"
+    } else {
+        "0.0.0.0"
+    }
+    Push-Location $stage
+    try {
+        & $makensis "/DAPP_VERSION=$version" "/DAPP_VERSION4=$version4" `
+            "/DKAELIS_EXE=Kaelis.exe" "/DKAELIS_LICENSE=LICENSE" `
+            "/DKAELIS_README=README.md" "/DKAELIS_ICON=kaelis.ico" `
+            "/DKAELIS_OUT=Kaelis-Setup.exe" "kaelis.nsi"
+        if ($LASTEXITCODE -ne 0) { throw "makensis failed with $LASTEXITCODE" }
+    } finally {
+        Pop-Location
+    }
+    Copy-Item (Join-Path $stage "Kaelis-Setup.exe") $setupPath -Force
+    Copy-Item $setupPath (Join-Path $dist "Kaelis-Setup.exe") -Force
+    $setup = Get-Item $setupPath
+    $setupHash = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLower()
+}
+
 # SHA256SUMS.txt: `sha256  name`, compatible with `shasum -a 256 -c`. Written
 # with LF endings: `sha256sum -c` rejects CRLF lines as malformed.
 $lines = @(
@@ -66,8 +137,16 @@ $lines = @(
     "# Verify: shasum -a 256 -c SHA256SUMS.txt  |  certutil -hashfile Kaelis.exe SHA256",
     "$exeHash  Kaelis.exe"
 )
+if ($setup) { $lines += "$setupHash  Kaelis-Setup.exe" }
 $sumsPath = Join-Path $downloads "SHA256SUMS.txt"
 [System.IO.File]::WriteAllText($sumsPath, ($lines -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))
+
+$artifacts = @(
+    [ordered]@{ name = "Kaelis.exe"; bytes = $exe.Length; sha256 = $exeHash }
+)
+if ($setup) {
+    $artifacts += [ordered]@{ name = "Kaelis-Setup.exe"; bytes = $setup.Length; sha256 = $setupHash }
+}
 
 $rustc = (& rustc --version) -join ""
 $provenance = [ordered]@{
@@ -79,9 +158,7 @@ $provenance = [ordered]@{
     toolchain    = $Toolchain
     platform     = "windows-x86_64"
     dist_copy    = $distCopied
-    artifacts    = @(
-        [ordered]@{ name = "Kaelis.exe"; bytes = $exe.Length; sha256 = $exeHash }
-    )
+    artifacts    = $artifacts
     source       = "https://github.com/fuvji/kaelis"
     checksums    = "https://fuvji.github.io/kaelis/downloads/SHA256SUMS.txt"
 }
@@ -107,8 +184,7 @@ if (Test-Path $index) {
 }
 
 # Regenerate the URL/installation index from the just-written provenance and
-# checksum. The deployed copy excludes every Windows package that no longer
-# ships.
+# checksum. The deployed copy excludes the retired portable ZIP.
 & (Join-Path $root "tools/links.ps1") -Quiet
 
 # Remove packaging staging and local captures so the next build starts clean.
@@ -119,4 +195,10 @@ Write-Host ""
 Write-Host "Kaelis $version"
 Write-Host "  dist/Kaelis.exe              $(Format-Size $exe.Length)  $exeHash"
 Write-Host "  site/downloads/Kaelis.exe    $(Format-Size $exe.Length)  (copy)"
+if ($setup) {
+    Write-Host "  dist/Kaelis-Setup.exe        $(Format-Size $setup.Length)  $setupHash"
+    Write-Host "  site/downloads/Kaelis-Setup.exe $(Format-Size $setup.Length)  (copy)"
+} else {
+    Write-Host "  setup skipped; portable EXE only"
+}
 Write-Host "  SHA256SUMS.txt, dist/build.json, KAELIS-LINKS.txt written"

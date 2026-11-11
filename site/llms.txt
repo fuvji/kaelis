@@ -22,7 +22,7 @@
 - Source: https://github.com/fuvji/kaelis
 - Releases: https://github.com/fuvji/kaelis/releases
 - Changelog: https://github.com/fuvji/kaelis/blob/main/CHANGELOG.md
-- Checksums: https://github.com/fuvji/kaelis/releases/latest/download/SHA256SUMS.txt
+- Checksums: https://fuvji.github.io/kaelis/downloads/SHA256SUMS.txt
 - Discord: https://discord.gg/fvrdYzrQjq
 - Licence: https://github.com/fuvji/kaelis/blob/main/LICENSE (proprietary freeware)
 - Project brain: https://github.com/fuvji/kaelis/blob/main/docs/brain/Kaelis%20Brain.md
@@ -31,6 +31,7 @@
 ## Downloads
 
 - Windows portable EXE: https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe
+- Windows setup installer: https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Setup.exe
 - macOS universal DMG: https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.dmg
 - macOS universal ZIP: https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.zip
 - Linux .deb: https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.deb

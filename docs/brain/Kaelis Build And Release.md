@@ -3,14 +3,14 @@ type: reference
 summary: How to verify, version, tag, package, publish and sync Kaelis.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-10
+last_touched: 2026-11-11
 title: Kaelis Build And Release
 tags:
   - kaelis
   - release
   - build
 status: active
-updated: 2026-11-10
+updated: 2026-11-11
 ---
 
 # Kaelis Build And Release
@@ -46,8 +46,9 @@ Linux also needs `libgtk-3-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`,
 1. Commit and push `main`; wait for CI.
 2. `git tag v<version>` and push the tag.
 3. Release workflow builds Windows, macOS universal and Linux; publishes:
-   `Kaelis.exe`, macOS ZIP/DMG, Linux tar/deb/AppImage, `KAELIS-LINKS.txt`,
-   `SHA256SUMS.txt`. Windows has no installer or archive.
+   `Kaelis.exe`, `Kaelis-Setup.exe`, macOS ZIP/DMG, Linux tar/deb/AppImage,
+   `KAELIS-LINKS.txt`, `SHA256SUMS.txt`. Windows setup is optional, per-user
+   NSIS; the portable ZIP stays retired.
 4. Publish job dispatches the Pages deploy.
 5. Verify:
    - release `latest` resolves the new tag;

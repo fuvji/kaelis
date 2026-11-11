@@ -44,7 +44,7 @@
       "softwareVersion": "0.4.6",
       "softwareRequirements": "No runtime to install; Java is provisioned automatically",
       "downloadUrl": "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe",
-      "installUrl": "https://fuvji.github.io/kaelis/#downloads",
+      "installUrl": "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Setup.exe",
       "screenshot": "https://fuvji.github.io/kaelis/assets/app-overview.png",
       "license": "https://github.com/fuvji/kaelis/blob/main/LICENSE",
       "isAccessibleForFree": true,
@@ -94,7 +94,12 @@
         {
           "@type": "Question",
           "name": "Which platforms are supported?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Windows 10 and 11 ship as one portable EXE. macOS 11+ and Linux build from the same Rust workspace with one command." }
+          "acceptedAnswer": { "@type": "Answer", "text": "Windows 10 and 11 ship as a portable EXE with an optional per-user setup. macOS 11+ and Linux build from the same Rust workspace with one command." }
+        },
+        {
+          "@type": "Question",
+          "name": "Is there a Windows setup installer?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Kaelis-Setup.exe installs per user under %LOCALAPPDATA%\\Programs\\Kaelis, adds a Start menu shortcut and a clean uninstaller, and needs no administrator rights. The portable Kaelis.exe remains available." }
         }
       ]
     }
@@ -110,7 +115,7 @@
     --line-strong: #2b3038;
     --text: #f4f5f3;
     --muted: #9aa1ac;
-    --dim: #6e7580;
+    --dim: #808996;
     --accent: #7da7ff;
     --accent-ink: #06080d;
     --max: 1200px;
@@ -120,7 +125,7 @@
   }
 
   *, *::before, *::after { box-sizing: border-box; }
-  html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+  html { scroll-behavior: smooth; scroll-padding-top: 84px; scrollbar-gutter: stable; }
   @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
   body {
@@ -255,6 +260,10 @@
   }
   h2 em { font-style: normal; color: var(--accent); }
   .sec-head p { margin: 0; max-width: 40ch; color: var(--muted); font-size: 14.5px; }
+  .sec-head p .setup-inline {
+    color: var(--accent); text-decoration: underline; text-underline-offset: 3px;
+    white-space: nowrap;
+  }
 
   /* Numbers ------------------------------------------------------------ */
   .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line-strong); }
@@ -513,7 +522,7 @@
   .aurora i {
     position: absolute; display: block; width: 72vmax; height: 72vmax;
     border-radius: 50%; filter: none; opacity: 0.78;
-    will-change: transform; transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0);
     animation: drift 26s ease-in-out infinite alternate;
   }
   .aurora i:nth-child(1) {
@@ -680,8 +689,8 @@
   .dl-smart .btn { min-height: 40px; }
   @media (max-width: 760px) {
     .dl-smart { grid-template-columns: 1fr; }
-    .dl-smart-os { order: 3; }
-    .dl-smart .btn { justify-self: start; }
+    .dl-smart-os { order: 2; }
+    .dl-smart-actions { order: 3; justify-self: start; }
   }
 
   .previews { perspective: 1600px; }
@@ -715,10 +724,476 @@
     .trend-line { stroke-dasharray: none; stroke-dashoffset: 0; animation: none; }
     .trend-area { opacity: 1; animation: none; }
   }
+  :root {
+    --vault-blue: #8fb6ff; --vault-teal: #65dfca;
+    --vault-violet: #c4b5fd; --vault-amber: #e8b271;
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* Vault graph, preview lightbox and action feedback ------------------ */
+  .vault {
+    position: fixed; inset: 0; z-index: -1; width: 100%; height: 100%;
+    pointer-events: none; opacity: 0.68; mix-blend-mode: screen;
+    -webkit-mask-image: radial-gradient(ellipse 106% 94% at 66% 42%, #000 30%, rgba(0, 0, 0, 0.82) 58%, transparent 94%);
+    mask-image: radial-gradient(ellipse 106% 94% at 66% 42%, #000 30%, rgba(0, 0, 0, 0.82) 58%, transparent 94%);
+  }
+  .vault-drift {
+    transform-origin: 50% 36%;
+    animation: vault-drift 72s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+  }
+  .vault-edge, .vault-edges > path {
+    fill: none; stroke: rgba(145, 168, 214, 0.14); stroke-width: 0.9;
+    stroke-linecap: round; vector-effect: non-scaling-stroke;
+  }
+  .vault-edge.vault-trace {
+    stroke: url(#vault-edge-gradient); stroke-width: 1.1; opacity: 0.46;
+  }
+  .vault-node { fill: var(--vault-blue); opacity: 0.72; }
+  .vault-node.teal { fill: var(--vault-teal); }
+  .vault-node.violet { fill: var(--vault-violet); }
+  .vault-node.amber { fill: var(--vault-amber); }
+  .vault-halo { fill: url(#vault-glow); opacity: 0.38; }
+  .vault-ring { fill: none; stroke: rgba(175, 199, 245, 0.26); stroke-width: 0.8; vector-effect: non-scaling-stroke; }
+  .vault-label, .vault-labels text {
+    fill: #b7c4d8; opacity: 0.23; font-family: var(--mono);
+    font-size: 10px; letter-spacing: 0.08em;
+  }
+  @keyframes vault-drift {
+    from { transform: translate3d(-3px, -2px, 0) scale(1.004); }
+    to { transform: translate3d(5px, 4px, 0) scale(1.012); }
+  }
+
+  .hero h1, h2, .brand span {
+    font-family: "Bahnschrift", "Avenir Next", "Segoe UI Variable Display", ui-sans-serif, system-ui, sans-serif;
+  }
+  .hero h1 em {
+    background: linear-gradient(102deg, #b4cbff 0%, #7da7ff 40%, #67dfca 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: transparent;
+  }
+  .hero .eyebrow, .hero h1, .hero .lede, .hero-actions, .hero-meta, .hero .shot {
+    animation: hero-rise 760ms var(--ease-out) both;
+  }
+  .hero h1 { animation-delay: 60ms; }
+  .hero .lede { animation-delay: 120ms; }
+  .hero-actions { animation-delay: 175ms; }
+  .hero-meta { animation-delay: 225ms; }
+  .hero .shot { animation-delay: 140ms; }
+  @keyframes hero-rise {
+    from { opacity: 0; transform: translateY(13px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .links a { position: relative; }
+  .links a::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -5px; height: 1px;
+    background: linear-gradient(90deg, var(--accent), rgba(125, 167, 255, 0));
+    transform: scaleX(0); transform-origin: left; transition: transform 280ms var(--ease-out);
+  }
+  .links a:hover::after, .links a:focus-visible::after { transform: scaleX(1); }
+  .btn:hover { transform: translateY(-1px); }
+  .btn:active { transform: translateY(0) scale(0.99); }
+  .foot-col a { transition: color 180ms ease, transform 220ms var(--ease-out); }
+  .foot-col a:hover { transform: translateX(2px); }
+
+  .row { transition: background-color 220ms ease, border-color 220ms ease; }
+  @media (hover: hover) {
+    .row:hover { background: linear-gradient(90deg, rgba(125, 167, 255, 0.045), transparent 72%); }
+  }
+  .cmd { transition: border-color 220ms ease, background-color 220ms ease; }
+  .cmd:hover, .cmd:focus-within { border-color: rgba(125, 167, 255, 0.38); background: rgba(125, 167, 255, 0.045); }
+  .cmd button, .hash-copy { transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease, transform 180ms ease; }
+  .cmd button:hover, .hash-copy:hover { color: var(--text); border-color: var(--muted); }
+  .cmd button.is-copied, .hash-copy.is-copied {
+    color: var(--accent-ink); background: var(--accent); border-color: var(--accent);
+    transform: translateY(-1px);
+  }
+
+  .previews figure { border-radius: 14px; }
+  .preview-trigger {
+    position: relative; display: block; width: 100%; padding: 0; border: 0;
+    background: transparent; color: inherit; text-decoration: none; cursor: zoom-in;
+    text-align: left; -webkit-tap-highlight-color: transparent;
+  }
+  .preview-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+  .preview-trigger img {
+    display: block; width: 100%; transition: transform 720ms var(--ease-out);
+  }
+  .preview-trigger::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(180deg, transparent 52%, rgba(4, 6, 11, 0.72));
+    opacity: 0; transition: opacity 280ms ease;
+  }
+  .preview-open {
+    position: absolute; right: 12px; bottom: 12px; z-index: 1;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 9px; border: 1px solid rgba(195, 214, 247, 0.26); border-radius: var(--r-pill);
+    background: rgba(7, 9, 14, 0.78); color: #dbe5f8; font-size: 11px; letter-spacing: 0.02em;
+    opacity: 0; transform: translateY(5px); transition: opacity 240ms ease, transform 300ms var(--ease-out);
+  }
+  .preview-open svg { width: 12px; height: 12px; }
+  .previews figure:hover .preview-trigger img, .preview-trigger:focus-visible img { transform: scale(1.028); }
+  .previews figure:hover .preview-trigger::after, .preview-trigger:focus-visible::after,
+  .previews figure:hover .preview-open, .preview-trigger:focus-visible .preview-open { opacity: 1; }
+  .previews figure:hover .preview-open, .preview-trigger:focus-visible .preview-open { transform: translateY(0); }
+  .preview-card figcaption span:first-child::before {
+    content: ""; display: inline-block; width: 5px; height: 5px; margin-right: 6px;
+    border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px rgba(125, 167, 255, 0.62);
+    vertical-align: 1px;
+  }
+  @media (hover: none) { .preview-open { opacity: 1; transform: none; } }
+
+  .lightbox {
+    width: min(1180px, calc(100vw - 32px)); max-width: none;
+    max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px);
+    margin: auto; padding: 0; overflow: hidden;
+    border: 1px solid var(--line-strong); border-radius: 18px;
+    background: #07090e; color: var(--text);
+    box-shadow: 0 40px 130px -36px rgba(0, 0, 0, 0.96);
+  }
+  .lightbox[open] { animation: lightbox-in 300ms var(--ease-out) both; }
+  .lightbox::backdrop { background: rgba(2, 3, 7, 0.84); }
+  .lightbox-panel { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: inherit; }
+  .lightbox-top {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 12px 14px 12px 18px; border-bottom: 1px solid var(--line);
+  }
+  .lightbox-top .mono { color: var(--vault-teal); letter-spacing: 0.1em; }
+  .lightbox-heading { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .lightbox-hint { color: var(--dim); font-size: 10.5px; white-space: nowrap; }
+  .lightbox-close {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 10px;
+    border: 1px solid var(--line-strong); border-radius: var(--r-pill);
+    background: transparent; color: var(--muted); font: inherit; font-size: 11.5px; cursor: pointer;
+    transition: color 180ms ease, border-color 180ms ease, background-color 180ms ease;
+  }
+  .lightbox-close:hover { color: var(--text); border-color: var(--muted); background: rgba(255, 255, 255, 0.04); }
+  .lightbox-close span { font-size: 16px; line-height: 1; }
+  .lightbox-media {
+    display: grid; place-items: center; min-height: 0; overflow: hidden;
+    background: radial-gradient(90% 100% at 50% 0%, rgba(56, 92, 174, 0.13), transparent 68%), #05070b;
+  }
+  .lightbox-media img {
+    display: block; width: 100%; aspect-ratio: 1080 / 700; height: auto;
+    max-height: calc(100vh - 184px); max-height: calc(100dvh - 184px);
+    object-fit: contain; background: #05070b;
+  }
+  .lightbox-caption {
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+    padding: 13px 18px; border-top: 1px solid var(--line); background: rgba(8, 10, 15, 0.96);
+  }
+  .lightbox-caption h3 { margin: 0; font-size: 0.98rem; font-weight: 600; color: var(--text); }
+  .lightbox-caption p { margin: 3px 0 0; color: var(--dim); font-size: 11.5px; line-height: 1.45; max-width: 68ch; }
+  .lightbox-nav { display: flex; align-items: center; gap: 7px; flex: none; }
+  .lightbox-nav button {
+    display: grid; place-items: center; width: 34px; height: 34px; padding: 0;
+    border: 1px solid var(--line-strong); border-radius: 50%;
+    background: transparent; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer;
+    transition: color 180ms ease, border-color 180ms ease, background-color 180ms ease;
+  }
+  .lightbox-nav button:hover { color: var(--text); border-color: var(--accent); background: rgba(125, 167, 255, 0.08); }
+  .lightbox-count { min-width: 54px; color: var(--dim); font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; text-align: center; }
+  @keyframes lightbox-in { from { opacity: 0; transform: translateY(10px) scale(0.988); } to { opacity: 1; transform: none; } }
+  body.lightbox-open { overflow: hidden; }
+
+  .dl-smart { --platform-accent: #8fb6ff; transition: border-color 260ms ease, background-color 260ms ease; }
+  .dl-smart[data-platform="macos"] { --platform-accent: #c4b5fd; }
+  .dl-smart[data-platform="linux"] { --platform-accent: #65dfca; }
+  .dl-smart-os button[aria-pressed="true"] {
+    background: var(--platform-accent); border-color: var(--platform-accent); color: var(--accent-ink);
+  }
+  .dl-smart .btn.btn-primary {
+    background: var(--platform-accent); border-color: var(--platform-accent); color: var(--accent-ink);
+  }
+  .dl-smart .btn.btn-primary:hover { filter: brightness(1.08); box-shadow: 0 12px 32px -18px var(--platform-accent); }
+  .dl-smart-copy .mono, .dl-detect { color: var(--platform-accent); }
+  .dl-detect { border-color: color-mix(in srgb, var(--platform-accent) 32%, transparent); }
+
+  .bench-tabs button { transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
+  .bench-tabs button[aria-selected="true"] { box-shadow: inset 0 0 0 1px rgba(125, 167, 255, 0.24); }
+  .bench-value.value-shift { animation: value-shift 300ms var(--ease-out) both; }
+  @keyframes value-shift { from { opacity: 0.45; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+  .film-play span:first-child { position: relative; transition: transform 220ms var(--ease-out), border-color 220ms ease, box-shadow 260ms ease; }
+  .film-play:hover span:first-child { transform: translateY(-1px); box-shadow: 0 0 32px -12px rgba(125, 167, 255, 0.55); }
+  .film-poster { transition: transform 1.2s var(--ease-out); }
+  .film:hover .film-poster { transform: scale(1.012); }
+
+  .hash { grid-template-columns: minmax(0, 200px) minmax(0, 1fr) auto; align-items: start; }
+  .hash-copy {
+    min-height: 25px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 5px;
+    background: transparent; color: var(--dim); font: inherit; font-size: 10.5px; cursor: pointer;
+  }
+
+  @media (max-width: 700px) {
+    .vault { opacity: 0.38; }
+    .vault-label, .vault-labels text { display: none; }
+    .lightbox { width: calc(100vw - 16px); max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); border-radius: 14px; }
+    .lightbox-media img { max-height: calc(100vh - 206px); max-height: calc(100dvh - 206px); }
+    .lightbox-caption { align-items: flex-start; flex-direction: column; gap: 10px; }
+    .lightbox-nav { align-self: flex-end; }
+    .hash { grid-template-columns: minmax(0, 1fr) auto; }
+    .hash > span { grid-column: 1 / -1; }
+    .lightbox-top .mono { font-size: 9px; }
+    .lightbox-hint { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .vault-drift { animation: none; }
+    .hero .eyebrow, .hero h1, .hero .lede, .hero-actions, .hero-meta, .hero .shot { animation: none; }
+    .preview-trigger img, .preview-open, .preview-trigger::after, .film-poster, .btn, .links a::after { transition: none; }
+    .previews figure:hover .preview-trigger img, .preview-trigger:focus-visible img { transform: none; }
+    .lightbox[open], .bench-value.value-shift { animation: none; }
+    .film:hover .film-poster { transform: none; }
+  }
+
+  /* Mobile navigation, modal hardening, and preference overrides ------- */
+  .nav-menu { display: none; }
+  .head-actions { position: relative; }
+  .nav-menu summary {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 36px; padding: 0 12px; border: 1px solid var(--line-strong);
+    border-radius: var(--r-pill); color: var(--muted); font-size: 12.5px;
+    cursor: pointer; list-style: none; -webkit-tap-highlight-color: transparent;
+  }
+  .nav-menu summary::-webkit-details-marker { display: none; }
+  .nav-menu[open] summary { color: var(--text); border-color: var(--muted); }
+  .nav-menu-panel {
+    display: none; position: absolute; right: 0; top: calc(100% + 10px); z-index: 60;
+    width: min(250px, calc(100vw - 32px)); padding: 8px;
+    border: 1px solid var(--line-strong); border-radius: 12px;
+    background: #0b0d12; box-shadow: 0 24px 50px -24px rgba(0, 0, 0, 0.95);
+  }
+  .nav-menu[open] .nav-menu-panel { display: grid; }
+  .nav-menu-panel a {
+    padding: 9px 11px; border-radius: 7px; color: var(--muted);
+    font-size: 13.5px; line-height: 1.3;
+  }
+  .nav-menu-panel a:hover, .nav-menu-panel a:focus-visible { color: var(--text); background: rgba(125, 167, 255, 0.08); }
+  .nav-menu-panel .nav-menu-github { margin-top: 4px; border-top: 1px solid var(--line); padding-top: 10px; }
+
+  dialog:modal { overscroll-behavior: contain; }
+  dialog::backdrop { overflow: hidden; overscroll-behavior: contain; }
+  .lightbox-caption h3:focus { outline: none; }
+  .lightbox-count { font-size: 10px; }
+
+  @media (max-width: 700px) {
+    .nav-menu { display: block; }
+    .head-actions .btn-quiet { display: none; }
+    .head-in { gap: 10px; }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .vault-edges, .vault-halos, .vault-nodes, .vault-labels { animation: vault-in 900ms var(--ease-out) both; }
+    .vault-edges { animation-delay: 100ms; }
+    .vault-halos { animation-delay: 200ms; }
+    .vault-nodes { animation-delay: 260ms; }
+    .vault-labels { animation-delay: 380ms; }
+    .nav-menu[open] .nav-menu-panel { animation: menu-in 180ms var(--ease-out) both; }
+  }
+  @keyframes vault-in { from { opacity: 0; } }
+  @keyframes menu-in { from { opacity: 0; transform: translateY(-4px); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .vault-edges, .vault-halos, .vault-nodes, .vault-labels, .nav-menu[open] .nav-menu-panel { animation: none; }
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    .dl-smart, .bench, .support-card, .previews figure, .lightbox-caption, .nav-menu-panel { background-color: #0b0d12; }
+    .lightbox::backdrop { background: #020307; }
+  }
+
+  /* Instrument viewport and surface pass ----------------------------- */
+  .shot {
+    position: relative;
+    border-color: rgba(143, 182, 255, 0.26);
+    border-radius: 18px;
+  }
+  .hero .shot {
+    border-radius: 18px;
+    background: linear-gradient(180deg, #0c0f15, #090b10);
+    box-shadow:
+      0 36px 90px -54px rgba(0, 0, 0, 0.98),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+  .shot-rail {
+    position: relative;
+    display: flex; align-items: center; gap: 12px;
+    height: 38px; padding: 0 14px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #0d1016, #0a0c11);
+  }
+  .shot-rail::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+    background: linear-gradient(90deg, rgba(125, 167, 255, 0.5), rgba(101, 223, 202, 0.16) 42%, transparent 78%);
+  }
+  .shot-app {
+    display: inline-flex; align-items: center; gap: 7px;
+    color: var(--muted); font-family: var(--mono); font-size: 9.5px;
+    letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  .shot-mark { width: 14px; height: 14px; flex: none; }
+  .shot-app span { color: var(--dim); font-size: 9px; }
+  .shot-state {
+    display: inline-flex; align-items: center; gap: 6px; margin-left: auto;
+    color: var(--vault-teal); font-family: var(--mono); font-size: 9px;
+    letter-spacing: 0.11em; text-transform: uppercase; white-space: nowrap;
+  }
+  .shot-state::before {
+    content: ""; width: 5px; height: 5px; border-radius: 50%;
+    background: currentColor; box-shadow: 0 0 8px rgba(101, 223, 202, 0.7);
+  }
+  .shot .preview-trigger { display: block; }
+  .shot .preview-trigger::before {
+    content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 17%);
+  }
+  .shot .preview-trigger::after { background: linear-gradient(180deg, transparent 58%, rgba(4, 6, 11, 0.74)); }
+  .shot .preview-open { right: 14px; bottom: 14px; }
+  @media (hover: hover) and (pointer: fine) {
+    .shot .preview-trigger:hover::after,
+    .shot .preview-trigger:focus-visible::after,
+    .shot .preview-trigger:hover .preview-open,
+    .shot .preview-trigger:focus-visible .preview-open { opacity: 1; }
+    .shot .preview-trigger:hover .preview-open,
+    .shot .preview-trigger:focus-visible .preview-open { transform: translateY(0); }
+  }
+
+  .sec-head .mono { display: inline-flex; align-items: center; gap: 8px; }
+  .sec-head .mono::before {
+    content: ""; width: 18px; height: 1px; flex: none;
+    background: linear-gradient(90deg, var(--accent), rgba(125, 167, 255, 0));
+  }
+  .hero-meta span { display: inline-flex; align-items: center; gap: 7px; }
+  .hero-meta span::before {
+    content: ""; width: 4px; height: 4px; flex: none; border-radius: 50%;
+    background: var(--accent); opacity: 0.8;
+  }
+  .hero-meta span:nth-child(2)::before { background: var(--vault-teal); }
+  .hero-meta span:nth-child(3)::before { background: var(--vault-violet); }
+  .hero-meta span:nth-child(4)::before { background: var(--vault-amber); }
+  .hero-meta b { font-variant-numeric: tabular-nums; }
+
+  .head::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
+    display: none; pointer-events: none; transform: scaleX(0); transform-origin: 0 50%;
+    background: linear-gradient(90deg, var(--accent), var(--vault-teal));
+  }
+  @supports (animation-timeline: scroll(root block)) {
+    .head::after {
+      display: block;
+      animation: read-progress 1s linear both;
+      animation-timeline: scroll(root block);
+    }
+  }
+  @keyframes read-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  @media (prefers-reduced-motion: reduce) { .head::after { display: none; } }
+
+  .dl-smart-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .dl-smart:not([data-platform="windows"]) .dl-setup-link { display: none; }
+  .dl-smart-copy { display: flex; align-items: center; gap: 14px; }
+  .dl-smart-text { display: grid; gap: 3px; min-width: 0; }
+  .dl-artifact {
+    display: grid; place-items: center; width: 48px; height: 48px; flex: none;
+    border: 1px solid var(--line-strong); border-radius: var(--r-md);
+    background: rgba(125, 167, 255, 0.06); color: var(--platform-accent);
+    border-color: color-mix(in srgb, var(--platform-accent) 38%, transparent);
+    background: color-mix(in srgb, var(--platform-accent) 10%, transparent);
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.06em;
+  }
+
+  h1, h2, .lede, .sec-head p { text-wrap: balance; }
+  .bench, .previews figure, .support-card, .dl-smart, .stats {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 28px 60px -54px rgba(0, 0, 0, 0.92);
+  }
+  .bench-scale { position: relative; padding-bottom: 9px; }
+  .bench-scale::after {
+    content: ""; position: absolute; left: 56px; right: 86px; bottom: 0; height: 4px;
+    background: repeating-linear-gradient(90deg, var(--line-strong) 0 1px, transparent 1px 25%);
+    opacity: 0.8;
+  }
+  @media (max-width: 760px) {
+    .bench-scale::after { left: 44px; right: 76px; }
+  }
+
+  @media (forced-colors: active) {
+    .aurora, .vault, .grain { display: none; }
+    .btn, .dl-smart, .previews figure, .bench, .support-card, .lightbox, .cmd, details.checks, .nav-menu-panel { border-color: CanvasText; }
+    a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid Highlight; }
+  }
 </style>
 </head>
 <body>
 <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+<svg class="vault" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="vault-edge-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8fb6ff" stop-opacity="0.72"/>
+      <stop offset="0.55" stop-color="#65dfca" stop-opacity="0.46"/>
+      <stop offset="1" stop-color="#c4b5fd" stop-opacity="0.68"/>
+    </linearGradient>
+    <radialGradient id="vault-glow">
+      <stop offset="0" stop-color="#8fb6ff" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#8fb6ff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <g class="vault-drift">
+    <g class="vault-edges">
+      <path d="M138 212 C190 180 244 166 304 168"/><path d="M138 212 C226 238 378 232 470 258"/>
+      <path d="M304 168 C342 204 408 226 470 258"/><path d="M304 168 C392 142 520 146 628 158"/>
+      <path d="M470 258 C516 208 574 182 628 158"/><path d="M470 258 C574 296 678 302 790 312"/>
+      <path d="M628 158 C674 210 726 266 790 312"/><path d="M628 158 C716 172 850 188 944 214"/>
+      <path d="M790 312 C842 266 892 230 944 214"/><path d="M790 312 C858 334 1004 334 1110 342"/>
+      <path d="M944 214 C1002 268 1040 310 1110 342"/><path d="M944 214 C1050 202 1174 212 1276 238"/>
+      <path d="M1110 342 C1164 298 1214 260 1276 238"/><path d="M1110 342 C1206 354 1340 360 1452 376"/>
+      <path d="M1276 238 C1332 284 1384 330 1452 376"/><path d="M138 212 C106 274 88 340 88 420"/>
+      <path d="M88 420 C110 468 154 502 214 522"/><path d="M214 522 C258 564 318 604 382 640"/>
+      <path d="M214 522 C306 496 450 476 562 482"/><path d="M382 640 C430 584 492 516 562 482"/>
+      <path d="M562 482 C630 422 702 354 790 312"/><path d="M562 482 C620 530 682 574 742 610"/>
+      <path d="M790 312 C766 404 750 514 742 610"/><path d="M742 610 C804 568 862 538 918 520"/>
+      <path d="M918 520 C972 448 1042 384 1110 342"/><path d="M918 520 C1030 512 1160 530 1262 556"/>
+      <path d="M1110 342 C1150 426 1198 504 1262 556"/><path d="M1262 556 C1332 494 1394 432 1452 376"/>
+      <path d="M1110 342 C1098 470 1086 594 1080 700"/><path d="M918 520 C952 596 1016 658 1080 700"/>
+      <path d="M1080 700 C1148 660 1202 606 1262 556"/><path d="M1080 700 C1170 722 1320 738 1432 760"/>
+      <path d="M1262 556 C1312 628 1374 700 1432 760"/><path d="M214 522 C168 604 132 700 120 782"/>
+      <path d="M120 782 C184 814 262 848 332 862"/><path d="M332 862 C338 788 354 700 382 640"/>
+      <path d="M742 610 C756 704 776 796 804 852"/><path d="M804 852 C870 870 938 888 1002 900"/>
+      <path d="M1002 900 C1022 816 1050 748 1080 700"/><path d="M1080 700 C1122 762 1164 810 1206 842"/>
+      <path d="M1206 842 C1276 824 1372 792 1432 760"/><path d="M1432 760 C1456 838 1478 912 1498 980"/>
+      <path d="M1002 900 C1074 878 1146 858 1206 842"/><path d="M332 862 C472 880 650 870 804 852"/>
+    </g>
+    <g class="vault-edges">
+      <path class="vault-edge vault-trace" d="M138 212 C226 238 378 232 470 258 C574 296 678 302 790 312 C858 334 1004 334 1110 342 C1098 470 1086 594 1080 700"/>
+      <path class="vault-edge vault-trace" d="M120 782 C184 814 262 848 332 862 C472 880 650 870 804 852 C870 870 938 888 1002 900 C1022 816 1050 748 1080 700"/>
+      <path class="vault-edge vault-trace" d="M214 522 C306 496 450 476 562 482 C620 530 682 574 742 610 C756 704 776 796 804 852"/>
+    </g>
+    <g class="vault-halos">
+      <circle class="vault-halo" cx="470" cy="258" r="38"/><circle class="vault-halo" cx="790" cy="312" r="46"/>
+      <circle class="vault-halo" cx="918" cy="520" r="38"/><circle class="vault-halo" cx="1080" cy="700" r="46"/>
+      <circle class="vault-halo" cx="1432" cy="760" r="38"/>
+    </g>
+    <g class="vault-labels">
+      <text x="154" y="204">instances</text><text x="1126" y="332">runtime</text>
+      <text x="934" y="512">accounts</text>
+    </g>
+    <g class="vault-nodes">
+      <circle class="vault-node" cx="138" cy="212" r="3.2"/><circle class="vault-node" cx="304" cy="168" r="2.6"/>
+      <circle class="vault-node teal" cx="470" cy="258" r="4"/><circle class="vault-node" cx="628" cy="158" r="2.6"/>
+      <circle class="vault-node violet" cx="790" cy="312" r="4.4"/><circle class="vault-node" cx="944" cy="214" r="2.8"/>
+      <circle class="vault-node" cx="1110" cy="342" r="3.6"/><circle class="vault-node teal" cx="1276" cy="238" r="2.8"/>
+      <circle class="vault-node violet" cx="1452" cy="376" r="3"/><circle class="vault-node" cx="88" cy="420" r="2.4"/>
+      <circle class="vault-node" cx="214" cy="522" r="3"/><circle class="vault-node teal" cx="382" cy="640" r="2.4"/>
+      <circle class="vault-node" cx="562" cy="482" r="3"/><circle class="vault-node violet" cx="742" cy="610" r="2.8"/>
+      <circle class="vault-node teal" cx="918" cy="520" r="4"/><circle class="vault-node amber" cx="1080" cy="700" r="4.4"/>
+      <circle class="vault-node violet" cx="1262" cy="556" r="3"/><circle class="vault-node amber" cx="1432" cy="760" r="3.2"/>
+      <circle class="vault-node" cx="120" cy="782" r="2.6"/><circle class="vault-node teal" cx="332" cy="862" r="2.4"/>
+      <circle class="vault-node" cx="804" cy="852" r="2.8"/><circle class="vault-node violet" cx="1002" cy="900" r="2.6"/>
+      <circle class="vault-node" cx="1206" cy="842" r="2.4"/><circle class="vault-node amber" cx="1498" cy="980" r="2.8"/>
+      <circle class="vault-ring" cx="790" cy="312" r="9"/><circle class="vault-ring" cx="1080" cy="700" r="9"/>
+      <circle class="vault-ring" cx="918" cy="520" r="8"/><circle class="vault-ring" cx="1432" cy="760" r="8"/>
+    </g>
+  </g>
+</svg>
 <div class="grain" aria-hidden="true"></div>
 <a class="skip" href="#main">Skip to content</a>
 
@@ -741,6 +1216,19 @@
       <a href="#faq">FAQ</a>
     </nav>
     <div class="head-actions">
+      <details class="nav-menu">
+        <summary>Menu</summary>
+        <nav class="nav-menu-panel" aria-label="Sections">
+          <a href="#measured">Speed</a>
+          <a href="#benchmarks">Benchmarks</a>
+          <a href="#features">Features</a>
+          <a href="#previews">Previews</a>
+          <a href="#downloads">Downloads</a>
+          <a href="#support">Support</a>
+          <a href="#faq">FAQ</a>
+          <a class="nav-menu-github" href="https://github.com/fuvji/kaelis" rel="noreferrer">GitHub ↗</a>
+        </nav>
+      </details>
       <a class="btn btn-quiet" href="https://github.com/fuvji/kaelis" rel="noreferrer">GitHub ↗</a>
       <a class="btn btn-primary" href="#downloads">Download</a>
     </div>
@@ -772,7 +1260,20 @@
       </div>
 
       <figure class="shot">
-        <img src="assets/app-overview.png" width="1080" height="700" alt="Kaelis Overview tab: the active instance, content counts, the signed-in account, and the latest release" fetchpriority="high" decoding="async">
+        <div class="shot-rail" aria-hidden="true">
+          <span class="shot-app">
+            <svg class="shot-mark" viewBox="0 0 128 128" aria-hidden="true">
+              <polygon points="12.8,17.92 115.2,64 38.4,62.656" fill="#70a5ff"/>
+              <polygon points="38.4,65.344 115.2,64 12.8,110.08" fill="#2e70e8"/>
+            </svg>
+            Kaelis <span>Desktop</span>
+          </span>
+          <span class="shot-state">Native · local</span>
+        </div>
+        <a class="shot-open preview-trigger" href="assets/app-overview.png" data-lightbox-src="assets/app-overview.png" data-lightbox-title="Overview" data-lightbox-meta="The active instance, content counts, signed-in account and latest release in one native window." aria-label="Open full-size Overview preview" aria-haspopup="dialog">
+          <img src="assets/app-overview.png" width="1080" height="700" alt="Kaelis Overview tab: the active instance, content counts, the signed-in account, and the latest release" fetchpriority="high" decoding="async">
+          <span class="preview-open" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3H3v3M10 13h3v-3M13 3 9 7M3 13l4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>Expand</span>
+        </a>
         <figcaption><span>Overview</span><span>One screen for the whole library</span></figcaption>
       </figure>
     </section>
@@ -1004,28 +1505,46 @@
         <p>Captured from the shipped build, not a mockup.</p>
       </div>
       <div class="previews">
-        <figure>
-          <img src="assets/app-content.png" width="1080" height="700" loading="lazy" decoding="async" alt="Content tab: Modrinth and CurseForge search on the left, installed mods on the right">
+        <figure class="preview-card">
+          <a class="preview-trigger" href="assets/app-content.png" data-lightbox-src="assets/app-content.png" data-lightbox-title="Content" data-lightbox-meta="Browse Modrinth and CurseForge, install a mod, then erase it without leftover files." aria-label="Open Content preview" aria-haspopup="dialog">
+            <img src="assets/app-content.png" width="1080" height="700" loading="lazy" decoding="async" alt="Content tab: Modrinth and CurseForge search on the left, installed mods on the right">
+            <span class="preview-open" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3H3v3M10 13h3v-3M13 3 9 7M3 13l4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>Expand</span>
+          </a>
           <figcaption><span>Content</span><span>Search · install · erase</span></figcaption>
         </figure>
-        <figure>
-          <img src="assets/app-instances.png" width="1080" height="700" loading="lazy" decoding="async" alt="Instances tab: create a Minecraft instance, then import or export a portable archive">
+        <figure class="preview-card">
+          <a class="preview-trigger" href="assets/app-instances.png" data-lightbox-src="assets/app-instances.png" data-lightbox-title="Instances" data-lightbox-meta="Create, import and launch portable instances from one list." aria-label="Open Instances preview" aria-haspopup="dialog">
+            <img src="assets/app-instances.png" width="1080" height="700" loading="lazy" decoding="async" alt="Instances tab: create a Minecraft instance, then import or export a portable archive">
+            <span class="preview-open" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3H3v3M10 13h3v-3M13 3 9 7M3 13l4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>Expand</span>
+          </a>
           <figcaption><span>Instances</span><span>Create · import · launch</span></figcaption>
         </figure>
-        <figure>
-          <img src="assets/app-accounts.png" width="1080" height="700" loading="lazy" decoding="async" alt="Account tab: the active identity, every saved offline or Microsoft account with a skin head, and one row to add another">
+        <figure class="preview-card">
+          <a class="preview-trigger" href="assets/app-accounts.png" data-lightbox-src="assets/app-accounts.png" data-lightbox-title="Accounts" data-lightbox-meta="Offline identities and optional Microsoft accounts, each with its own skin." aria-label="Open Accounts preview" aria-haspopup="dialog">
+            <img src="assets/app-accounts.png" width="1080" height="700" loading="lazy" decoding="async" alt="Account tab: the active identity, every saved offline or Microsoft account with a skin head, and one row to add another">
+            <span class="preview-open" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3H3v3M10 13h3v-3M13 3 9 7M3 13l4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>Expand</span>
+          </a>
           <figcaption><span>Accounts</span><span>Every identity, one click</span></figcaption>
         </figure>
-        <figure>
-          <img src="assets/app-settings.png" width="1080" height="700" loading="lazy" decoding="async" alt="Settings tab: heap, automation, integrations, and community links">
+        <figure class="preview-card">
+          <a class="preview-trigger" href="assets/app-settings.png" data-lightbox-src="assets/app-settings.png" data-lightbox-title="Settings" data-lightbox-meta="Heap, automation, integrations and community links in one settings surface." aria-label="Open Settings preview" aria-haspopup="dialog">
+            <img src="assets/app-settings.png" width="1080" height="700" loading="lazy" decoding="async" alt="Settings tab: heap, automation, integrations, and community links">
+            <span class="preview-open" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3H3v3M10 13h3v-3M13 3 9 7M3 13l4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>Expand</span>
+          </a>
           <figcaption><span>Settings</span><span>Heap · automation · keys</span></figcaption>
         </figure>
-        <figure>
-          <img src="assets/app-modpacks.png" width="1080" height="700" loading="lazy" decoding="async" alt="Modpacks tab: browse CurseForge and Modrinth packs with loader and version filters">
+        <figure class="preview-card">
+          <a class="preview-trigger" href="assets/app-modpacks.png" data-lightbox-src="assets/app-modpacks.png" data-lightbox-title="Modpacks" data-lightbox-meta="Filter by loader and version, then install or update a pack in place." aria-label="Open Modpacks preview" aria-haspopup="dialog">
+            <img src="assets/app-modpacks.png" width="1080" height="700" loading="lazy" decoding="async" alt="Modpacks tab: browse CurseForge and Modrinth packs with loader and version filters">
+            <span class="preview-open" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3H3v3M10 13h3v-3M13 3 9 7M3 13l4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>Expand</span>
+          </a>
           <figcaption><span>Modpacks</span><span>Browse · install · update</span></figcaption>
         </figure>
-        <figure>
-          <img src="assets/app-editor.png" width="1080" height="700" loading="lazy" decoding="async" alt="Instance editor: name, Minecraft version, loader, memory and Java path in one panel">
+        <figure class="preview-card">
+          <a class="preview-trigger" href="assets/app-editor.png" data-lightbox-src="assets/app-editor.png" data-lightbox-title="Instance editor" data-lightbox-meta="Version, loader, memory and Java path for a single instance." aria-label="Open Instance editor preview" aria-haspopup="dialog">
+            <img src="assets/app-editor.png" width="1080" height="700" loading="lazy" decoding="async" alt="Instance editor: name, Minecraft version, loader, memory and Java path in one panel">
+            <span class="preview-open" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3H3v3M10 13h3v-3M13 3 9 7M3 13l4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>Expand</span>
+          </a>
           <figcaption><span>Instance editor</span><span>Version · loader · memory</span></figcaption>
         </figure>
       </div>
@@ -1068,37 +1587,57 @@
           <span class="mono">Downloads</span>
           <h2 id="downloads-title">Pick your platform.</h2>
         </div>
-        <p>One build per platform. Free to use, no account needed, no runtime to install.</p>
+        <p>One build per platform. Windows also has an optional per-user setup installer. <a class="setup-inline" href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Setup.exe" download aria-label="Download the Windows setup installer">Download Windows setup</a></p>
       </div>
-      <div class="dl-smart" data-download-picker>
+      <div class="dl-smart" data-download-picker data-platform="windows">
         <div class="dl-smart-copy">
-          <span class="mono">Smart download <em class="dl-detect" data-download-detect hidden>detected</em></span>
-          <strong data-download-title aria-live="polite">Windows · EXE</strong>
-          <p data-download-copy>Windows 10 / 11 x64 · one file · no installer or admin.</p>
+          <span class="dl-artifact" aria-hidden="true" data-download-artifact>EXE</span>
+          <div class="dl-smart-text">
+            <span class="mono">Smart download <em class="dl-detect" data-download-detect hidden>detected</em></span>
+            <strong data-download-title aria-live="polite">Windows · portable EXE</strong>
+            <p data-download-copy>Windows 10 / 11 x64 · one file · no install. Optional setup.</p>
+          </div>
         </div>
         <div class="dl-smart-os" role="group" aria-label="Choose your platform">
           <button type="button" data-os="windows" aria-pressed="true">Windows</button>
           <button type="button" data-os="macos" aria-pressed="false">macOS</button>
           <button type="button" data-os="linux" aria-pressed="false">Linux</button>
         </div>
-        <a class="btn btn-primary" data-download-go href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe" download>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5M5 19h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <span data-download-go-label>Download for Windows</span>
-        </a>
+        <div class="dl-smart-actions">
+          <a class="btn btn-primary" data-download-go href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe" download>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5M5 19h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span data-download-go-label>Download portable</span>
+          </a>
+          <a class="btn btn-ghost dl-setup-link" href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Setup.exe" download aria-label="Download the Windows setup installer">Setup</a>
+        </div>
       </div>
       <div class="dl">
         <div class="dl-row">
           <div>
             <h3>Windows executable</h3>
-            <small>One portable Kaelis.exe. No installer, no archive, no admin.</small>
+            <small>One portable Kaelis.exe. No install, no archive, no admin.</small>
           </div>
           <div class="facts">
-            <span><span data-release="exe-size">16.4 MB</span> exe</span>
+            <span><span data-release="exe-size">16.5 MB</span> exe</span>
             <span>Windows 10 / 11 · x64</span>
           </div>
           <div class="facts"><span>No install</span><span>No admin</span></div>
           <div>
             <a class="btn btn-primary" href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe" download>Download</a>
+          </div>
+        </div>
+        <div class="dl-row">
+          <div>
+            <h3>Windows setup</h3>
+            <small>Optional per-user install with a Start menu shortcut and clean uninstaller. Same build as the portable EXE; no admin rights.</small>
+          </div>
+          <div class="facts">
+            <span><span data-release="setup-size">5.8 MB</span> setup</span>
+            <span>Windows 10 / 11 · x64</span>
+          </div>
+          <div class="facts"><span>Per-user</span><span>Uninstaller</span></div>
+          <div>
+            <a class="btn btn-ghost" href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Setup.exe" download>Download</a>
           </div>
         </div>
         <div class="dl-row">
@@ -1129,20 +1668,21 @@
       </div>
       <p class="dl-note">
         Every link points at the latest published tag.
-        <a href="https://github.com/fuvji/kaelis/releases/latest/download/KAELIS-LINKS.txt">URL &amp; install index ↗</a> ·
+        <a href="downloads/KAELIS-LINKS.txt">URL &amp; install index ↗</a> ·
         <a href="https://github.com/fuvji/kaelis/releases/latest" rel="noreferrer">All releases ↗</a> ·
         <a href="https://github.com/fuvji/kaelis/actions/workflows/release.yml" rel="noreferrer">Build log ↗</a>
       </p>
       <details class="checks">
         <summary>Checksums and build provenance</summary>
         <div class="body">
-          <p>Every artifact is hashed at release time. Published files: <a href="https://github.com/fuvji/kaelis/releases/latest/download/SHA256SUMS.txt">SHA256SUMS.txt</a> and the generated <a href="https://github.com/fuvji/kaelis/releases/latest/download/KAELIS-LINKS.txt">URL &amp; installation index</a>.</p>
-          <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">2d5b03bae73066e0fdf0366bdc62cd48a68e506d3f57cc431680538cb1db0370</code></div>
-          <div class="hash"><span>Kaelis-macos-universal.dmg</span><code data-release="dmg-hash">7f67e99de3bda42ee6695d7577062d7769d60b9fde50101128cad531b795e5f9</code></div>
-          <div class="hash"><span>Kaelis-macos-universal.zip</span><code data-release="maczip-hash">81bf7cb9c2124047941eab7bd9d43321d848374d911ef1aadc51b95c4a1f8d89</code></div>
-          <div class="hash"><span>Kaelis-linux-x64.deb</span><code data-release="deb-hash">83adfeacc9bb672357b15aa7d9d8993eba8cbf63f62b142a7256782e2401cf5d</code></div>
-          <div class="hash"><span>Kaelis-linux-x64.AppImage</span><code data-release="appimage-hash">aa077246c33d5a11ab644be6280d6d949c319c1360564048dd9b07d235279720</code></div>
-          <div class="hash"><span>Kaelis-linux-x64.tar.gz</span><code data-release="targz-hash">870c177c24d81b789bbe7c94706ccefdfadf0f72a85dbd0f5be1a41eb1b63732</code></div>
+          <p>Every artifact is hashed at release time. Published files: <a href="downloads/SHA256SUMS.txt">SHA256SUMS.txt</a> and the generated <a href="downloads/KAELIS-LINKS.txt">URL &amp; installation index</a>.</p>
+          <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">2d5b03bae73066e0fdf0366bdc62cd48a68e506d3f57cc431680538cb1db0370</code><button type="button" class="hash-copy" data-copy-hash aria-label="Copy SHA-256 for Kaelis.exe">Copy</button></div>
+          <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">b1ed1b81f4d5bbd20a7e42d8a4690406dfb48e07101495fd877dd8729012d209</code><button type="button" class="hash-copy" data-copy-hash aria-label="Copy SHA-256 for Kaelis-Setup.exe">Copy</button></div>
+          <div class="hash"><span>Kaelis-macos-universal.dmg</span><code data-release="dmg-hash">7f67e99de3bda42ee6695d7577062d7769d60b9fde50101128cad531b795e5f9</code><button type="button" class="hash-copy" data-copy-hash aria-label="Copy SHA-256 for the macOS DMG">Copy</button></div>
+          <div class="hash"><span>Kaelis-macos-universal.zip</span><code data-release="maczip-hash">81bf7cb9c2124047941eab7bd9d43321d848374d911ef1aadc51b95c4a1f8d89</code><button type="button" class="hash-copy" data-copy-hash aria-label="Copy SHA-256 for the macOS ZIP">Copy</button></div>
+          <div class="hash"><span>Kaelis-linux-x64.deb</span><code data-release="deb-hash">83adfeacc9bb672357b15aa7d9d8993eba8cbf63f62b142a7256782e2401cf5d</code><button type="button" class="hash-copy" data-copy-hash aria-label="Copy SHA-256 for the Linux deb">Copy</button></div>
+          <div class="hash"><span>Kaelis-linux-x64.AppImage</span><code data-release="appimage-hash">aa077246c33d5a11ab644be6280d6d949c319c1360564048dd9b07d235279720</code><button type="button" class="hash-copy" data-copy-hash aria-label="Copy SHA-256 for the Linux AppImage">Copy</button></div>
+          <div class="hash"><span>Kaelis-linux-x64.tar.gz</span><code data-release="targz-hash">870c177c24d81b789bbe7c94706ccefdfadf0f72a85dbd0f5be1a41eb1b63732</code><button type="button" class="hash-copy" data-copy-hash aria-label="Copy SHA-256 for the Linux tarball">Copy</button></div>
           <div class="hash"><span>Verify on Linux / macOS</span><code>shasum -a 256 -c SHA256SUMS.txt</code></div>
         </div>
       </details>
@@ -1206,6 +1746,10 @@
           <p>Yes. Free to download and use. Kaelis is proprietary software, so redistribution and modification are not permitted. No paid tier, no account.</p>
         </details>
         <details>
+          <summary>Is there a Windows setup installer?</summary>
+          <p>Yes. <code>Kaelis-Setup.exe</code> installs per user under <code>%LOCALAPPDATA%\Programs\Kaelis</code>, adds a Start menu shortcut and a clean uninstaller, and needs no administrator rights. The portable <code>Kaelis.exe</code> remains available.</p>
+        </details>
+        <details>
           <summary>Does it need a Microsoft account?</summary>
           <p>No. Offline profiles work immediately and show the premium skin that owns the name. Microsoft sign-in is optional: one click, a short code on the Microsoft page, and the refresh token stays in the OS keychain.</p>
         </details>
@@ -1223,7 +1767,7 @@
         </details>
         <details>
           <summary>Can I run it without installing?</summary>
-          <p>Yes. Windows ships as one portable EXE. Set <code>KAELIS_DATA_DIR</code> to keep instances and settings beside the executable.</p>
+          <p>Yes. The Windows portable EXE runs without installing; the per-user setup is optional. Set <code>KAELIS_DATA_DIR</code> to keep instances and settings beside the executable.</p>
         </details>
         <details>
           <summary>Will realtime priority hurt the rest of the desktop?</summary>
@@ -1259,8 +1803,9 @@
       <div class="foot-col">
         <small>Downloads</small>
         <a href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe" download>Windows EXE</a>
-        <a href="https://github.com/fuvji/kaelis/releases/latest/download/SHA256SUMS.txt">Checksums</a>
-        <a href="https://github.com/fuvji/kaelis/releases/latest/download/KAELIS-LINKS.txt">URL &amp; install index</a>
+        <a href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Setup.exe" download>Windows setup</a>
+        <a href="downloads/SHA256SUMS.txt">Checksums</a>
+        <a href="downloads/KAELIS-LINKS.txt">URL &amp; install index</a>
         <a href="https://github.com/fuvji/kaelis/releases" rel="noreferrer">All releases</a>
       </div>
       <div class="foot-col">
@@ -1281,25 +1826,52 @@
   </div>
 </footer>
 
+<dialog class="lightbox" data-lightbox aria-labelledby="lightbox-title" aria-describedby="lightbox-meta" closedby="any">
+  <div class="lightbox-panel">
+    <div class="lightbox-top">
+      <div class="lightbox-heading">
+        <span class="mono">Vault preview</span>
+        <span class="lightbox-hint" aria-hidden="true">Arrow keys browse. Esc closes.</span>
+      </div>
+      <button class="lightbox-close" type="button" data-lightbox-close aria-label="Close preview">Close <span aria-hidden="true">×</span></button>
+    </div>
+    <div class="lightbox-media"><img data-lightbox-img alt="" decoding="async"></div>
+    <div class="lightbox-caption">
+      <div>
+        <h3 id="lightbox-title" data-lightbox-title tabindex="-1">Content</h3>
+        <p id="lightbox-meta" data-lightbox-meta></p>
+      </div>
+      <div class="lightbox-nav">
+        <button type="button" data-lightbox-prev aria-label="Previous preview">←</button>
+        <span class="lightbox-count" data-lightbox-count aria-live="polite">01 / 07</span>
+        <button type="button" data-lightbox-next aria-label="Next preview">→</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
 <script>
   (function () {
     // Pick the artifact that matches the visitor's OS. Without JavaScript the
     // static picker and every direct row below still work on their own.
     var platforms = {
       windows: {
-        title: "Windows · EXE",
-        copy: "Windows 10 / 11 x64 · one file · no installer or admin.",
-        action: "Download for Windows",
+        title: "Windows · portable EXE",
+        artifact: "EXE",
+        copy: "Windows 10 / 11 x64 · one file · no install. Optional setup.",
+        action: "Download portable",
         url: "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe"
       },
       macos: {
         title: "macOS · universal DMG",
+        artifact: "DMG",
         copy: "macOS 11+ · Apple silicon and Intel · ad-hoc signed.",
         action: "Download for macOS",
         url: "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.dmg"
       },
       linux: {
         title: "Linux · AppImage",
+        artifact: "APPIMAGE",
         copy: "Linux x64 · one file, no install · .deb and tar.gz below.",
         action: "Download for Linux",
         url: "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.AppImage"
@@ -1312,9 +1884,13 @@
       var pickerGo = picker.querySelector("[data-download-go]");
       var pickerLabel = picker.querySelector("[data-download-go-label]");
       var pickerDetect = picker.querySelector("[data-download-detect]");
+      var pickerArtifact = picker.querySelector("[data-download-artifact]");
       var setPlatform = function (key, detected) {
         var item = platforms[key];
         if (!item) return;
+        picker.dataset.platform = key;
+        picker.dataset.artifact = item.artifact;
+        if (pickerArtifact) pickerArtifact.textContent = item.artifact;
         picker.querySelectorAll("[data-os]").forEach(function (button) {
           button.setAttribute("aria-pressed", String(button.dataset.os === key));
         });
@@ -1349,6 +1925,20 @@
     var year = document.getElementById("year");
     if (year) year.textContent = new Date().getFullYear();
 
+    var navMenu = document.querySelector(".nav-menu");
+    if (navMenu) {
+      navMenu.querySelectorAll("a").forEach(function (link) {
+        link.addEventListener("click", function () { navMenu.open = false; });
+      });
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && navMenu.open) {
+          navMenu.open = false;
+          var navSummary = navMenu.querySelector("summary");
+          if (navSummary) navSummary.focus();
+        }
+      });
+    }
+
     // The film is a poster and a play link until someone asks for it, so the
     // page never spends 5 MB of bandwidth on a visitor who only wanted a download.
     var frame = document.querySelector("[data-film]");
@@ -1376,17 +1966,95 @@
       }
     }
 
+    var lightbox = document.querySelector("[data-lightbox]");
+    var lightboxTriggers = Array.prototype.slice.call(document.querySelectorAll("[data-lightbox-src]"));
+    if (lightbox && lightboxTriggers.length && typeof lightbox.showModal === "function") {
+      var lightboxImg = lightbox.querySelector("[data-lightbox-img]");
+      var lightboxTitle = lightbox.querySelector("[data-lightbox-title]");
+      var lightboxMeta = lightbox.querySelector("[data-lightbox-meta]");
+      var lightboxCount = lightbox.querySelector("[data-lightbox-count]");
+      var lightboxClose = lightbox.querySelector("[data-lightbox-close]");
+      var lightboxPrev = lightbox.querySelector("[data-lightbox-prev]");
+      var lightboxNext = lightbox.querySelector("[data-lightbox-next]");
+      var currentSlide = 0;
+      var lastTrigger = null;
+      var setSlide = function (index) {
+        currentSlide = (index + lightboxTriggers.length) % lightboxTriggers.length;
+        var trigger = lightboxTriggers[currentSlide];
+        var source = trigger.querySelector("img");
+        lightboxImg.src = trigger.dataset.lightboxSrc;
+        lightboxImg.alt = source ? source.alt : "";
+        lightboxTitle.textContent = trigger.dataset.lightboxTitle || "";
+        lightboxMeta.textContent = trigger.dataset.lightboxMeta || "";
+        lightboxCount.textContent = String(currentSlide + 1).padStart(2, "0") + " / " + String(lightboxTriggers.length).padStart(2, "0");
+      };
+      var finishClose = function () {
+        if (lightbox.open) return;
+        document.body.classList.remove("lightbox-open");
+        lightboxImg.removeAttribute("src");
+        lightboxImg.alt = "";
+        if (lastTrigger) lastTrigger.focus({ preventScroll: true });
+      };
+      var closeLightbox = function () {
+        if (!lightbox.open) return;
+        lightbox.close();
+        finishClose();
+      };
+      lightboxTriggers.forEach(function (trigger) {
+        trigger.addEventListener("click", function (event) {
+          event.preventDefault();
+          lastTrigger = trigger;
+          setSlide(lightboxTriggers.indexOf(trigger));
+          document.body.classList.add("lightbox-open");
+          lightbox.showModal();
+          lightboxTitle.focus({ preventScroll: true });
+        });
+      });
+      lightboxClose.addEventListener("click", closeLightbox);
+      lightboxPrev.addEventListener("click", function () { setSlide(currentSlide - 1); });
+      lightboxNext.addEventListener("click", function () { setSlide(currentSlide + 1); });
+      var backdropPressed = false;
+      lightbox.addEventListener("pointerdown", function (event) {
+        backdropPressed = event.target === lightbox;
+      });
+      lightbox.addEventListener("click", function (event) {
+        if (event.target === lightbox && backdropPressed) closeLightbox();
+        backdropPressed = false;
+      });
+      lightbox.addEventListener("keydown", function (event) {
+        if (event.key === "ArrowLeft") { event.preventDefault(); setSlide(currentSlide - 1); }
+        if (event.key === "ArrowRight") { event.preventDefault(); setSlide(currentSlide + 1); }
+      });
+      lightbox.addEventListener("close", finishClose);
+    }
+
     document.querySelectorAll("[data-copy]").forEach(function (button) {
       button.addEventListener("click", function () {
         var source = document.getElementById(button.dataset.copy);
         if (!source) return;
-        var done = function () {
-          button.textContent = "Copied";
-          setTimeout(function () { button.textContent = "Copy"; }, 1400);
-        };
-        copy(source.textContent, done);
+        copy(source.textContent, function () { flashCopied(button, "Copied"); });
       });
     });
+
+    document.querySelectorAll("[data-copy-hash]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        var row = button.closest(".hash");
+        var source = row ? row.querySelector("code") : null;
+        if (!source) return;
+        copy(source.textContent.trim(), function () { flashCopied(button, "Copied"); });
+      });
+    });
+
+    function flashCopied(button, label) {
+      if (button.copyTimer) clearTimeout(button.copyTimer);
+      if (!button.dataset.defaultLabel) button.dataset.defaultLabel = button.textContent;
+      button.textContent = label;
+      button.classList.add("is-copied");
+      button.copyTimer = setTimeout(function () {
+        button.textContent = button.dataset.defaultLabel;
+        button.classList.remove("is-copied");
+      }, 1500);
+    }
 
     function copy(text, done) {
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1424,7 +2092,7 @@
       var formatValue = function (value, metric) {
         return value.toFixed(metric.digits) + " " + metric.unit;
       };
-      var renderBench = function (key) {
+      var renderBench = function (key, animate) {
         var metric = metrics[key];
         if (!metric) return;
         var max = Math.max.apply(null, versions.map(function (item) { return item[key]; }));
@@ -1432,6 +2100,11 @@
           var width = Math.max((item[key] / max) * 100, 1.5);
           bars[index].style.width = width.toFixed(2) + "%";
           values[index].textContent = formatValue(item[key], metric);
+          if (animate) {
+            values[index].classList.remove("value-shift");
+            void values[index].offsetWidth;
+            values[index].classList.add("value-shift");
+          }
         });
         var oldest = versions[0][key];
         var current = versions[versions.length - 1][key];
@@ -1447,10 +2120,10 @@
           bench.querySelectorAll("[data-metric]").forEach(function (other) {
             other.setAttribute("aria-selected", String(other === button));
           });
-          renderBench(button.dataset.metric);
+          renderBench(button.dataset.metric, true);
         });
       });
-      renderBench("memory");
+      renderBench("memory", false);
     }
   })();
 </script>

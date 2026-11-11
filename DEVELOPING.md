@@ -113,7 +113,7 @@ is missing from the installed GNU toolchain, so CI is the compile evidence.
 
 The release path also generates `dist/KAELIS-LINKS.txt`, publishes the same
 bytes as [`site/downloads/KAELIS-LINKS.txt`](site/downloads/KAELIS-LINKS.txt),
-and packages Windows as one portable executable. The index lists every runtime endpoint,
+and packages Windows as a portable executable plus an optional per-user setup. The index lists every runtime endpoint,
 download, installation path, and project link; `tools/links.ps1` regenerates it,
 prunes legacy link files, and `-Verify` probes the static links. `tools/release.ps1`
 runs it automatically after hashing the new artifacts.
@@ -172,8 +172,9 @@ sends `text/html`, `application/manifest+json`, and `text/vtt` for their files;
 Releases are built by [`.github/workflows/release.yml`](.github/workflows/release.yml):
 a `v*` tag builds Windows, macOS (universal), and Linux, publishes one release
 with every artifact, the generated `KAELIS-LINKS.txt`, and a combined
-`SHA256SUMS.txt`. The Windows job publishes one `Kaelis.exe` and builds no
-installer or archive. The macOS job produces both the ZIP and the DMG; the Linux job
+`SHA256SUMS.txt`. The Windows job publishes `Kaelis.exe` and the optional
+per-user `Kaelis-Setup.exe`; it builds no archive. The macOS job produces both
+the ZIP and the DMG; the Linux job
 smoke-tests the tarball, the `.deb`, and the AppImage before publishing. The
 publish job dispatches the site deploy so the page can never serve the previous
 release under a new version number. `tools/release.ps1` is the same Windows path

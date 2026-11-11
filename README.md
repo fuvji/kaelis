@@ -87,12 +87,14 @@ link and local-file import, never scrapers.
 
 | Platform | Downloads |
 | --- | --- |
-| **Windows 10 / 11 · x64** | [Kaelis.exe](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe) — one portable file, no installer |
+| **Windows 10 / 11 · x64** | [Kaelis.exe](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe) — portable, no install · [Setup](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Setup.exe) — per-user installer |
 | **macOS 11+** | [Universal DMG](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.dmg) · [ZIP](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.zip) |
 | **Linux · x64** | [.deb](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.deb) · [AppImage](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.AppImage) · [tar.gz](https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.tar.gz) |
 
-No admin rights, no runtime to install, no account to create. The Windows build
-is unsigned, so SmartScreen may ask once; the macOS build is ad-hoc signed, so
+The Windows setup is optional: it installs per user, adds a Start menu shortcut
+and uninstaller, and needs no administrator rights. The portable EXE remains the
+default. No runtime to install, no account to create. The Windows build is
+unsigned, so SmartScreen may ask once; the macOS build is ad-hoc signed, so
 the first launch is right-click → Open. Verify before running:
 
 ```bash

@@ -44,6 +44,7 @@ jobs:
           tag="${{ github.event.release.tag_name }}"
           pattern_args=(
             --pattern Kaelis.exe
+            --pattern Kaelis-Setup.exe
             --pattern Kaelis-macos-universal.zip
             --pattern Kaelis-macos-universal.dmg
             --pattern Kaelis-linux-x64.tar.gz
@@ -57,14 +58,15 @@ jobs:
           else
             gh release download --dir site/downloads --clobber "${pattern_args[@]}"
           fi
+          test -s site/downloads/Kaelis-Setup.exe
 
       - name: Refresh download sizes and hashes
         run: pwsh -NoProfile -File tools/hydrate-site.ps1
 
-      - name: Keep Windows checksums to the shipped EXE
+      - name: Keep Windows checksums to the shipped files
         run: |
           set -euo pipefail
-          grep -vE 'Kaelis-(Portable\.zip|Setup\.exe)' site/downloads/SHA256SUMS.txt \
+          grep -vE 'Kaelis-Portable\.zip' site/downloads/SHA256SUMS.txt \
             > site/downloads/SHA256SUMS.filtered
           mv site/downloads/SHA256SUMS.filtered site/downloads/SHA256SUMS.txt
 

@@ -3,13 +3,13 @@ type: reference
 summary: Durable Kaelis choices about versioning, performance claims, distribution and web.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-10
+last_touched: 2026-11-11
 title: Kaelis Decisions
 tags:
   - kaelis
   - decisions
 status: active
-updated: 2026-11-10
+updated: 2026-11-11
 ---
 
 # Kaelis Decisions
@@ -38,7 +38,9 @@ updated: 2026-11-10
 
 ## Packaging
 
-- Windows ships as one portable EXE; no ZIP and no installer.
+- Windows ships a portable EXE and an optional per-user NSIS setup; no ZIP.
+  The setup installs under `%LOCALAPPDATA%\Programs\Kaelis` with a Start menu
+  shortcut and uninstaller, and carries the same binary as the portable EXE.
 - All packagers read root `Cargo.toml`; crate manifests use
   `version.workspace = true`.
 - One version feeds About, tray, update checks and package metadata.

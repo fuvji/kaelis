@@ -90,6 +90,7 @@ function Format-Size([long]$bytes) {
 }
 
 $exe = Get-Artifact (Join-Path $downloads "Kaelis.exe")
+$setup = Get-Artifact (Join-Path $downloads "Kaelis-Setup.exe")
 
 $sb = New-Object System.Text.StringBuilder
 function Add([string]$text = "") { [void]$sb.Append($text).Append("`n") }
@@ -128,7 +129,8 @@ Add "    https://fuvji.github.io/kaelis/"
 Add "  Download section"
 Add "    https://fuvji.github.io/kaelis/#downloads"
 [void]$curated.Add("https://fuvji.github.io/kaelis/#downloads")
-Add-Link "Windows executable" "https://fuvji.github.io/kaelis/downloads/Kaelis.exe" "Single portable executable; no installer, archive, or runtime prerequisite."
+Add-Link "Windows executable" "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe" "Portable executable; no install, archive, or runtime prerequisite."
+Add-Link "Windows setup installer" "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Setup.exe" "Optional per-user install; Start menu shortcut and uninstaller; no admin."
 Add-Link "Checksums (SHA-256)" "https://fuvji.github.io/kaelis/downloads/SHA256SUMS.txt" "Verify every download with certutil or sha256sum."
 Add-Link "Download README" "https://fuvji.github.io/kaelis/downloads/README.md" "Portable usage, scripting, and verification."
 Add-Link "This index, published" "https://fuvji.github.io/kaelis/downloads/KAELIS-LINKS.txt" "Same generated content as dist/KAELIS-LINKS.txt."
@@ -140,14 +142,16 @@ Add-Link "Linux x64 build" "https://github.com/fuvji/kaelis/releases/latest/down
 Add-Link "Every release" "https://github.com/fuvji/kaelis/releases" "All tagged builds and assets."
 Add-Link "Latest release" "https://github.com/fuvji/kaelis/releases/latest" "Newest tagged release."
 Add-Link "Latest Windows EXE" "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe"
+Add-Link "Latest Windows setup" "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Setup.exe"
 
 Add-Head "2. INSTALLATION METHODS"
 Add ""
 Add "  2.1 Windows"
 Add "    Download Kaelis.exe and run it from any folder you can write to."
-Add "    There is no installer, archive, or bundled runtime download for the"
-Add "    launcher itself. To keep instances and settings beside the executable,"
-Add "    set KAELIS_DATA_DIR to that folder before launching."
+Add "    Optional: Kaelis-Setup.exe installs per user under %LOCALAPPDATA%\Programs\Kaelis,"
+Add "    adds a Start menu shortcut and uninstaller, and needs no administrator rights."
+Add "    The portable EXE can keep instances and settings beside itself when"
+Add "    KAELIS_DATA_DIR is set to that folder before launching."
 Add "    Data: %APPDATA%\kaelis\Kaelis\data (default)"
 Add "          %APPDATA%\kaelis\Kaelis\data\instances"
 Add ""
@@ -326,8 +330,17 @@ if ($exe) {
     Add "  site/downloads/Kaelis.exe is missing."
 }
 Add ""
-Add "  dist/Kaelis.exe is the local scratch copy; site/downloads is the"
-Add "  published set. Windows ships as this one executable only."
+if ($setup) {
+    Add "  site/downloads/Kaelis-Setup.exe"
+    Add "    $($setup.Bytes) bytes ($(Format-Size $setup.Bytes))"
+    Add "    $($setup.Sha256)"
+} else {
+    Add "  site/downloads/Kaelis-Setup.exe is missing (portable-only local build)."
+}
+Add ""
+Add "  dist/Kaelis.exe and dist/Kaelis-Setup.exe are the local scratch copies;"
+Add "  site/downloads is the published set. Windows ships the portable EXE and"
+Add "  the optional per-user setup."
 
 Add-Head "7. VERIFY A DOWNLOAD"
 Add "  Windows:"
@@ -345,6 +358,7 @@ Add ""
 $discovered = @{}
 $scanFiles = @()
 $scanFiles += Get-ChildItem (Join-Path $root "crates") -Recurse -Filter *.rs -File
+$scanFiles += Get-Item (Join-Path $root "installer/kaelis.nsi") -ErrorAction SilentlyContinue
 foreach ($file in $scanFiles) {
     $lines = [System.IO.File]::ReadAllLines($file.FullName, $utf8)
     for ($index = 0; $index -lt $lines.Length; $index++) {

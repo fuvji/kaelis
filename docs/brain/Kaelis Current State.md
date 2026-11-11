@@ -16,15 +16,21 @@ updated: 2026-11-11
 
 > [!info] Snapshot
 > Latest release **v0.4.6**; product page live; workspace version 0.4.6.
+> The setup, vault-graph, hero-frame and preview-dialog pass is being published
+> with this Pages run.
 
 ## Repo
 
 - Branch `main`.
-- Site/repo graph commit: `330f3a0`; this packaging/page pass follows it.
+- Site/repo graph commit: `21e9007`; the vault-graph/preview pass follows it.
 - Latest tag: `v0.4.6` (2026-11-10T22:02:25Z).
 - Repo graph baseline: `f6da23c`; see [[Kaelis Repo Graph]].
 - Windows release asset: `Kaelis.exe`, 17,250,816 B.
 - SHA-256: `2d5b03bae73066e0fdf0366bdc62cd48a68e506d3f57cc431680538cb1db0370`.
+- Windows setup asset: `Kaelis-Setup.exe`, 6,126,053 B.
+- Setup SHA-256: `b1ed1b81f4d5bbd20a7e42d8a4690406dfb48e07101495fd877dd8729012d209`.
+- Local `dist/Kaelis-Setup.exe` and `site/downloads/Kaelis-Setup.exe` are synced
+  to the v0.4.6 release; `dist/build.json` and both SHA-256 lists match it.
 - Release: https://github.com/fuvji/kaelis/releases/tag/v0.4.6
 
 ## Site
@@ -33,22 +39,37 @@ updated: 2026-11-11
 - Benchmark lab: 0.3.7 / 0.4.5 / 0.4.6, same harness.
 - Memory 86.6 → 18.9 MB (−78%); startup and CLI flat/noise.
 - Radius 6/10/14/20/28/999 px; static grain; transform-only aurora.
-- Seven 1080×700 previews from the 0.4.6 binary.
-- Smart download picker: Windows EXE, macOS universal DMG, Linux AppImage;
-  direct rows cover Windows EXE, macOS DMG/ZIP and Linux `.deb`/AppImage/`tar.gz`.
-  No third-party request.
-- Windows ZIP and setup EXE are retired from current links and future releases;
-  the 0.4.6 release keeps them as history.
-- Six artifacts have size/hash slots; static fallbacks match the v0.4.6 release
-  digests, not the older local `site/downloads` copies.
+- Seven 1080×700 views from the 0.4.6 binary (hero Overview plus six gallery
+  cards), opened in one native dialog with arrow/Esc navigation, focus return
+  and scroll lock. The hero capture has its own desktop-status rail.
+- Fixed vault graph: 24 nodes, 47 edges, three labels, three highlighted
+  traces, one inline SVG. No third-party request or filter; the former dash
+  animation and film pulse are removed.
+- Smart download picker: Windows portable EXE, macOS universal DMG, Linux
+  AppImage; Windows also exposes the optional setup. Direct rows cover Windows
+  EXE/setup, macOS DMG/ZIP and Linux `.deb`/AppImage/`tar.gz`. A platform-
+  independent `Download Windows setup` link sits in the downloads header. The
+  artifact tile follows the selected platform. No third-party request.
+- The sticky header carries a scroll-driven progress hairline with no scroll
+  listener; reduced motion and unsupported timelines hide it.
+- The Windows ZIP is retired from current links and future releases. The
+  optional per-user setup is restored as `Kaelis-Setup.exe` and hydrated from
+  the release; 0.4.6 keeps its old artifacts as history.
+- Seven artifacts have size/hash slots; static fallbacks match the v0.4.6
+  release digests, not the older local `site/downloads` copies.
 - The Windows native frame is cleared through DWM attributes and the first clear
   is dark, so the undecorated window does not flash a pale edge.
 - The film poster is deferred until the film is within 300 px. In a 520×944
   Chromium check, its 147,409 B was absent from the initial resource list and
   loaded after scrolling. The play control is a real MP4 link before JavaScript.
-- Preview tilt and the benchmark trend draw are disabled by reduced motion.
-- Superseded preview-card motion rules and the old button easing were removed;
-  the later motion block and shared control easing are the only definitions.
+- Preview tilt, graph drift, hero entrance, benchmark value fade and the
+  benchmark trend draw are disabled by reduced motion.
+- The picker tints its recommendation per OS; checksum rows copy in place.
+- Mobile has a native section menu; the preview dialog uses native modal focus,
+  `aria-describedby`, pointer-safe backdrop dismissal and stable scrollbar
+  geometry. Metadata contrast was lifted from `#6e7580` to `#808996`.
+- `content-visibility: auto` remains only on below-fold sections; the graph
+  removed its continuous dash paint loop and the aurora dropped `will-change`.
 - Pages deploy green; direct binary on Pages is 404 by design.
 
 ## Dependencies
@@ -68,8 +89,10 @@ updated: 2026-11-11
 ## Open
 
 - Brain synced into the user's Obsidian vault under `01-Projects/Kaelis/Brain`.
-- CI at `330f3a0` passed Windows, Ubuntu, macOS and Site assets.
-- The single-EXE/frame/lazy-poster pass is the next CI gate.
+- CI at `21e9007`: Site assets and macOS passed; Windows and Ubuntu were still
+  in their release build at the last check.
+- The vault-graph, hero-frame, preview-dialog and setup pass is in the Pages
+  deployment; a post-deploy full-page visual review remains.
 - Dependabot opened #1–#6 for major dependency updates; review them instead of
   merging by default.
 - Plan the first measured 0.4.7 optimization.

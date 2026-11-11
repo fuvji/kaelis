@@ -4,10 +4,25 @@ Every released change, newest first. The product page keeps only the latest.
 
 ## Unreleased
 
-- **Windows ships as one portable file.** The ZIP and setup EXE are retired from
-  the page, release workflow and packaging scripts. `Kaelis.exe` is the single
-  Windows artifact; the 0.4.6 release keeps its old files as history, but no
-  current link points at them.
+- **The page now reads like a vault graph.** A fixed, inline 1,600×1,000
+  constellation adds 24 nodes, 47 edges, three labels and three highlighted
+  traces, without a third-party request or blur filter. The graph is masked
+  away from the copy side, drifts 8 px total over 72 seconds, and has a single
+  staged entrance; the former dash paint loop and film pulse are gone. Preview
+  cards became real image links into a native dialog with arrow/Esc navigation,
+  title-first focus, focus return, pointer-safe backdrop dismissal and stable
+  scrollbar geometry. The OS picker tints its recommendation, checksum rows copy
+  in place, benchmark values fade, and mobile gets a native section menu.
+  Metadata contrast was lifted for AA; reduced motion freezes the graph,
+  entrance, preview scale and value fade. The Overview capture now sits in an
+  18 px desktop frame with a local-status rail and opens as the seventh view;
+  key panels gained a restrained top highlight. The download tile follows the
+  selected platform and the sticky header gains a reduced-motion-safe scroll
+  progress line.
+- **Windows setup returns alongside the portable EXE.** The optional per-user
+  NSIS installer is restored as `Kaelis-Setup.exe`: Start menu shortcut,
+  uninstaller, no admin rights, and the same binary as the portable download.
+  The portable ZIP remains retired; `Kaelis.exe` stays the default.
 - **The compositor frame is gone.** Windows no longer asks DWM for rounded
   corners; it removes the native border, visible frame and rounded clip instead,
   and clears the first frame to the dark backdrop so no pale line flashes.

@@ -53,6 +53,15 @@ jobs:
       - name: Release build
         run: cargo build --release -p kaelis-launcher
 
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        run: choco install nsis --no-progress -y
+
+      - name: Package Windows setup
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/release.ps1 -SkipBuild -Toolchain stable-x86_64-pc-windows-msvc
+
       # Build the actual installable artifact on every push, so a broken
       # AppImage, .deb, or DMG fails CI instead of a tag.
       - name: Package Linux artifacts
@@ -123,9 +132,10 @@ jobs:
       - name: Check release download references
         run: |
           set -euo pipefail
-          for artifact in Kaelis.exe Kaelis-macos-universal.dmg \
-                          Kaelis-macos-universal.zip Kaelis-linux-x64.deb \
-                          Kaelis-linux-x64.AppImage Kaelis-linux-x64.tar.gz; do
+          for artifact in Kaelis.exe Kaelis-Setup.exe \
+                          Kaelis-macos-universal.dmg Kaelis-macos-universal.zip \
+                          Kaelis-linux-x64.deb Kaelis-linux-x64.AppImage \
+                          Kaelis-linux-x64.tar.gz; do
             grep -q "download/$artifact" site/index.html || {
               echo "page does not link $artifact"
               exit 1
