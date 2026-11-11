@@ -4,6 +4,17 @@ Every released change, newest first. The product page keeps only the latest.
 
 ## Unreleased
 
+- **Downloads choose the right platform.** The page detects Windows, macOS or
+  Linux, recommends the native artifact and keeps every direct row. macOS ZIP
+  and Linux `tar.gz` now have hydrated sizes and checksums; the no-JavaScript
+  fallbacks match the v0.4.6 release instead of older local files. iPadOS and
+  Linux ARM are not offered the x64-only packages.
+- **A cleaner moving surface.** Preview cards get a small pointer-only
+  perspective tilt, buttons and links share one easing, and the benchmark trend
+  line draws once; all of it is frozen by `prefers-reduced-motion`.
+- **The repository has a graph.** `docs/brain/Kaelis Repo Graph.md` maps crate,
+  runtime, release and page edges from the manifests and workflows, with a copy
+  in Obsidian.
 - **The benchmark lab compares three releases on one harness.** 0.3.7, 0.4.5 and
   0.4.6 now share a zero-baseline chart, a memory-trend line and a data table.
   The real memory result is 86.6 MB → 18.9 MB (−78%); startup and CLI are

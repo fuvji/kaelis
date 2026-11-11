@@ -31,10 +31,13 @@
 ## Downloads
 
 - Windows portable ZIP: https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Portable.zip
+- Windows portable EXE: https://github.com/fuvji/kaelis/releases/latest/download/Kaelis.exe
 - Windows installer: https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Setup.exe
 - macOS universal DMG: https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.dmg
+- macOS universal ZIP: https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.zip
 - Linux .deb: https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.deb
 - Linux AppImage: https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.AppImage
+- Linux tar.gz: https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.tar.gz
 
 ## Notes
 

@@ -36,8 +36,10 @@ $artifacts = [ordered]@{
     "zip"      = "Kaelis-Portable.zip"
     "setup"    = "Kaelis-Setup.exe"
     "dmg"      = "Kaelis-macos-universal.dmg"
+    "maczip"   = "Kaelis-macos-universal.zip"
     "deb"      = "Kaelis-linux-x64.deb"
     "appimage" = "Kaelis-linux-x64.AppImage"
+    "targz"    = "Kaelis-linux-x64.tar.gz"
 }
 $required = @("exe", "zip", "setup")
 

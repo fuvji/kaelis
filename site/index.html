@@ -682,6 +682,75 @@
     .cmds { grid-template-columns: 1fr; }
     .hero h1 { font-size: clamp(2.4rem, 10vw, 3.4rem); }
   }
+  /* Smart downloads and smoother motion ------------------------------- */
+  .dl-smart {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center; gap: 14px 20px;
+    margin: 0 0 18px; padding: 16px 18px;
+    border: 1px solid rgba(125, 167, 255, 0.3); border-radius: var(--r-lg);
+    background:
+      radial-gradient(120% 180% at 0% 0%, rgba(125, 167, 255, 0.14), transparent 56%),
+      rgba(9, 11, 16, 0.72);
+  }
+  .dl-smart-copy { display: grid; gap: 3px; min-width: 0; }
+  .dl-smart-copy .mono { display: flex; align-items: center; gap: 8px; }
+  .dl-smart-copy strong { font-size: 15.5px; font-weight: 620; letter-spacing: -0.02em; }
+  .dl-smart-copy p { margin: 0; color: var(--muted); font-size: 12.5px; }
+  .dl-detect {
+    padding: 1px 7px; border: 1px solid rgba(125, 167, 255, 0.32);
+    border-radius: var(--r-pill); color: var(--accent); font-size: 9px;
+    font-style: normal; letter-spacing: 0.12em;
+  }
+  .dl-detect[hidden] { display: none; }
+  .dl-smart-os { display: flex; flex-wrap: wrap; gap: 4px; }
+  .dl-smart-os button {
+    min-height: 34px; padding: 0 12px;
+    border: 1px solid var(--line-strong); border-radius: var(--r-pill);
+    background: transparent; color: var(--muted); font: inherit; font-size: 12px;
+    cursor: pointer; transition: color 180ms ease, border-color 180ms ease, background-color 180ms ease;
+  }
+  .dl-smart-os button:hover { color: var(--text); border-color: var(--muted); }
+  .dl-smart-os button[aria-pressed="true"] {
+    background: var(--text); border-color: var(--text); color: var(--bg); font-weight: 620;
+  }
+  .dl-smart .btn { min-height: 40px; }
+  @media (max-width: 760px) {
+    .dl-smart { grid-template-columns: 1fr; }
+    .dl-smart-os { order: 3; }
+    .dl-smart .btn { justify-self: start; }
+  }
+
+  .previews { perspective: 1600px; }
+  .previews figure {
+    transform: translateZ(0);
+    transition: transform 520ms cubic-bezier(0.16, 1, 0.3, 1), border-color 240ms ease, box-shadow 520ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .previews figure:hover {
+      transform: translateY(-3px) rotateX(0.7deg) rotateY(-0.8deg);
+      box-shadow: 0 24px 50px -34px rgba(0, 0, 0, 0.95);
+    }
+    .previews figure:nth-child(even):hover { transform: translateY(-3px) rotateX(0.7deg) rotateY(0.8deg); }
+  }
+  .btn {
+    transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+  }
+  .btn:hover { box-shadow: 0 8px 24px -16px rgba(0, 0, 0, 0.8); }
+
+  .trend-line {
+    stroke-dasharray: 240; stroke-dashoffset: 240;
+    animation: trend-draw 1.1s cubic-bezier(0.16, 1, 0.3, 1) 250ms forwards;
+  }
+  .trend-area { opacity: 0; animation: trend-fade 900ms ease 500ms forwards; }
+  @keyframes trend-draw { to { stroke-dashoffset: 0; } }
+  @keyframes trend-fade { to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) {
+    .previews { perspective: none; }
+    .previews figure, .previews figure:hover, .btn { transition: none; }
+    .previews figure:hover { transform: none; box-shadow: none; }
+    .trend-line { stroke-dasharray: none; stroke-dashoffset: 0; animation: none; }
+    .trend-area { opacity: 1; animation: none; }
+  }
 </style>
 </head>
 <body>
@@ -1035,6 +1104,22 @@
         </div>
         <p>One build per platform. Free to use, no account needed, no runtime to install.</p>
       </div>
+      <div class="dl-smart" data-download-picker>
+        <div class="dl-smart-copy">
+          <span class="mono">Smart download <em class="dl-detect" data-download-detect hidden>detected</em></span>
+          <strong data-download-title aria-live="polite">Windows · portable ZIP</strong>
+          <p data-download-copy>Windows 10 / 11 x64 · extract and run · no admin.</p>
+        </div>
+        <div class="dl-smart-os" role="group" aria-label="Choose your platform">
+          <button type="button" data-os="windows" aria-pressed="true">Windows</button>
+          <button type="button" data-os="macos" aria-pressed="false">macOS</button>
+          <button type="button" data-os="linux" aria-pressed="false">Linux</button>
+        </div>
+        <a class="btn btn-primary" data-download-go href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Portable.zip" download>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5M5 19h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span data-download-go-label>Download for Windows</span>
+        </a>
+      </div>
       <div class="dl">
         <div class="dl-row">
           <div>
@@ -1066,7 +1151,7 @@
             <h3>macOS disk image</h3>
             <small>Universal binary, drag to Applications. Ad-hoc signed, so the first launch is right-click → Open.</small>
           </div>
-          <div class="facts"><span><span data-release="dmg-size">17.0 MB</span> dmg</span><span>Apple silicon + Intel</span></div>
+          <div class="facts"><span><span data-release="dmg-size">16.0 MB</span> dmg</span><span><span data-release="maczip-size">15.0 MB</span> zip</span><span>Apple silicon + Intel</span></div>
           <div class="facts"><span>macOS 11+</span></div>
           <div>
             <a class="btn btn-primary" href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.dmg" download>Download</a>
@@ -1078,7 +1163,7 @@
             <h3>Linux packages</h3>
             <small>apt, one AppImage, or the tarball. X11 and Wayland.</small>
           </div>
-          <div class="facts"><span><span data-release="deb-size">8.1 MB</span> deb</span><span><span data-release="appimage-size">10.6 MB</span> AppImage</span></div>
+          <div class="facts"><span><span data-release="deb-size">8.1 MB</span> deb</span><span><span data-release="appimage-size">10.7 MB</span> AppImage</span><span><span data-release="targz-size">10.6 MB</span> tar.gz</span></div>
           <div class="facts"><span>Desktop entry included</span></div>
           <div>
             <a class="btn btn-primary" href="https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.deb" download>.deb</a>
@@ -1097,12 +1182,14 @@
         <summary>Checksums and build provenance</summary>
         <div class="body">
           <p>Every artifact is hashed at release time. Published files: <a href="https://github.com/fuvji/kaelis/releases/latest/download/SHA256SUMS.txt">SHA256SUMS.txt</a> and the generated <a href="https://github.com/fuvji/kaelis/releases/latest/download/KAELIS-LINKS.txt">URL &amp; installation index</a>.</p>
-          <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">98c5298a0ffc1461f7fc9aeb78c0864be50381c3e47d075767807008dc5566cc</code></div>
-          <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">64553fef335aff5351dcec7d4276b538f1942176113fcd2e53496660121c43c9</code></div>
-          <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">7f6e29f4e66f578b41b8b66903ba4d9a2825c05d5c096856d9d43c5d1df59aa1</code></div>
-          <div class="hash"><span>Kaelis-macos-universal.dmg</span><code data-release="dmg-hash">9778d7ea724f8b969387fee0c9ab4e7096f18333170963471b5e64ebde759dab</code></div>
-          <div class="hash"><span>Kaelis-linux-x64.deb</span><code data-release="deb-hash">8cf32c22ef07fd5d1e98463222bc7a914184a7224e263c352191edbda5e7cd22</code></div>
-          <div class="hash"><span>Kaelis-linux-x64.AppImage</span><code data-release="appimage-hash">f296b35bf6df7946a4ec5d5c9258adee5dbc80696a4aaf79f3afe3117ebf6e7b</code></div>
+          <div class="hash"><span>Kaelis.exe</span><code data-release="exe-hash">2d5b03bae73066e0fdf0366bdc62cd48a68e506d3f57cc431680538cb1db0370</code></div>
+          <div class="hash"><span>Kaelis-Portable.zip</span><code data-release="zip-hash">69d185b9a476bebc80f369fe9faf82863cb072f938083498d01d9960121464eb</code></div>
+          <div class="hash"><span>Kaelis-Setup.exe</span><code data-release="setup-hash">b1ed1b81f4d5bbd20a7e42d8a4690406dfb48e07101495fd877dd8729012d209</code></div>
+          <div class="hash"><span>Kaelis-macos-universal.dmg</span><code data-release="dmg-hash">7f67e99de3bda42ee6695d7577062d7769d60b9fde50101128cad531b795e5f9</code></div>
+          <div class="hash"><span>Kaelis-macos-universal.zip</span><code data-release="maczip-hash">81bf7cb9c2124047941eab7bd9d43321d848374d911ef1aadc51b95c4a1f8d89</code></div>
+          <div class="hash"><span>Kaelis-linux-x64.deb</span><code data-release="deb-hash">83adfeacc9bb672357b15aa7d9d8993eba8cbf63f62b142a7256782e2401cf5d</code></div>
+          <div class="hash"><span>Kaelis-linux-x64.AppImage</span><code data-release="appimage-hash">aa077246c33d5a11ab644be6280d6d949c319c1360564048dd9b07d235279720</code></div>
+          <div class="hash"><span>Kaelis-linux-x64.tar.gz</span><code data-release="targz-hash">870c177c24d81b789bbe7c94706ccefdfadf0f72a85dbd0f5be1a41eb1b63732</code></div>
           <div class="hash"><span>Verify on Linux / macOS</span><code>shasum -a 256 -c SHA256SUMS.txt</code></div>
         </div>
       </details>
@@ -1205,7 +1292,7 @@
           </svg>
           <span>Kaelis</span>
         </a>
-        <p>A native Minecraft workspace by Kaelis Labs. Built in Rust by <a href="https://github.com/fuvji" rel="noreferrer" style="color:var(--text)">@epufk</a>.</p>
+        <p>A native Minecraft workspace by Kaelis Labs. Built in Rust by <a href="https://github.com/fuvji" rel="noreferrer" style="color:var(--text)">@epufk</a>, founder.</p>
       </div>
       <div class="foot-col">
         <small>Product</small>
@@ -1244,6 +1331,69 @@
 
 <script>
   (function () {
+    // Pick the artifact that matches the visitor's OS. Without JavaScript the
+    // static picker and every direct row below still work on their own.
+    var platforms = {
+      windows: {
+        title: "Windows · portable ZIP",
+        copy: "Windows 10 / 11 x64 · extract and run · no admin.",
+        action: "Download for Windows",
+        url: "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-Portable.zip"
+      },
+      macos: {
+        title: "macOS · universal DMG",
+        copy: "macOS 11+ · Apple silicon and Intel · ad-hoc signed.",
+        action: "Download for macOS",
+        url: "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-macos-universal.dmg"
+      },
+      linux: {
+        title: "Linux · AppImage",
+        copy: "Linux x64 · one file, no install · .deb and tar.gz below.",
+        action: "Download for Linux",
+        url: "https://github.com/fuvji/kaelis/releases/latest/download/Kaelis-linux-x64.AppImage"
+      }
+    };
+    var picker = document.querySelector("[data-download-picker]");
+    if (picker) {
+      var pickerTitle = picker.querySelector("[data-download-title]");
+      var pickerCopy = picker.querySelector("[data-download-copy]");
+      var pickerGo = picker.querySelector("[data-download-go]");
+      var pickerLabel = picker.querySelector("[data-download-go-label]");
+      var pickerDetect = picker.querySelector("[data-download-detect]");
+      var setPlatform = function (key, detected) {
+        var item = platforms[key];
+        if (!item) return;
+        picker.querySelectorAll("[data-os]").forEach(function (button) {
+          button.setAttribute("aria-pressed", String(button.dataset.os === key));
+        });
+        pickerTitle.textContent = item.title;
+        pickerCopy.textContent = item.copy;
+        pickerGo.href = item.url;
+        pickerLabel.textContent = item.action;
+        pickerDetect.hidden = !detected;
+        pickerDetect.textContent = detected ? "detected" : "selected";
+      };
+      picker.querySelectorAll("[data-os]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          setPlatform(button.dataset.os, false);
+        });
+      });
+      var detectPlatform = function () {
+        var data = navigator.userAgentData;
+        var platform = (data && data.platform) || navigator.platform || "";
+        var ua = navigator.userAgent || "";
+        var arm = /aarch64|arm64/i.test(ua) || (data && /arm/i.test(data.architecture || ""));
+        // iPadOS reports MacIntel; a touch-capable "Mac" is not a DMG target.
+        if (/Mac/i.test(platform) && (navigator.maxTouchPoints || 0) > 1) return "";
+        if (/Win/i.test(platform)) return "windows";
+        if (/Mac/i.test(platform)) return "macos";
+        if (/Linux|X11/i.test(platform) || /Linux/i.test(ua)) return arm ? "" : "linux";
+        return "";
+      };
+      var detected = detectPlatform();
+      if (detected) setPlatform(detected, true);
+    }
+
     var year = document.getElementById("year");
     if (year) year.textContent = new Date().getFullYear();
 

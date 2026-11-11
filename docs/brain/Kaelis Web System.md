@@ -3,20 +3,21 @@ type: reference
 summary: Kaelis product page layout, radius scale, aurora, grain and benchmark lab.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-10
+last_touched: 2026-11-11
 title: Kaelis Web System
 tags:
   - kaelis
   - web
   - design
 status: active
-updated: 2026-11-10
+updated: 2026-11-11
 ---
 
 # Kaelis Web System
 
 One inline HTML document in `site/index.html`. No framework, webfont, analytics,
-cookie or third-party request.
+cookie or third-party request. The download picker is local JavaScript; every
+artifact row is a direct link when scripting is off.
 
 ## Shape scale
 
@@ -39,8 +40,20 @@ zero edge and a small 4 px value edge so length stays readable.
   background-position.
 - Texture: static `site/assets/grain.svg` (3 octaves, 180 px tile), opacity ~16%,
   `mix-blend-mode: soft-light`.
-- `prefers-reduced-motion` freezes the blooms.
+- `prefers-reduced-motion` freezes the blooms, preview tilt and trend-line draw.
 - Text always sits on near-solid surfaces, never directly on the moving bloom.
+
+## Smart downloads
+
+- The picker detects Windows, macOS or Linux from `userAgentData` / `platform`
+  and offers the native artifact. iPadOS (a touch-capable `MacIntel`) and Linux
+  ARM are deliberately not mapped to the x64-only Linux packages.
+- Windows recommends the portable ZIP; macOS the universal DMG; Linux the
+  AppImage. Every format remains available in the rows below.
+- No new request: the picker only rewrites local links.
+- macOS ZIP and Linux `tar.gz` have their own hydrated size/hash slots. The
+  static fallbacks match the v0.4.6 release digests, not the older files that may
+  sit in a developer's `site/downloads` folder.
 
 ## Benchmark lab
 
@@ -60,6 +73,8 @@ zero edge and a small 4 px value edge so length stays readable.
 - Film has `preload="none"`.
 - `content-visibility: auto` on below-fold sections.
 - No third-party embeds; no ad network. Sponsorship is a hand-reviewed link.
+- Preview cards use a small perspective tilt on fine pointers only; the
+  benchmark trend line draws once. Both are transform/opacity work.
 - Static site can deploy at a project subpath or domain root.
 
 ## Links

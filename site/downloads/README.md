@@ -1,17 +1,64 @@
-# Kaelis — portable
+# Kaelis — downloads
 
 The fastest, lightest Minecraft launcher. Native Rust for Windows, macOS, and
-Linux.
+Linux. Every artifact is the same launcher; pick the form that fits your OS.
 
-## Run it
+## Windows 10 / 11 · x64
 
-1. Keep `Kaelis.exe` in any folder you can write to (a USB stick works).
-2. Double-click it. No installer, no runtime, no first-run download of the
+1. Run `Kaelis.exe`, or extract `Kaelis-Portable.zip` into a folder you can write
+   to (a USB stick works).
+2. Double-click it. No installer, no runtime, and no first-run download of the
    launcher itself.
 
-This download is the Windows x64 build. Instances, settings, and the managed Java
-runtime live under `%APPDATA%\kaelis\Kaelis\data`; set `KAELIS_DATA_DIR` to keep
-everything beside the executable instead.
+`Kaelis-Setup.exe` is the optional per-user installer with a Start menu shortcut
+and uninstaller; it needs no administrator rights. The portable build keeps
+instances, settings, and the managed Java runtime in the platform data root
+shown by `kaelis --status --json`; set `KAELIS_DATA_DIR` to keep everything
+beside the executable instead.
+
+## macOS 11+ · Apple silicon and Intel
+
+The DMG is universal and ad-hoc signed:
+
+1. Open `Kaelis-macos-universal.dmg`.
+2. Drag `Kaelis.app` to Applications.
+3. On the first launch, right-click the app and choose **Open**. macOS may warn
+   because the build has no commercial notarisation certificate.
+
+`Kaelis-macos-universal.zip` contains the same `.app` for scripted or portable
+installs. The data root is reported by `kaelis --status --json`.
+
+## Linux · x64
+
+### Debian / Ubuntu
+
+```bash
+sudo apt install ./Kaelis-linux-x64.deb
+kaelis
+```
+
+The package includes the desktop entry. Uninstall it with the system package
+manager when you no longer want it.
+
+### AppImage
+
+```bash
+chmod +x Kaelis-linux-x64.AppImage
+./Kaelis-linux-x64.AppImage
+```
+
+If the host has no FUSE, run it as
+`./Kaelis-linux-x64.AppImage --appimage-extract-and-run`.
+
+### Tarball
+
+```bash
+tar -xzf Kaelis-linux-x64.tar.gz
+./kaelis-linux-x64/kaelis
+```
+
+The tarball is the simplest choice for a portable folder; it has no package
+manager and no FUSE requirement.
 
 ## What is inside
 
@@ -46,12 +93,20 @@ kaelis --play fabric-1-21 --offline Steve
 
 ## Verify the download
 
+Windows:
+
 ```powershell
 certutil -hashfile Kaelis.exe SHA256
 ```
 
-Compare it with `SHA256SUMS.txt` beside the download. A copy that does not match
-is not the file this page published.
+macOS and Linux:
+
+```bash
+shasum -a 256 -c SHA256SUMS.txt
+```
+
+Compare the result with `SHA256SUMS.txt` beside the download. A copy that does
+not match is not the file this page published.
 
 ## Links
 

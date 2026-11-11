@@ -3,14 +3,14 @@ type: index
 summary: Index of Kaelis architecture, release, benchmark, web, decision, roadmap and current-state notes.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-10
+last_touched: 2026-11-11
 title: Kaelis Brain
 tags:
   - kaelis
   - index
   - project
 status: active
-updated: 2026-11-10
+updated: 2026-11-11
 ---
 
 # Kaelis Brain
@@ -26,6 +26,7 @@ copy it into Obsidian with
 ## Map
 
 - [[Kaelis Architecture]] — crates, data flow, safety boundaries.
+- [[Kaelis Repo Graph]] — crate, runtime, release and web edges.
 - [[Kaelis Build And Release]] — build, test, tag, artifact and Pages flow.
 - [[Kaelis Benchmark Protocol]] — how to measure and what the numbers mean.
 - [[Kaelis Web System]] — page structure, radius scale, aurora, charts.
