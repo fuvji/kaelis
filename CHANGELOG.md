@@ -4,6 +4,15 @@ Every released change, newest first. The product page keeps only the latest.
 
 ## Unreleased
 
+- **Upkeep moved to current supported releases.** `webbrowser` 1.2.7 is the
+  only compatible crate patch left; the workflows now use `checkout@v6`,
+  `upload-pages-artifact@v4` and `softprops/action-gh-release@v3`, all with the
+  inputs this repository already passes. A weekly Dependabot pass keeps Cargo
+  and Actions current without a manual sweep. Linux dependency installs retry
+  transient apt fetches and stop after ten minutes instead of hanging.
+- **Dead CSS is gone.** Two superseded preview-card motion rules and the earlier
+  button easing no longer ship; the later motion block and shared control
+  easing are the only definitions. No visual change.
 - **Downloads choose the right platform.** The page detects Windows, macOS or
   Linux, recommends the native artifact and keeps every direct row. macOS ZIP
   and Linux `tar.gz` now have hydrated sizes and checksums; the no-JavaScript
