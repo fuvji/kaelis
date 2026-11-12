@@ -167,7 +167,8 @@ updated: 2026-11-12
   change.
 - No post-0.4.10 benchmark was run; the 0.4.6 numbers remain the reference.
   The Windows EXE grew one 4 KiB page, so do not claim a binary-size or speed
-  win for this cleanup. Root capture removal reduces repository weight only.
+  win for this cleanup. Root capture removal reduces the checked-out tree only;
+  old blobs remain in Git history.
 - Plan the first measured post-0.4.10 optimization; do not zero safety, retry
   or process-wait timers just to make a latency claim.
 
