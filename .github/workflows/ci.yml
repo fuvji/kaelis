@@ -24,7 +24,7 @@ jobs:
         # capacity-constrained, and macos-14 is being retired this month.
         os: [ubuntu-latest, windows-latest, macos-15-intel]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Linux window libraries
         if: runner.os == 'Linux'
@@ -106,7 +106,7 @@ jobs:
     name: Site assets
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Every relative href/src on the page must resolve inside site/: a 404 on
       # the download or checksum link is a release bug, not a cosmetic one.
