@@ -37,7 +37,7 @@ copy it into Obsidian with
 ## Current snapshot
 
 - Latest release: **v0.4.7** (2026-11-12).
-- Workspace: **0.4.7**, released — the Forge/NeoForge loader pass.
+- Workspace: **0.4.8**, unreleased — the clean no-Java Forge repair.
 - Product page: https://fuvji.github.io/kaelis/
 - Idle memory: **18.9 MB**, down from 86.6 MB on 0.3.7 with the same harness.
 - Start-up: ~297 ms; CLI: ~63 ms; both flat within host noise.

@@ -53,10 +53,10 @@ jobs:
 
   macos:
     name: macOS universal
-    # macOS-14 is in its October retirement brownout, and the arm64 images are
-    # capacity-constrained. The last supported Intel image still installs both
-    # Rust targets, so it builds the universal app without waiting for arm64.
-    runs-on: macos-15-intel
+    # macOS-14 has retired and the arm64 images are capacity-constrained. The
+    # current Intel image installs both Rust targets, so it builds the
+    # universal app without waiting for an arm64 runner.
+    runs-on: macos-26-intel
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable

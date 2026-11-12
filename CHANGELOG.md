@@ -2,6 +2,23 @@
 
 Every released change, newest first. The product page keeps only the latest.
 
+## 0.4.8
+
+- **Clean no-Java Forge instances repair in launch order.** The repair pass used
+  to install a JVM first, but an empty instance has no
+  `versions/<version>/<version>.json` for the runtime installer to read; the
+  install failed with “The system cannot find the path specified” and Forge was
+  never reached. Repair now restores the client files and metadata, installs the
+  JVM the metadata names, then runs the Forge installer. This was reproduced on
+  an empty 1.20.1 Forge root with no Java and confirmed fixed end to end; the
+  old “needs its own installer” status is absent.
+- **Regression coverage.** A fast test asserts the stage order for a clean
+  no-Java Forge instance, and an ignored network test installs Java, vanilla
+  1.20.1 and Forge and requires `health::check` to be ready afterwards.
+- **Release runner.** macOS universal builds now run on `macos-26-intel`; the
+  temporary manual fallback workflow is removed. No performance number is
+  claimed for this correctness release.
+
 ## 0.4.7
 
 - **Forge and NeoForge are installed by Kaelis, not by the user.** The loader

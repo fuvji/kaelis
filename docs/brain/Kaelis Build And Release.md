@@ -49,10 +49,9 @@ Linux also needs `libgtk-3-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`,
    `Kaelis.exe`, `Kaelis-Setup.exe`, macOS ZIP/DMG, Linux tar/deb/AppImage,
    `KAELIS-LINKS.txt`, `SHA256SUMS.txt`. Windows setup is optional, per-user
    NSIS; the portable ZIP stays retired.
-4. Publish job dispatches the Pages deploy. If the macOS runner is
-   queue-cancelled, dispatch the `macOS artifact` workflow on
-   `macos-26-intel` and assemble the release from the retained Windows/Linux
-   artifacts; v0.4.7 used this path.
+4. Publish job dispatches the Pages deploy. macOS uses `macos-26-intel`, the
+   current Intel image, because it acquires a runner more reliably than the
+   legacy `macos-15-intel` pool and still builds both Rust targets.
 5. Verify:
    - release `latest` resolves the new tag;
    - downloaded `Kaelis.exe` matches `SHA256SUMS.txt`;

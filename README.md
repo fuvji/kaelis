@@ -15,7 +15,7 @@ Native Rust for Windows, macOS, and Linux.</p>
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.4.7-70a5ff">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.4.8-70a5ff">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8">
   <img alt="Idle CPU" src="https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950">
   <img alt="License" src="https://img.shields.io/badge/license-proprietary-8b949e">
@@ -165,6 +165,22 @@ no Azure registration, no client id, no secret. Every sign-in is exchanged
 through Xbox Live → XSTS → Minecraft Services, so an account without Java
 Edition is refused at sign-in rather than at launch. The refresh token lives in
 the OS credential store; the access token stays in zeroising memory.
+
+## What's new in 0.4.8
+
+- **A clean no-Java instance repairs in the right order.** A truly empty Forge
+  1.20.1 root has no `versions/1.20.1/1.20.1.json` yet, so asking the runtime
+  installer for a JVM first failed with “The system cannot find the path
+  specified” and never reached Forge. Kaelis now restores the client metadata
+  and files, installs the JVM that metadata names, then runs the Forge
+  installer. Verified against an empty root with no Java; the old “forge loader
+  is not installed and needs its own installer” status is gone.
+- **Regression coverage.** The repair stage order is asserted without network,
+  and an ignored real-network test installs Java, vanilla 1.20.1 and Forge on
+  a clean root and requires readiness to be clean.
+- **macOS release runner.** The release workflow now uses `macos-26-intel`; the
+  temporary manual macOS artifact workflow is removed.
+- **No new performance claim.** This is a correctness release.
 
 ## What's new in 0.4.7
 

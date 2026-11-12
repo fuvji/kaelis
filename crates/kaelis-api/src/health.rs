@@ -157,10 +157,13 @@ impl RepairReport {
 /// Fill every gap [`check`] reported, using Mojang's metadata and the loader
 /// endpoints as the only sources.
 ///
-/// Steps run in the order a launch needs them: a JVM, then the client files,
-/// then the loader. A gap that cannot be filled (an unrecognised loader, an
-/// unsupported platform for the managed runtime) is an error, so the caller
-/// reports it instead of launching into a failure it already knows about.
+/// Stages run in launch order: the client files, then the JVM their metadata
+/// names, then the loader. The client files must come first because a truly
+/// empty instance has no version metadata for the runtime installer to read;
+/// asking for Java first failed on exactly that clean root. A gap that cannot
+/// be filled (an unrecognised loader, an unsupported platform for the managed
+/// runtime) is an error, so the caller reports it instead of launching into a
+/// failure it already knows about.
 pub async fn repair<F>(
     client: &reqwest::Client,
     instance: &mut Instance,
@@ -173,108 +176,120 @@ where
     let mut report = RepairReport::default();
     let readiness = check(instance);
 
-    if !readiness.java {
-        progress(RepairProgress::Message(
-            "No Java found — fetching the runtime this version needs…".to_owned(),
-        ));
-        let installer = Arc::clone(&progress);
-        let java = runtime::install_for_instance(client, instance, move |state| {
-            installer(RepairProgress::Message(state.message()));
-        })
-        .await
-        .map_err(|error| format!("Java runtime install failed: {error}"))?;
-        instance.java_path = Some(java.clone());
-        if let Err(error) = instance.save() {
-            report.notes.push(format!(
-                "runtime installed, but the instance record could not be updated: {error}"
-            ));
-        }
-        report.java = Some(java);
-    }
-
-    if readiness.missing_files > 0 {
-        let entry = versions::fetch_manifest(client)
-            .await
-            .map_err(|error| format!("could not list Mojang versions: {error}"))?
-            .versions
-            .into_iter()
-            .find(|entry| entry.id == instance.mc_version)
-            .ok_or_else(|| {
-                format!(
-                    "Mojang has no version named {}; recreate the instance on a released version",
+    for stage in repair_stages(&readiness) {
+        match stage {
+            RepairStage::GameFiles => {
+                let entry = versions::fetch_manifest(client)
+                    .await
+                    .map_err(|error| format!("could not list Mojang versions: {error}"))?
+                    .versions
+                    .into_iter()
+                    .find(|entry| entry.id == instance.mc_version)
+                    .ok_or_else(|| {
+                        format!(
+                            "Mojang has no version named {}; recreate the instance on a released version",
+                            instance.mc_version
+                        )
+                    })?;
+                progress(RepairProgress::Message(format!(
+                    "Restoring Minecraft {} files…",
                     instance.mc_version
-                )
-            })?;
-        progress(RepairProgress::Message(format!(
-            "Restoring Minecraft {} files…",
-            instance.mc_version
-        )));
-        let installer = Arc::clone(&progress);
-        vanilla::install_vanilla(
-            client,
-            entry,
-            instance.root.clone(),
-            move |state| match state {
-                vanilla::InstallProgress::DownloadingLibraries { completed, total }
-                | vanilla::InstallProgress::DownloadingAssets { completed, total } => {
-                    installer(RepairProgress::Download { completed, total });
-                }
-                other => installer(RepairProgress::Message(other.message())),
-            },
-        )
-        .await
-        .map_err(|error| format!("game file repair failed: {error}"))?;
-        report.game_files = readiness.missing_files;
-    }
-
-    if let Some(loader) = readiness.loader {
-        if !readiness.loader_repairable {
-            return Err(format!(
-                "{loader} cannot be auto-installed; install the loader with its own installer, then press Play"
-            ));
-        }
-        let label = loader_label(&loader);
-        let loader_name = loader.to_ascii_lowercase();
-        if matches!(loader_name.as_str(), "forge" | "neoforge") {
-            // Forge and NeoForge publish a Java installer rather than a plain
-            // meta profile, so the JVM that will run the game runs the install
-            // too. `repair` has already installed one when none was present.
-            let java = runtime::resolve_java(instance).ok_or_else(|| {
-                format!("{label} needs a Java runtime to run its installer, and none was found")
-            })?;
-            progress(RepairProgress::Message(format!(
-                "Installing {label} (its installer downloads the loader)…"
-            )));
-            let install = crate::forge::install(
-                client,
-                &instance.root,
-                &instance.mc_version,
-                &loader_name,
-                &java,
-            )
-            .await
-            .map_err(|error| format!("{label} loader install failed: {error}"))?;
-            report.notes.push(format!(
-                "{label} {} is ready ({} libraries).",
-                install.loader_version, install.libraries
-            ));
-            report.loader = Some(loader);
-        } else {
-            progress(RepairProgress::Message(format!("Installing {loader}…")));
-            match crate::loader::provision(client, &instance.root, &instance.mc_version, &loader)
+                )));
+                let installer = Arc::clone(&progress);
+                vanilla::install_vanilla(client, entry, instance.root.clone(), move |state| {
+                    match state {
+                        vanilla::InstallProgress::DownloadingLibraries { completed, total }
+                        | vanilla::InstallProgress::DownloadingAssets { completed, total } => {
+                            installer(RepairProgress::Download { completed, total });
+                        }
+                        other => installer(RepairProgress::Message(other.message())),
+                    }
+                })
                 .await
-            {
-                Ok(Some(install)) => {
+                .map_err(|error| format!("game file repair failed: {error}"))?;
+                report.game_files = readiness.missing_files;
+            }
+            RepairStage::Java => {
+                progress(RepairProgress::Message(
+                    "No Java found — fetching the runtime this version needs…".to_owned(),
+                ));
+                let installer = Arc::clone(&progress);
+                let java = runtime::install_for_instance(client, instance, move |state| {
+                    installer(RepairProgress::Message(state.message()));
+                })
+                .await
+                .map_err(|error| format!("Java runtime install failed: {error}"))?;
+                instance.java_path = Some(java.clone());
+                if let Err(error) = instance.save() {
                     report.notes.push(format!(
-                        "{loader} {} is ready ({} libraries).",
+                        "runtime installed, but the instance record could not be updated: {error}"
+                    ));
+                }
+                report.java = Some(java);
+            }
+            RepairStage::Loader => {
+                let Some(loader) = readiness.loader.clone() else {
+                    continue;
+                };
+                if !readiness.loader_repairable {
+                    return Err(format!(
+                        "{loader} cannot be auto-installed; install the loader with its own installer, then press Play"
+                    ));
+                }
+                let label = loader_label(&loader);
+                let loader_name = loader.to_ascii_lowercase();
+                if matches!(loader_name.as_str(), "forge" | "neoforge") {
+                    // Forge and NeoForge publish a Java installer rather than a
+                    // plain meta profile, so the JVM that will run the game runs
+                    // the install too. The Java stage above has installed one
+                    // when none was present.
+                    let java = runtime::resolve_java(instance).ok_or_else(|| {
+                        format!(
+                            "{label} needs a Java runtime to run its installer, and none was found"
+                        )
+                    })?;
+                    progress(RepairProgress::Message(format!(
+                        "Installing {label} (its installer downloads the loader)…"
+                    )));
+                    let install = crate::forge::install(
+                        client,
+                        &instance.root,
+                        &instance.mc_version,
+                        &loader_name,
+                        &java,
+                    )
+                    .await
+                    .map_err(|error| format!("{label} loader install failed: {error}"))?;
+                    report.notes.push(format!(
+                        "{label} {} is ready ({} libraries).",
                         install.loader_version, install.libraries
                     ));
                     report.loader = Some(loader);
+                } else {
+                    progress(RepairProgress::Message(format!("Installing {loader}…")));
+                    match crate::loader::provision(
+                        client,
+                        &instance.root,
+                        &instance.mc_version,
+                        &loader,
+                    )
+                    .await
+                    {
+                        Ok(Some(install)) => {
+                            report.notes.push(format!(
+                                "{loader} {} is ready ({} libraries).",
+                                install.loader_version, install.libraries
+                            ));
+                            report.loader = Some(loader);
+                        }
+                        Ok(None) => {
+                            return Err(format!("{loader} cannot be auto-installed by Kaelis"));
+                        }
+                        Err(error) => {
+                            return Err(format!("{loader} loader install failed: {error}"));
+                        }
+                    }
                 }
-                Ok(None) => {
-                    return Err(format!("{loader} cannot be auto-installed by Kaelis"));
-                }
-                Err(error) => return Err(format!("{loader} loader install failed: {error}")),
             }
         }
     }
@@ -282,9 +297,31 @@ where
     Ok(report)
 }
 
+/// The repair work [`repair`] must do, in launch order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RepairStage {
+    GameFiles,
+    Java,
+    Loader,
+}
+
+fn repair_stages(readiness: &Readiness) -> Vec<RepairStage> {
+    let mut stages = Vec::new();
+    if readiness.missing_files > 0 {
+        stages.push(RepairStage::GameFiles);
+    }
+    if !readiness.java {
+        stages.push(RepairStage::Java);
+    }
+    if readiness.loader.is_some() {
+        stages.push(RepairStage::Loader);
+    }
+    stages
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Readiness, check};
+    use super::{Readiness, RepairStage, check, repair_stages};
     use kaelis_core::instance::Instance;
 
     fn scratch_instance() -> Instance {
@@ -342,6 +379,32 @@ mod tests {
     }
 
     #[test]
+    fn a_clean_no_java_forge_instance_restores_files_before_installing_java() {
+        let readiness = Readiness {
+            java: false,
+            missing_files: 1,
+            loader: Some("forge".to_owned()),
+            loader_repairable: true,
+        };
+        assert_eq!(
+            repair_stages(&readiness),
+            vec![
+                RepairStage::GameFiles,
+                RepairStage::Java,
+                RepairStage::Loader
+            ],
+            "the version metadata needed to choose a JVM must exist first"
+        );
+        assert!(
+            !readiness
+                .issues()
+                .iter()
+                .any(|issue| issue.contains("own installer")),
+            "forge must be advertised as self-installing"
+        );
+    }
+
+    #[test]
     fn a_ready_report_needs_all_three_answers() {
         let ready = Readiness {
             java: true,
@@ -357,5 +420,51 @@ mod tests {
         };
         assert!(!no_java.ready());
         assert!(no_java.issues().iter().any(|issue| issue.contains("Java")));
+    }
+
+    /// Full wire test for the report that started this pass: an empty root, no
+    /// Java, and a Forge target. Ignored so the normal suite stays offline; run
+    /// it with `KAELIS_DATA_DIR` pointed at a scratch directory and `--ignored`.
+    #[tokio::test]
+    #[ignore = "network: installs a Java runtime, vanilla 1.20.1 and the Forge installer"]
+    async fn a_clean_forge_instance_installs_java_and_forge_end_to_end() {
+        assert!(
+            std::env::var_os("KAELIS_DATA_DIR").is_some(),
+            "set KAELIS_DATA_DIR to a scratch directory before running this test"
+        );
+        let root = std::env::temp_dir().join(format!(
+            "kaelis-forge-e2e-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("scratch dir");
+        let mut instance = Instance::new("forge-e2e", "Forge E2E", "1.20.1", "forge", root.clone());
+        let client = reqwest::Client::builder()
+            .user_agent(kaelis_core::brand::user_agent())
+            .build()
+            .expect("http client");
+
+        let report = super::repair(&client, &mut instance, |_| {})
+            .await
+            .expect("clean Forge repair");
+        assert!(report.java.is_some(), "the managed JVM was installed");
+        assert_eq!(report.loader.as_deref(), Some("forge"));
+
+        let readiness = super::check(&instance);
+        assert!(readiness.ready(), "{:?}", readiness.issues());
+        assert!(
+            !readiness
+                .issues()
+                .iter()
+                .any(|issue| issue.contains("own installer")),
+            "the old manual-installer status must be gone"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_file(Instance::instances_dir().join("forge-e2e.json"));
     }
 }
