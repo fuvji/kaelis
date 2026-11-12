@@ -3,23 +3,23 @@ type: reference
 summary: Durable Kaelis choices about versioning, performance claims, distribution and web.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-11
+last_touched: 2026-11-12
 title: Kaelis Decisions
 tags:
   - kaelis
   - decisions
 status: active
-updated: 2026-11-11
+updated: 2026-11-12
 ---
 
 # Kaelis Decisions
 
 ## Version line
 
-- 0.4.6 resumed the requested **0.4.x** numbering; 0.4.7 is the current release.
+- 0.4.6 resumed the requested **0.4.x** numbering; 0.4.9 is the current release.
 - 0.5.0 and 0.6.0 tags/releases remain published as history; do not delete them.
-- Next bump is **0.4.8** only when launcher code changes. A web-only pass does not
-  invent a version.
+- Next bump is **0.4.10** only when launcher code changes. A web-only pass does
+  not invent a version.
 
 ## Performance claims
 
@@ -44,6 +44,9 @@ updated: 2026-11-11
 - All packagers read root `Cargo.toml`; crate manifests use
   `version.workspace = true`.
 - One version feeds About, tray, update checks and package metadata.
+- CI and release pin Rust **1.89.0**. The GUI reaches `objc2` 0.4.1 through
+  `winit` 0.29, which no longer builds on current stable, and `uuid` 1.29 needs
+  1.89. Do not float the pin without upgrading that window stack.
 
 ## Web
 

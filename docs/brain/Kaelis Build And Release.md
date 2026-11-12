@@ -3,14 +3,14 @@ type: reference
 summary: How to verify, version, tag, package, publish and sync Kaelis.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-11
+last_touched: 2026-11-12
 title: Kaelis Build And Release
 tags:
   - kaelis
   - release
   - build
 status: active
-updated: 2026-11-11
+updated: 2026-11-12
 ---
 
 # Kaelis Build And Release
@@ -39,7 +39,8 @@ Linux also needs `libgtk-3-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`,
 - `README.md` must carry `## What's new in <version>`; the release job lifts that
   exact section into the GitHub release body.
 - `CHANGELOG.md` carries the durable history.
-- Current line: **0.4.x**. Next: **0.4.8**.
+- Current line: **0.4.x**. Current: **0.4.9**. Next bump only when launcher
+  code changes.
 
 ## Release flow
 
@@ -52,6 +53,14 @@ Linux also needs `libgtk-3-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`,
 4. Publish job dispatches the Pages deploy. macOS uses `macos-26-intel`, the
    current Intel image, because it acquires a runner more reliably than the
    legacy `macos-15-intel` pool and still builds both Rust targets.
+
+## Toolchain pin
+
+CI and release pin Rust **1.89.0** (`toolchain: 1.89.0` in both workflows).
+`objc2` 0.4.1 is reached through `winit` 0.29 and stopped compiling on newer
+stable; `uuid` 1.29 requires 1.89. Do not float to `stable` without upgrading
+`winit`/`eframe`, and keep the Windows packaging `-Toolchain` argument on the
+same version.
 5. Verify:
    - release `latest` resolves the new tag;
    - downloaded `Kaelis.exe` matches `SHA256SUMS.txt`;

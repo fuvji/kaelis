@@ -1,25 +1,25 @@
 ---
 type: reference
-summary: Measured 0.4.7 candidates, maintenance and deferred Kaelis work.
+summary: Measured 0.4.9 candidates, maintenance and deferred Kaelis work.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-10
+last_touched: 2026-11-12
 title: Kaelis Roadmap
 tags:
   - kaelis
   - roadmap
 status: active
-updated: 2026-11-10
+updated: 2026-11-12
 ---
 
 # Kaelis Roadmap
 
-## Next: 0.4.7
+## Next: 0.4.9
 
-0.4.7 is a correctness release: Forge and NeoForge install through their
-official installers and launch from the profile those write. It does not claim
-a measured speed change. The measured candidates below remain open for the
-next pass, in order:
+0.4.9 is a correctness release: a clean no-Java Forge instance repairs its
+files, JVM and loader in order, and the macOS release build is pinned to Rust
+1.89.0. It does not claim a measured speed change. The measured candidates
+below remain open for the next pass, in order:
 
 1. **Startup path audit.** Find one allocation, disk read or synchronous call on
    the window-creation path; measure before/after with `bench-lite.ps1`.
