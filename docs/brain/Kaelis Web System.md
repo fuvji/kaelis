@@ -80,7 +80,7 @@ zero edge and a small 4 px value edge so length stays readable.
 - The artifact tile shows `EXE`, `DMG` or `APPIMAGE` and follows the same
   platform accent. Without JavaScript it stays on the static Windows fallback.
 - Windows setup, macOS ZIP and Linux `tar.gz` have their own hydrated size/hash
-  slots. The static fallbacks match the v0.4.6 release digests, not the older
+  slots. The static fallbacks match the v0.4.7 release digests, not older
   files that may sit in a developer's `site/downloads` folder.
 - Each checksum row has a local Copy control with a transient Copied state.
 

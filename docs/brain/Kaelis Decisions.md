@@ -16,9 +16,9 @@ updated: 2026-11-11
 
 ## Version line
 
-- 0.4.6 resumes the requested **0.4.x** numbering.
+- 0.4.6 resumed the requested **0.4.x** numbering; 0.4.7 is the current release.
 - 0.5.0 and 0.6.0 tags/releases remain published as history; do not delete them.
-- Next bump is **0.4.7** only when launcher code changes. A web-only pass does not
+- Next bump is **0.4.8** only when launcher code changes. A web-only pass does not
   invent a version.
 
 ## Performance claims

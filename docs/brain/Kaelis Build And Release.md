@@ -39,7 +39,7 @@ Linux also needs `libgtk-3-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`,
 - `README.md` must carry `## What's new in <version>`; the release job lifts that
   exact section into the GitHub release body.
 - `CHANGELOG.md` carries the durable history.
-- Current line: **0.4.x**. Next: **0.4.7**.
+- Current line: **0.4.x**. Next: **0.4.8**.
 
 ## Release flow
 
@@ -49,7 +49,10 @@ Linux also needs `libgtk-3-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`,
    `Kaelis.exe`, `Kaelis-Setup.exe`, macOS ZIP/DMG, Linux tar/deb/AppImage,
    `KAELIS-LINKS.txt`, `SHA256SUMS.txt`. Windows setup is optional, per-user
    NSIS; the portable ZIP stays retired.
-4. Publish job dispatches the Pages deploy.
+4. Publish job dispatches the Pages deploy. If the macOS runner is
+   queue-cancelled, dispatch the `macOS artifact` workflow on
+   `macos-26-intel` and assemble the release from the retained Windows/Linux
+   artifacts; v0.4.7 used this path.
 5. Verify:
    - release `latest` resolves the new tag;
    - downloaded `Kaelis.exe` matches `SHA256SUMS.txt`;

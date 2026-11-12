@@ -15,25 +15,28 @@ updated: 2026-11-12
 # Kaelis Current State
 
 > [!info] Snapshot
-> Latest release **v0.4.6**; product page live; workspace version **0.4.7**
-> (unreleased). 0.4.7 makes Forge and NeoForge install themselves instead of
-> ending every Play with “needs its own installer”. The setup, vault-graph,
-> hero-frame and preview-dialog pass is live. Windows Setup now has
-> always-visible header and hero actions plus a dedicated row.
+> Latest release **v0.4.7**; product page live; workspace version **0.4.7**.
+> 0.4.7 makes Forge and NeoForge install themselves instead of ending every
+> Play with “needs its own installer”. The setup, vault-graph, hero-frame and
+> preview-dialog pass is live. Windows Setup now has always-visible header and
+> hero actions plus a dedicated row.
 
 ## Repo
 
 - Branch `main`.
-- Site commit: `583d614`; Pages run 97 green.
-- Latest tag: `v0.4.6` (2026-11-10T22:02:25Z).
+- Site commit: `2806924`; Pages run 43272613159 green.
+- Latest tag: `v0.4.7` (2026-11-12).
 - Repo graph baseline: `f6da23c`; see [[Kaelis Repo Graph]].
-- Windows release asset: `Kaelis.exe`, 17,250,816 B.
-- SHA-256: `2d5b03bae73066e0fdf0366bdc62cd48a68e506d3f57cc431680538cb1db0370`.
-- Windows setup asset: `Kaelis-Setup.exe`, 6,126,053 B.
-- Setup SHA-256: `b1ed1b81f4d5bbd20a7e42d8a4690406dfb48e07101495fd877dd8729012d209`.
-- Local `dist/Kaelis-Setup.exe` and `site/downloads/Kaelis-Setup.exe` are synced
-  to the v0.4.6 release; `dist/build.json` and both SHA-256 lists match it.
-- Release: https://github.com/fuvji/kaelis/releases/tag/v0.4.6
+- Windows release asset: `Kaelis.exe`, 16,586,752 B.
+- SHA-256: `c3fcd6a90650be697e52807245c68c5366e650d4fc3a31c2d5de20f83c15f445`.
+- Windows setup asset: `Kaelis-Setup.exe`, 5,913,793 B.
+- Setup SHA-256: `8ed07cd48ab2c4f01a416a91dcc58cf1315974fdebee675a4bbd2fc060367aea`.
+- macOS DMG: 17,138,961 B, `421d4cef0654983066a4508f9b95dae1d9bf5ae61e517e7643cad4f412fff059`.
+- macOS ZIP: 15,077,271 B, `e9c68fc0579208e895a7da05f9a3ef8e23ccdd890583b0766d29613d386afc95`.
+- Linux: `.deb` 8,158,460 B, AppImage 10,848,760 B, tar.gz 10,786,202 B.
+- `site/downloads/SHA256SUMS.txt` and the page fallbacks are synced to v0.4.7;
+  the release assets remain authoritative.
+- Release: https://github.com/fuvji/kaelis/releases/tag/v0.4.7
 
 ## Site
 
@@ -58,8 +61,8 @@ updated: 2026-11-12
 - The Windows ZIP is retired from current links and future releases. The
   optional per-user setup is restored as `Kaelis-Setup.exe` and hydrated from
   the release; 0.4.6 keeps its old artifacts as history.
-- Seven artifacts have size/hash slots; static fallbacks match the v0.4.6
-  release digests, not the older local `site/downloads` copies.
+- Seven artifacts have size/hash slots; static fallbacks match the v0.4.7
+  release digests, not older local copies.
 - The Windows native frame is cleared through DWM attributes and the first clear
   is dark, so the undecorated window does not flash a pale edge.
 - The film poster is deferred until the film is within 300 px. In a 520×944
@@ -73,8 +76,8 @@ updated: 2026-11-12
   geometry. Metadata contrast was lifted from `#6e7580` to `#808996`.
 - `content-visibility: auto` remains only on below-fold sections; the graph
   removed its continuous dash paint loop and the aurora dropped `will-change`.
-- Pages deploy run 97 green. Live page is 200 with the header, hero, picker and
-  row Setup links. Local Chromium checks at 320, 390 and 1,440 px, plus the live
+- Pages deploy 43272613159 green. Live page is 200 with the header, hero,
+  picker and row Setup links. Local Chromium checks at 320, 390 and 1,440 px, plus the live
   page at 520 px, show no horizontal overflow. Direct binary on Pages is 404 by
   design.
 
@@ -129,14 +132,15 @@ updated: 2026-11-12
 
 - Brain sync to the user's Obsidian vault (`01-Projects/Kaelis/Brain`) is
   pending for this pass; the vault path was not provided.
-- CI at `21e9007`: Site assets and macOS passed; Windows and Ubuntu were still
-  in their release build at the last check.
+- v0.4.7 is published. CI run 43245768021 is green on Windows, Ubuntu and macOS;
+  the release checksums and the live Pages checksum file match.
 - The setup, vault-graph, hero-frame and preview-dialog pass is live; a
   full-page visual review beyond the measured layout checks remains.
 - Dependabot opened #1–#6 for major dependency updates; review them instead of
   merging by default.
-- CI still has to compile and test the Forge/NeoForge pass. The installers
-  were exercised on this host with a scratch JDK, but no Kaelis build ran.
+- The Forge/NeoForge installers were exercised against real scratch installs;
+  CI compiles and tests the pass. Re-test a user-created Forge instance on
+  0.4.7 before closing the loader report.
 - Plan the first measured post-0.4.7 optimization.
 
 ## Links
