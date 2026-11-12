@@ -362,7 +362,6 @@ impl InstanceHealth {
 /// instance list or install state changes.
 struct InstanceCard {
     detail: String,
-    root: String,
     content: String,
     last_played: String,
     notes: String,
@@ -6798,7 +6797,6 @@ impl KaelisApp {
                             "Minecraft {} · {} · {} MiB",
                             instance.mc_version, instance.loader, instance.ram_mb
                         ),
-                        root: instance.root.display().to_string(),
                         content: instance_content_summary(&instance.root),
                         last_played: relative_last_played(instance.last_played_unix),
                         notes: instance.notes.trim().to_owned(),
@@ -8212,9 +8210,6 @@ impl KaelisApp {
                                     if !instance.group.trim().is_empty() {
                                         chip(ui, instance.group.trim(), MUTED);
                                     }
-                                    if running {
-                                        chip(ui, "RUNNING", StatusKind::Success.color());
-                                    }
                                 });
                                 ui.label(egui::RichText::new(&card.detail).size(11.0));
                                 ui.horizontal(|ui| {
@@ -8232,11 +8227,6 @@ impl KaelisApp {
                                     )
                                     .on_hover_text(&card.notes);
                                 }
-                                ui.label(
-                                    egui::RichText::new(&card.root)
-                                        .size(9.5)
-                                        .color(MUTED),
-                                );
                                 ui.horizontal(|ui| {
                                     if check_chip(
                                         ui,
@@ -11210,7 +11200,7 @@ impl KaelisApp {
                 ui.set_width(ui.available_width());
                 section_label(ui, "STARTUP");
                 if ui
-                    .checkbox(&mut self.launch_at_startup, "Start Kaelis when I sign in")
+                    .checkbox(&mut self.launch_at_startup, "Run Kaelis on Startup")
                     .on_hover_text(
                         "One per-user entry opens Kaelis hidden in the tray. No service and no delay.",
                     )

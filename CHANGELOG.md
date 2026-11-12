@@ -2,6 +2,20 @@
 
 Every released change, newest first. The product page keeps only the latest.
 
+## 0.4.10
+
+- **The Instances list is quieter.** The `RUNNING` badge and the technical
+  root-path row are removed. A running game still replaces Play with Quit on
+  its card, so the state is shown by the action instead of repeated as a label.
+- **The startup switch says what it does.** **Run Kaelis on Startup** replaces
+  “Start Kaelis when I sign in”; the same per-user entry opens the launcher
+  hidden in the tray.
+- **Dead source weight removed.** The unreferenced root `screenshots/` and
+  `media/` copies are gone; `site/` keeps the optimized images and video it
+  actually serves. The per-card path string is gone with the row that used it.
+  One compatible dependency patch is included. No performance number is
+  claimed for this cleanup release.
+
 ## 0.4.9
 
 - **Clean no-Java Forge instances repair in launch order.** The repair pass used

@@ -15,7 +15,7 @@ Native Rust for Windows, macOS, and Linux.</p>
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.4.9-70a5ff">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.4.10-70a5ff">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8">
   <img alt="Idle CPU" src="https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950">
   <img alt="License" src="https://img.shields.io/badge/license-proprietary-8b949e">
@@ -165,6 +165,19 @@ no Azure registration, no client id, no secret. Every sign-in is exchanged
 through Xbox Live → XSTS → Minecraft Services, so an account without Java
 Edition is refused at sign-in rather than at launch. The refresh token lives in
 the OS credential store; the access token stays in zeroising memory.
+
+## What's new in 0.4.10
+
+- **A cleaner Instances list.** The `RUNNING` badge and the technical root-path
+  row are gone. A live game still switches the card's Play button to Quit, so
+  the state remains available without repeating it twice.
+- **A clearer startup label.** **Run Kaelis on Startup** replaces “Start Kaelis
+  when I sign in”; the per-user entry and its behaviour are unchanged.
+- **Less dead weight.** The unused root `screenshots/` and `media/` copies are
+  removed (the site keeps its optimized files), and the instance card no longer
+  keeps a path string it never displayed. One compatible dependency patch was
+  taken. No new performance number is claimed; this is a visual and cleanup
+  release.
 
 ## What's new in 0.4.9
 
