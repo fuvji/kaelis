@@ -24,7 +24,7 @@ updated: 2026-11-12
 ## Repo
 
 - Branch `main`.
-- Site commit: `2806924`; Pages run 43272613159 green.
+- Site commit: `7ff6ae0`; Pages run 43273084306 green.
 - Latest tag: `v0.4.7` (2026-11-12).
 - Repo graph baseline: `f6da23c`; see [[Kaelis Repo Graph]].
 - Windows release asset: `Kaelis.exe`, 16,586,752 B.
@@ -76,7 +76,7 @@ updated: 2026-11-12
   geometry. Metadata contrast was lifted from `#6e7580` to `#808996`.
 - `content-visibility: auto` remains only on below-fold sections; the graph
   removed its continuous dash paint loop and the aurora dropped `will-change`.
-- Pages deploy 43272613159 green. Live page is 200 with the header, hero,
+- Pages deploy 43273084306 green. Live page is 200 with the header, hero,
   picker and row Setup links. Local Chromium checks at 320, 390 and 1,440 px, plus the live
   page at 520 px, show no horizontal overflow. Direct binary on Pages is 404 by
   design.
