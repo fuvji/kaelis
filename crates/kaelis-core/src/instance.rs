@@ -246,7 +246,7 @@ impl Instance {
         let mut instances: Vec<Self> = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for entry in std::fs::read_dir(dir)?.filter_map(Result::ok) {
-            if !entry.path().extension().is_some_and(|ext| ext == "json") {
+            if entry.path().extension().is_none_or(|ext| ext != "json") {
                 continue;
             }
             let Ok(bytes) = std::fs::read(entry.path()) else {

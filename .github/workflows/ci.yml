@@ -39,7 +39,7 @@ jobs:
       # winit 0.29, no longer builds on current stable.
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.88.0
+          toolchain: 1.89.0
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
@@ -63,7 +63,7 @@ jobs:
       - name: Package Windows setup
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ./tools/release.ps1 -SkipBuild -Toolchain 1.88.0
+        run: ./tools/release.ps1 -SkipBuild -Toolchain 1.89.0
 
       # Build the actual installable artifact on every push, so a broken
       # AppImage, .deb, or DMG fails CI instead of a tag.

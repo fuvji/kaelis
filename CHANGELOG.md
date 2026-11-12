@@ -17,7 +17,7 @@ Every released change, newest first. The product page keeps only the latest.
   1.20.1 and Forge and requires `health::check` to be ready afterwards.
 - **Release runner.** macOS universal builds now run on `macos-26-intel`; the
   temporary manual fallback workflow is removed. The build is pinned to Rust
-  1.88.0 because the GUI toolkit reaches `objc2` 0.4.1 through `winit` 0.29 and
+  1.89.0 because the GUI toolkit reaches `objc2` 0.4.1 through `winit` 0.29 and
   that crate no longer compiles on the current stable toolchain. No performance
   number is claimed for this correctness release.
 

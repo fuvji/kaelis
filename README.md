@@ -180,7 +180,7 @@ the OS credential store; the access token stays in zeroising memory.
   a clean root and requires readiness to be clean.
 - **macOS release runner.** The release workflow now uses `macos-26-intel`; the
   temporary manual macOS artifact workflow is removed. Its universal build is
-  pinned to Rust 1.88.0: the GUI toolkit reaches `objc2` 0.4.1 through
+  pinned to Rust 1.89.0: the GUI toolkit reaches `objc2` 0.4.1 through
   `winit` 0.29, and that crate no longer compiles on the current stable
   toolchain. The app itself is unchanged.
 - **No new performance claim.** This is a correctness release.
