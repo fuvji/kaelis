@@ -3,21 +3,23 @@ type: reference
 summary: Current Kaelis release, repo, site, dependency and open-item snapshot.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-11
+last_touched: 2026-11-12
 title: Kaelis Current State
 tags:
   - kaelis
   - state
 status: active
-updated: 2026-11-11
+updated: 2026-11-12
 ---
 
 # Kaelis Current State
 
 > [!info] Snapshot
-> Latest release **v0.4.6**; product page live; workspace version 0.4.6.
-> The setup, vault-graph, hero-frame and preview-dialog pass is live. Windows
-> Setup now has always-visible header and hero actions plus a dedicated row.
+> Latest release **v0.4.6**; product page live; workspace version **0.4.7**
+> (unreleased). 0.4.7 makes Forge and NeoForge install themselves instead of
+> ending every Play with “needs its own installer”. The setup, vault-graph,
+> hero-frame and preview-dialog pass is live. Windows Setup now has
+> always-visible header and hero actions plus a dedicated row.
 
 ## Repo
 
@@ -76,30 +78,66 @@ updated: 2026-11-11
   page at 520 px, show no horizontal overflow. Direct binary on Pages is 404 by
   design.
 
+## Loaders
+
+- Fabric and Quilt install from their meta profiles (`loader.rs`).
+- Forge and NeoForge install through their own official installers
+  (`forge.rs`): build resolved from Forge’s promotion table or Maven metadata,
+  installer SHA-1 verified against the Maven `.sha1`, then
+  `java -jar <installer> --installClient <instance root>` with a minimal
+  `launcher_profiles.json` when the instance has none.
+- The generated `versions/<profile>/<profile>.json` supplies the main class and
+  JVM and game arguments; `prepare_launch_plan` expands `${library_directory}`
+  and `${classpath_separator}`, so Forge’s `-p` module path resolves. The merged
+  classpath keeps the profile’s order (vanilla libraries, then the loader’s)
+  instead of sorting, so Forge’s chosen ASM stays first.
+- A profile counts as installed only when `inheritsFrom` matches the instance
+  version, every profile library exists, and the patched client jar is present:
+  `net/minecraftforge/forge/<full>/forge-<full>-client.jar` for Forge,
+  `net/neoforged/neoforge/<version>/neoforge-<version>-client.jar` for modern
+  NeoForge, or the 1.20.1 legacy
+  `net/neoforged/forge/<full>/forge-<full>-client.jar`. The jar location, not
+  the profile id, decides the family: NeoForge 1.20.1 reuses
+  `1.20.1-forge-<build>` and the same `net.neoforged:forge` coordinate.
+  Anything less is repaired before launch.
+- This host executed the real installers with a scratch Temurin 17: Forge
+  1.20.1-47.4.0 and NeoForge 1.20.1-47.1.106 both booted through ModLauncher
+  and reached Minecraft’s title-screen render path; NeoForge’s legacy profile
+  and jar were confirmed. The scratch had only the asset index, so texture
+  loading failed there. That was a launch-plan mimic, not a Kaelis build; CI
+  still compiles and tests.
+
 ## Dependencies
 
-- 0.4.6 shipped after a 24-crate compatible patch sweep; `webbrowser` 1.2.7
-  is now the only compatible patch left. The other 22 newer versions sit
-  outside the manifests' current ranges.
+- 0.4.7 picked up the last compatible patch, `errno` 0.3.15. `webbrowser`
+  1.2.7 is already current; 22 newer versions sit outside the manifests'
+  current ranges and remain major-version Dependabot work.
+- `kaelis-api` now asks `zip` for Deflated content only. `cargo tree` confirms
+  `lzma-sys`, `bzip2-sys` and `zstd-sys` are out of its graph; `ring` remains
+  only through rustls. No binary-size number is claimed without a build.
 - Workflows use current supported majors: `checkout@v6`,
   `upload-pages-artifact@v4`, `softprops/action-gh-release@v3`; artifact
   upload/download remain v4, `configure-pages` v5, `deploy-pages` v4.
 - Dependabot checks Cargo and GitHub Actions weekly in
   `.github/dependabot.yml`; minor and patch Cargo updates are grouped.
-- Local Rust linking remains blocked by missing `dlltool.exe`; CI is the compile
-  and test gate.
+- Local Rust linking is still blocked: `dlltool` can be bridged to the bundled
+  `rust-lld`, but `ring`’s C build needs a C toolchain this host lacks. CI is
+  the compile and test gate.
 - Current Rust: 1.99.1; minimum supported: 1.85.
 
 ## Open
 
-- Brain synced into the user's Obsidian vault under `01-Projects/Kaelis/Brain`.
+- Brain sync to the user's Obsidian vault (`01-Projects/Kaelis/Brain`) is
+  pending for this pass; the vault path was not provided.
 - CI at `21e9007`: Site assets and macOS passed; Windows and Ubuntu were still
   in their release build at the last check.
 - The setup, vault-graph, hero-frame and preview-dialog pass is live; a
   full-page visual review beyond the measured layout checks remains.
 - Dependabot opened #1–#6 for major dependency updates; review them instead of
   merging by default.
-- Plan the first measured 0.4.7 optimization.
+- CI still has to compile and test the Forge/NeoForge pass. The installers
+  were exercised on this host with a scratch JDK, but no Kaelis build ran.
+- Plan the first measured post-0.4.7 optimization.
 
 ## Links
 

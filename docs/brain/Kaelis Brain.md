@@ -3,14 +3,14 @@ type: index
 summary: Index of Kaelis architecture, release, benchmark, web, decision, roadmap and current-state notes.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-11
+last_touched: 2026-11-12
 title: Kaelis Brain
 tags:
   - kaelis
   - index
   - project
 status: active
-updated: 2026-11-11
+updated: 2026-11-12
 ---
 
 # Kaelis Brain
@@ -37,6 +37,7 @@ copy it into Obsidian with
 ## Current snapshot
 
 - Latest release: **v0.4.6** (2026-11-10).
+- Workspace: **0.4.7**, unreleased — the Forge/NeoForge loader pass.
 - Product page: https://fuvji.github.io/kaelis/
 - Idle memory: **18.9 MB**, down from 86.6 MB on 0.3.7 with the same harness.
 - Start-up: ~297 ms; CLI: ~63 ms; both flat within host noise.

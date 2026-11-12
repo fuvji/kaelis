@@ -46,7 +46,7 @@ pub enum LaunchError {
     #[error("another launch of this instance is already running (pid {1})")]
     AlreadyRunning(String, u32),
     #[error(
-        "{0} is not provisioned for this instance yet; Kaelis installs Fabric and Quilt automatically, but {0} must be added before playing"
+        "{0} is not provisioned for this instance yet; run Install / Repair, which installs the loader before the next launch"
     )]
     LoaderNotProvisioned(String),
 }
@@ -290,6 +290,58 @@ fn collect_jars(root: &Path, output: &mut Vec<PathBuf>) -> Result<(), std::io::E
         }
     }
     Ok(())
+}
+
+/// Classpath entries named by a version document, in document order.
+///
+/// Forge and NeoForge expect the launcher's merged classpath: the vanilla
+/// libraries followed by the loader's own. Scanning every jar in `libraries/`
+/// would also put the installer's processor tools and a second ASM on it, and
+/// Forge's module layer must not see those duplicates.
+fn collect_version_jars(version: &Value, libraries_root: &Path, output: &mut Vec<PathBuf>) {
+    let Some(libraries) = version.get("libraries").and_then(Value::as_array) else {
+        return;
+    };
+    for library in libraries {
+        if !library_allowed(library) {
+            continue;
+        }
+        let relative = library
+            .pointer("/downloads/artifact/path")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+            .or_else(|| {
+                library
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .and_then(crate::loader::maven_path)
+            });
+        let Some(relative) = relative else {
+            continue;
+        };
+        let path = libraries_root.join(relative);
+        if path.is_file() {
+            output.push(path);
+        }
+        // A modern LWJGL loads its native library from the jar when the
+        // extracted copy is unavailable, so keep the classifier jar on the
+        // classpath just as the whole-tree scan does for vanilla.
+        if let Some(native_name) = library
+            .pointer(&format!("/natives/{}", platform_name()))
+            .and_then(Value::as_str)
+        {
+            let native_name = native_name.replace("${arch}", platform_arch());
+            if let Some(native_path) = library
+                .pointer(&format!("/downloads/classifiers/{native_name}/path"))
+                .and_then(Value::as_str)
+            {
+                let path = libraries_root.join(native_path);
+                if path.is_file() {
+                    output.push(path);
+                }
+            }
+        }
+    }
 }
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
@@ -562,6 +614,7 @@ fn prepare_launch_plan(
         .ok_or(LaunchError::MissingMainClass)?;
     let java = resolve_java_executable(instance)?;
     let assets_dir = instance.root.join("assets");
+    let libraries_root = instance.root.join("libraries");
     let asset_index = version
         .pointer("/assetIndex/id")
         .and_then(Value::as_str)
@@ -569,17 +622,45 @@ fn prepare_launch_plan(
     let native_root = kaelis_core::sweeper::temp_root();
     std::fs::create_dir_all(&native_root)?;
     let sequence = NATIVE_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let native_dir = native_directory(
-        &version,
-        &instance.root.join("libraries"),
-        &native_root,
-        sequence,
-    )?;
+    let native_dir = native_directory(&version, &libraries_root, &native_root, sequence)?;
 
+    // Vanilla and Fabric-family launches keep the whole libraries tree on the
+    // classpath. Forge and NeoForge get the merged profile classpath their own
+    // installer and launcher expect.
+    let loader_is_forge = loader_install.as_ref().is_some_and(|install| {
+        matches!(
+            install.loader.to_ascii_lowercase().as_str(),
+            "forge" | "neoforge"
+        )
+    });
     let mut jars = Vec::new();
-    collect_jars(&instance.root.join("libraries"), &mut jars)?;
-    jars.push(client_jar);
-    jars.sort();
+    if loader_is_forge {
+        collect_version_jars(&version, &libraries_root, &mut jars);
+        if let Some(install) = &loader_install {
+            for relative in &install.library_paths {
+                let path = libraries_root.join(relative);
+                if path.is_file() {
+                    jars.push(path);
+                }
+            }
+            // Modern Forge loads its patched client jar through
+            // `-DlibraryDirectory`; adding the vanilla client jar as well would
+            // put two copies of the game classes on the classpath.
+            if !install.main_class.contains("bootstraplauncher") {
+                jars.push(client_jar);
+            }
+        }
+    } else {
+        collect_jars(&libraries_root, &mut jars)?;
+        jars.push(client_jar);
+    }
+    // Forge's own order (vanilla libraries, then the profile's) is what its
+    // installer validated; sorting could put a stale ASM ahead of the version
+    // it chose. Exact duplicates are adjacent, so dedup alone is enough.
+    if !loader_is_forge {
+        jars.sort();
+    }
+    jars.dedup();
     let classpath = std::env::join_paths(&jars).map_err(|_| LaunchError::ClasspathTooLong)?;
     let classpath_string = classpath.to_string_lossy().into_owned();
     let user_type = match identity.account_type {
@@ -625,6 +706,12 @@ fn prepare_launch_plan(
             "classpath_separator".to_owned(),
             classpath_separator.to_owned(),
         ),
+        // Forge and NeoForge reference their module path through this
+        // placeholder; leaving it unexpanded makes the JVM reject `-p`.
+        (
+            "library_directory".to_owned(),
+            libraries_root.to_string_lossy().into_owned(),
+        ),
         ("user_properties".to_owned(), "{}".to_owned()),
         ("clientid".to_owned(), String::new()),
         ("auth_xuid".to_owned(), String::new()),
@@ -652,7 +739,14 @@ fn prepare_launch_plan(
         args.push(classpath);
     }
     if let Some(install) = &loader_install {
-        args.extend(install.jvm_arguments.iter().cloned().map(OsString::from));
+        // The profile keeps `${library_directory}` and `${classpath_separator}`
+        // unexpanded; the JVM would reject `-p` otherwise.
+        args.extend(
+            install
+                .jvm_arguments
+                .iter()
+                .map(|value| OsString::from(expand(value, &placeholders))),
+        );
     }
     args.extend(instance.jvm_args.iter().cloned().map(OsString::from));
     args.push(OsString::from(main_class));
@@ -694,7 +788,12 @@ fn prepare_launch_plan(
         ]);
     }
     if let Some(install) = &loader_install {
-        args.extend(install.game_arguments.iter().cloned().map(OsString::from));
+        args.extend(
+            install
+                .game_arguments
+                .iter()
+                .map(|value| OsString::from(expand(value, &placeholders))),
+        );
     }
     args.extend(
         window_and_join_args(instance)?

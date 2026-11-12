@@ -1,4 +1,4 @@
-//! Fabric and Quilt loader provisioning.
+//! Fabric, Quilt, Forge and NeoForge loader resolution.
 //!
 //! Installing a mod is useless without the loader itself, so this module
 //! resolves the official meta profile for an instance's Minecraft version,
@@ -6,6 +6,11 @@
 //! records the launch overrides (main class and JVM arguments) in a marker
 //! file. `prepare_launch_plan` reads that marker so a launch works offline
 //! after the first provisioning pass.
+//!
+//! Fabric and Quilt publish a plain JSON meta profile, so this module copies it
+//! directly. Forge and NeoForge ship a Java installer instead; [`crate::forge`]
+//! runs that installer and reads the launcher profile it writes, and [`load_for`]
+//! presents both families through the same [`LoaderInstall`] view.
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -54,7 +59,8 @@ pub enum LoaderError {
 /// Launch overrides for one provisioned loader.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoaderInstall {
-    /// Loader family that wrote this marker (`fabric` or `quilt`).
+    /// Loader family that produced this install (`fabric`, `quilt`, `forge`,
+    /// or `neoforge`).
     #[serde(default)]
     pub loader: String,
     pub game_version: String,
@@ -163,9 +169,25 @@ pub fn load_quilt_installed(root: &Path, game_version: &str) -> Option<LoaderIns
     load_for(root, game_version, "quilt")
 }
 
-/// Read the marker for whichever Fabric-family loader an instance targets.
-/// Unsupported loaders (Forge, NeoForge, vanilla) return `None`.
+/// Read the installed profile for whichever loader an instance targets.
+///
+/// Fabric and Quilt read their meta marker. Forge and NeoForge read the launch
+/// profile their own installer wrote under `versions/`, provided every library
+/// and the patched client jar it names are still on disk. Vanilla and unknown
+/// loaders return `None`.
 pub fn load_for(root: &Path, game_version: &str, loader: &str) -> Option<LoaderInstall> {
+    if let Some(install) = crate::forge::load_installed(root, game_version, loader) {
+        return Some(LoaderInstall {
+            loader: install.loader,
+            game_version: install.game_version,
+            loader_version: install.loader_version,
+            main_class: install.main_class,
+            jvm_arguments: install.jvm_arguments,
+            game_arguments: install.game_arguments,
+            libraries: install.libraries,
+            library_paths: install.library_paths,
+        });
+    }
     let flavor = Flavor::from_name(loader)?;
     let bytes = std::fs::read(root.join(flavor.marker())).ok()?;
     let install: LoaderInstall = serde_json::from_slice(&bytes).ok()?;
@@ -206,9 +228,11 @@ pub async fn ensure_quilt_installed(
     ensure_profile(client, root, game_version, Flavor::Quilt).await
 }
 
-/// Provision any supported loader by name. `Ok(None)` means the loader is not
-/// one this module can install (vanilla, Forge, NeoForge); callers keep their
-/// existing behaviour instead of failing a whole install.
+/// Provision any Fabric-family loader by name. `Ok(None)` means the loader is
+/// not one this module can install (vanilla, Forge, NeoForge); callers keep
+/// their existing behaviour instead of failing a whole install. Forge and
+/// NeoForge are provisioned by [`crate::forge::install`], which runs their own
+/// installer.
 pub async fn provision(
     client: &reqwest::Client,
     root: &Path,

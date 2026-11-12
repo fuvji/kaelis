@@ -5,8 +5,9 @@
 //! only surfaced as a stack trace inside the game's log. [`check`] answers the
 //! question the Play button actually asks — can this instance start right now?
 //! — and [`repair`] fills every gap it can reach from Mojang's own metadata:
-//! the version-matched Java runtime, the missing client files, and a
-//! Fabric-family loader.
+//! the version-matched Java runtime, the missing client files, and a mod
+//! loader (Fabric and Quilt from their meta, Forge and NeoForge through their
+//! own headless installer).
 //!
 //! [`check`] is deliberately network-free and cheap (a handful of metadata
 //! reads, plus one filesystem pass over the game assets only when an install
@@ -30,8 +31,9 @@ pub struct Readiness {
     pub missing_files: usize,
     /// A mod loader that is configured but not provisioned yet.
     pub loader: Option<String>,
-    /// Whether [`repair`] can install that loader on its own. Forge and
-    /// NeoForge need their own installer, so those are reported, not guessed.
+    /// Whether [`repair`] can install that loader on its own. Kaelis manages
+    /// Fabric, Quilt, Forge and NeoForge; an unrecognised loader is reported
+    /// instead of guessed at.
     pub loader_repairable: bool,
 }
 
@@ -85,7 +87,10 @@ pub fn check(instance: &Instance) -> Readiness {
     let (loader, loader_repairable) = if unprovisioned {
         (
             Some(loader_name.clone()),
-            matches!(loader_name.as_str(), "fabric" | "quilt"),
+            matches!(
+                loader_name.as_str(),
+                "fabric" | "quilt" | "forge" | "neoforge"
+            ),
         )
     } else {
         (None, false)
@@ -95,6 +100,17 @@ pub fn check(instance: &Instance) -> Readiness {
         missing_files,
         loader,
         loader_repairable,
+    }
+}
+
+/// Display name for a loader id, used in progress and report lines.
+fn loader_label(name: &str) -> &'static str {
+    match name.to_ascii_lowercase().as_str() {
+        "fabric" => "Fabric",
+        "quilt" => "Quilt",
+        "forge" => "Forge",
+        "neoforge" => "NeoForge",
+        _ => "Loader",
     }
 }
 
@@ -142,9 +158,9 @@ impl RepairReport {
 /// endpoints as the only sources.
 ///
 /// Steps run in the order a launch needs them: a JVM, then the client files,
-/// then the loader. A gap that cannot be filled (a Forge loader, an unsupported
-/// platform for the managed runtime) is an error, so the caller reports it
-/// instead of launching into a failure it already knows about.
+/// then the loader. A gap that cannot be filled (an unrecognised loader, an
+/// unsupported platform for the managed runtime) is an error, so the caller
+/// reports it instead of launching into a failure it already knows about.
 pub async fn repair<F>(
     client: &reqwest::Client,
     instance: &mut Instance,
@@ -214,23 +230,52 @@ where
     if let Some(loader) = readiness.loader {
         if !readiness.loader_repairable {
             return Err(format!(
-                "{loader} cannot be auto-installed; import the pack or install the loader, then press Play"
+                "{loader} cannot be auto-installed; install the loader with its own installer, then press Play"
             ));
         }
-        progress(RepairProgress::Message(format!("Installing {loader}…")));
-        match crate::loader::provision(client, &instance.root, &instance.mc_version, &loader).await
-        {
-            Ok(Some(install)) => {
-                report.notes.push(format!(
-                    "{loader} {} is ready ({} libraries).",
-                    install.loader_version, install.libraries
-                ));
-                report.loader = Some(loader);
+        let label = loader_label(&loader);
+        let loader_name = loader.to_ascii_lowercase();
+        if matches!(loader_name.as_str(), "forge" | "neoforge") {
+            // Forge and NeoForge publish a Java installer rather than a plain
+            // meta profile, so the JVM that will run the game runs the install
+            // too. `repair` has already installed one when none was present.
+            let java = runtime::resolve_java(instance).ok_or_else(|| {
+                format!("{label} needs a Java runtime to run its installer, and none was found")
+            })?;
+            progress(RepairProgress::Message(format!(
+                "Installing {label} (its installer downloads the loader)…"
+            )));
+            let install = crate::forge::install(
+                client,
+                &instance.root,
+                &instance.mc_version,
+                &loader_name,
+                &java,
+            )
+            .await
+            .map_err(|error| format!("{label} loader install failed: {error}"))?;
+            report.notes.push(format!(
+                "{label} {} is ready ({} libraries).",
+                install.loader_version, install.libraries
+            ));
+            report.loader = Some(loader);
+        } else {
+            progress(RepairProgress::Message(format!("Installing {loader}…")));
+            match crate::loader::provision(client, &instance.root, &instance.mc_version, &loader)
+                .await
+            {
+                Ok(Some(install)) => {
+                    report.notes.push(format!(
+                        "{loader} {} is ready ({} libraries).",
+                        install.loader_version, install.libraries
+                    ));
+                    report.loader = Some(loader);
+                }
+                Ok(None) => {
+                    return Err(format!("{loader} cannot be auto-installed by Kaelis"));
+                }
+                Err(error) => return Err(format!("{loader} loader install failed: {error}")),
             }
-            Ok(None) => {
-                return Err(format!("{loader} cannot be auto-installed by Kaelis"));
-            }
-            Err(error) => return Err(format!("{loader} loader install failed: {error}")),
         }
     }
 
@@ -268,21 +313,30 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_fabric_loader_is_repairable_and_forge_is_reported() {
+    fn every_managed_loader_is_repairable_and_an_unknown_one_is_reported() {
         let mut instance = scratch_instance();
-        instance.loader = "fabric".to_owned();
+        for loader in ["fabric", "quilt", "forge", "neoforge"] {
+            instance.loader = loader.to_owned();
+            let readiness = check(&instance);
+            assert_eq!(readiness.loader.as_deref(), Some(loader));
+            assert!(readiness.loader_repairable, "{loader} must be installable");
+            assert!(
+                !readiness
+                    .issues()
+                    .iter()
+                    .any(|issue| issue.contains("own installer")),
+                "{loader} must not be reported as manual-only"
+            );
+        }
+        instance.loader = "optifine".to_owned();
         let readiness = check(&instance);
-        assert_eq!(readiness.loader.as_deref(), Some("fabric"));
-        assert!(readiness.loader_repairable);
-        instance.loader = "forge".to_owned();
-        let readiness = check(&instance);
-        assert_eq!(readiness.loader.as_deref(), Some("forge"));
+        assert_eq!(readiness.loader.as_deref(), Some("optifine"));
         assert!(!readiness.loader_repairable);
         assert!(
             readiness
                 .issues()
                 .iter()
-                .any(|issue| issue.contains("installer"))
+                .any(|issue| issue.contains("own installer"))
         );
         let _ = std::fs::remove_dir_all(&instance.root);
     }

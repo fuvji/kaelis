@@ -22,7 +22,7 @@ is embedded in the launcher.
 | Crate | Responsibility |
 | --- | --- |
 | `kaelis-core` | instance metadata, JVM flags, automation, junk cleaner, RAM-only logs, handoff, memory sweeper |
-| `kaelis-api` | Mojang versions, Modrinth/CurseForge, downloads, Fabric/Quilt, mrpack, portable archives, repair, hashing, auth, launch |
+| `kaelis-api` | Mojang versions, Modrinth/CurseForge, downloads, Fabric/Quilt meta, Forge/NeoForge installers, mrpack, portable archives, repair, hashing, auth, launch |
 | `kaelis-gui` | egui shell, content studio, editor, accounts, settings, tray, brand mark |
 | `kaelis-launcher` | CLI and desktop entry point |
 

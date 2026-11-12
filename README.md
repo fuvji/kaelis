@@ -15,7 +15,7 @@ Native Rust for Windows, macOS, and Linux.</p>
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.4.6-70a5ff">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.4.7-70a5ff">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8">
   <img alt="Idle CPU" src="https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950">
   <img alt="License" src="https://img.shields.io/badge/license-proprietary-8b949e">
@@ -42,6 +42,7 @@ away.
 | --- | --- |
 | **Auto Erase Junk** | Logs, caches, and stale launcher state go at every start. Saves, mods, and configs never do. |
 | **One copy of the game** | Verified files are hard-linked once, so a second instance costs MB, not 600 MB. |
+| **Every loader** | Fabric, Quilt, Forge and NeoForge provision themselves; Forge and NeoForge run their official installer after a SHA-1 check. |
 | **Auto-repair** | A missing JVM, jar, library, asset, or loader is refilled before the game starts. |
 | **Required dependencies** | Every install resolves and downloads its dependency graph, on both catalogues. |
 | **Verified mod updates** | Newest compatible release per mod, installed only after its hash matches. |
@@ -164,6 +165,29 @@ no Azure registration, no client id, no secret. Every sign-in is exchanged
 through Xbox Live → XSTS → Minecraft Services, so an account without Java
 Edition is refused at sign-in rather than at launch. The refresh token lives in
 the OS credential store; the access token stays in zeroising memory.
+
+## What's new in 0.4.7
+
+- **Forge and NeoForge install and launch.** Choosing either loader used to set
+  the label and stop; Play answered “forge loader is not installed and needs
+  its own installer”. Kaelis now resolves the build (Forge’s recommended/latest
+  table, or either loader’s full Maven list — including NeoForge 1.20.1’s
+  legacy `net.neoforged:forge` coordinate), downloads the official installer,
+  verifies its published SHA-1, runs it headlessly inside the instance, and
+  reads the launch profile it writes. `${library_directory}` is expanded, so
+  Forge’s `-p` module path resolves and the game starts.
+- **A partial loader is never launched.** A profile counts as installed only
+  when it names this Minecraft version and every library plus the patched
+  client jar are on disk. Anything less is repaired by the same pass that
+  already refills Java and the vanilla files.
+- **One readiness path.** New, imported, and repaired instances now agree on
+  what “launchable” means, including Forge and NeoForge; the status line names
+  the real gap instead of asking for a manual installer.
+- **A lighter build graph.** Archive reading and writing now asks `zip` for
+  Deflated content only, so the unused LZMA, Bzip2, Zstd and AES backends no
+  longer compile. No runtime or binary-size number is claimed.
+- **No new performance claim.** This is a correctness release. The 0.4.6
+  measurements remain the reference; nothing was benchmarked for 0.4.7.
 
 ## What's new in 0.4.6
 

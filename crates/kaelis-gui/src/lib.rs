@@ -4085,8 +4085,9 @@ impl KaelisApp {
         });
     }
 
-    /// Download the loader libraries for an instance that just finished its
-    /// vanilla install, so Fabric/Quilt mods can actually run.
+    /// Download the loader for an instance that just finished its vanilla
+    /// install, so its mods can actually run. Fabric and Quilt come from their
+    /// meta; Forge and NeoForge run their own installer, which needs Java.
     fn provision_loader(&mut self, context: egui::Context, instance_id: String) {
         let Some(instance) = self
             .instances
@@ -4097,31 +4098,59 @@ impl KaelisApp {
             return;
         };
         let loader = instance.loader.to_ascii_lowercase();
-        if !matches!(loader.as_str(), "fabric" | "quilt")
+        if !matches!(loader.as_str(), "fabric" | "quilt" | "forge" | "neoforge")
             || kaelis_api::loader::load_for(&instance.root, &instance.mc_version, &loader).is_some()
         {
             return;
         }
+        let label = match loader.as_str() {
+            "quilt" => "Quilt",
+            "forge" => "Forge",
+            "neoforge" => "NeoForge",
+            _ => "Fabric",
+        };
+        // Forge and NeoForge install through a Java program, so there is
+        // nothing to do until the instance has a runtime. Play performs the
+        // same step after installing Java, so this only skips a redundant run.
+        let java = if matches!(loader.as_str(), "forge" | "neoforge") {
+            match kaelis_api::runtime::resolve_java(&instance) {
+                Some(java) => Some(java),
+                None => {
+                    self.set_status(
+                        StatusKind::Info,
+                        format!("{label} installs on the first Play, after Kaelis adds Java."),
+                    );
+                    return;
+                }
+            }
+        } else {
+            None
+        };
         let client = self.http.clone();
         let sender = self.sender.clone();
         let repaint = context;
         let game_version = instance.mc_version.clone();
-        let label = if loader == "quilt" { "Quilt" } else { "Fabric" };
+        let root = instance.root.clone();
         self.runtime.spawn(async move {
-            let message = match kaelis_api::loader::provision(
-                &client,
-                &instance.root,
-                &game_version,
-                &loader,
-            )
-            .await
-            {
-                Ok(Some(install)) => format!(
-                    "{label} loader {} installed for {} ({} libraries).",
-                    install.loader_version, install.game_version, install.libraries
-                ),
-                Ok(None) => return,
-                Err(error) => format!("{label} loader install failed: {error}"),
+            let message = if let Some(java) = java {
+                match kaelis_api::forge::install(&client, &root, &game_version, &loader, &java)
+                    .await
+                {
+                    Ok(install) => format!(
+                        "{label} {} installed for {} ({} libraries).",
+                        install.loader_version, install.game_version, install.libraries
+                    ),
+                    Err(error) => format!("{label} loader install failed: {error}"),
+                }
+            } else {
+                match kaelis_api::loader::provision(&client, &root, &game_version, &loader).await {
+                    Ok(Some(install)) => format!(
+                        "{label} loader {} installed for {} ({} libraries).",
+                        install.loader_version, install.game_version, install.libraries
+                    ),
+                    Ok(None) => return,
+                    Err(error) => format!("{label} loader install failed: {error}"),
+                }
             };
             send_event(&sender, &repaint, GuiEvent::Notice(message));
         });
@@ -4679,15 +4708,10 @@ impl KaelisApp {
             .as_ref()
             .map(|scan| !scan.missing.is_empty())
             .unwrap_or(false);
-        let loader_missing = matches!(
-            instance.loader.to_ascii_lowercase().as_str(),
-            "fabric" | "quilt"
-        ) && kaelis_api::loader::load_for(
-            &instance.root,
-            &instance.mc_version,
-            &instance.loader,
-        )
-        .is_none();
+        let loader_name = instance.loader.trim().to_ascii_lowercase();
+        let loader_missing = !matches!(loader_name.as_str(), "" | "vanilla")
+            && kaelis_api::loader::load_for(&instance.root, &instance.mc_version, &loader_name)
+                .is_none();
         if (missing || loader_missing) && self.auto_repair_before_launch {
             self.pending_launch = Some((instance, identity));
             self.repair_mod_environment(context);
@@ -4916,11 +4940,12 @@ impl KaelisApp {
                         let id = outcome.instance.id.clone();
                         let imported = outcome.imported;
                         let mods = outcome.pack.mod_files;
-                        // Fabric, Quilt, and vanilla can be provisioned end to
-                        // end today; anything else imports the files and says so.
+                        // Every loader Kaelis manages is provisioned end to
+                        // end; Forge and NeoForge install themselves on the
+                        // first Play once the instance has Java.
                         let launchable = matches!(
                             loader.to_ascii_lowercase().as_str(),
-                            "fabric" | "quilt" | "vanilla"
+                            "fabric" | "quilt" | "forge" | "neoforge" | "vanilla"
                         );
                         self.instances.insert(0, outcome.instance.clone());
                         self.refresh_instance_cards();

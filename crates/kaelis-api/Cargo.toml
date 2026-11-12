@@ -19,7 +19,10 @@ sha1 = "0.10"
 # published checksum is checked before the file can ever be executed.
 sha2 = "0.10"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
-zip = "2"
+# Kaelis reads and writes Deflated archives (mod jars, .mrpack packs, portable
+# backups). The AES, Bzip2, LZMA, and Zstd backends support formats no Kaelis
+# path produces, so they stay out of the build graph.
+zip = { version = "2", default-features = false, features = ["deflate"] }
 url = "2"
 md-5 = "0.10"
 zeroize = "1"

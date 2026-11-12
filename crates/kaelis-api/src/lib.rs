@@ -7,6 +7,7 @@ pub mod content;
 pub mod curseforge;
 pub mod downloader;
 pub mod foreign;
+pub mod forge;
 pub mod hash;
 pub mod health;
 pub mod launch;

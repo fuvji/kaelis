@@ -16,9 +16,10 @@ updated: 2026-11-10
 
 ## Next: 0.4.7
 
-One measured launcher improvement, not a version-only bump.
-
-Candidates, in order:
+0.4.7 is a correctness release: Forge and NeoForge install through their
+official installers and launch from the profile those write. It does not claim
+a measured speed change. The measured candidates below remain open for the
+next pass, in order:
 
 1. **Startup path audit.** Find one allocation, disk read or synchronous call on
    the window-creation path; measure before/after with `bench-lite.ps1`.

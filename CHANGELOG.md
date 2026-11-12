@@ -2,8 +2,27 @@
 
 Every released change, newest first. The product page keeps only the latest.
 
-## Unreleased
+## 0.4.7
 
+- **Forge and NeoForge are installed by Kaelis, not by the user.** The loader
+  picker set `forge` or `neoforge` but never provisioned it, so every Play
+  ended in “forge loader is not installed and needs its own installer”. The
+  launcher now resolves the build from Forge’s promotion table (or either
+  loader’s full Maven list), downloads the official installer, verifies its
+  published SHA-1, runs it headlessly with `--installClient` in the instance
+  root, and reads the launcher profile it writes. NeoForge 1.20.1 is handled
+  through its legacy `net.neoforged:forge` coordinate, and the patched client
+  jar’s location — not the profile id it shares with Forge — decides which
+  family installed it. Launch uses that profile’s main class and JVM/game
+  arguments with `${library_directory}` and `${classpath_separator}` resolved,
+  and keeps the profile’s classpath order; a profile missing any library or its
+  patched client jar is treated as not installed and repaired before the next
+  start. No performance number is claimed.
+- **Unused archive backends left the build graph.** `kaelis-api` now enables
+  only `zip`’s Deflated support, because every Kaelis path reads or writes
+  Deflated mod jars, `.mrpack` files and portable backups. `cargo tree` no
+  longer shows `lzma-sys`, `bzip2-sys` or `zstd-sys` under the crate; `ring`
+  remains only through rustls. No binary-size claim is made without a build.
 - **The page now reads like a vault graph.** A fixed, inline 1,600×1,000
   constellation adds 24 nodes, 47 edges, three labels and three highlighted
   traces, without a third-party request or blur filter. The graph is masked
