@@ -1,0 +1,46 @@
+name: macOS artifact
+
+# Fallback for a release whose macOS leg is queue-cancelled. Builds the same
+# universal app as release.yml and keeps the artifact for a manual publish.
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: GitHub-hosted macOS runner label
+        required: true
+        default: macos-26-intel
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS universal (${{ inputs.runner }})
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Bundle
+        run: ./packaging/macos/bundle.sh --universal
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          ./packaging/macos/dmg.sh
+          ditto -c -k --keepParent dist/Kaelis.app dist/Kaelis-macos-universal.zip
+          cd dist
+          shasum -a 256 Kaelis-macos-universal.zip Kaelis-macos-universal.dmg > SHA256SUMS-macos.txt
+          cat SHA256SUMS-macos.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal
+          if-no-files-found: error
+          path: |
+            dist/Kaelis-macos-universal.zip
+            dist/Kaelis-macos-universal.dmg
+            dist/SHA256SUMS-macos.txt
