@@ -16,10 +16,12 @@ updated: 2026-11-12
 
 ## Version line
 
-- 0.4.6 resumed the requested **0.4.x** numbering; 0.4.9 is the current release.
+- 0.4.6 resumed the requested **0.4.x** numbering; 0.4.10 is the current release.
 - 0.5.0 and 0.6.0 tags/releases remain published as history; do not delete them.
-- Next bump is **0.4.10** only when launcher code changes. A web-only pass does
+- Next bump is **0.4.11** only when launcher code changes. A web-only pass does
   not invent a version.
+- 0.4.10 removed UI chrome and dead source captures, but the Windows EXE grew
+  one 4 KiB page. Treat that as a cleanup release, not a size or speed win.
 
 ## Performance claims
 

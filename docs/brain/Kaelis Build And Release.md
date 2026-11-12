@@ -39,7 +39,7 @@ Linux also needs `libgtk-3-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`,
 - `README.md` must carry `## What's new in <version>`; the release job lifts that
   exact section into the GitHub release body.
 - `CHANGELOG.md` carries the durable history.
-- Current line: **0.4.x**. Current: **0.4.9**. Next bump only when launcher
+- Current line: **0.4.x**. Current: **0.4.10**. Next bump only when launcher
   code changes.
 
 ## Release flow
@@ -53,6 +53,10 @@ Linux also needs `libgtk-3-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`,
 4. Publish job dispatches the Pages deploy. macOS uses `macos-26-intel`, the
    current Intel image, because it acquires a runner more reliably than the
    legacy `macos-15-intel` pool and still builds both Rust targets.
+5. If `deploy-pages` reports “Found 0 artifact(s)” after a successful
+   `upload-pages-artifact` step, re-run once; if it repeats, dispatch
+   `pages.yml` again. A fresh run creates the missing artifact and succeeded
+   for 0.4.10 after two failed attempts on the original run.
 
 ## Toolchain pin
 
@@ -61,12 +65,13 @@ CI and release pin Rust **1.89.0** (`toolchain: 1.89.0` in both workflows).
 stable; `uuid` 1.29 requires 1.89. Do not float to `stable` without upgrading
 `winit`/`eframe`, and keep the Windows packaging `-Toolchain` argument on the
 same version.
-5. Verify:
-   - release `latest` resolves the new tag;
-   - downloaded `Kaelis.exe` matches `SHA256SUMS.txt`;
-   - live page shows the version and hydrated hashes;
-   - `/downloads/Kaelis.exe` is 404 on Pages (binaries live on Releases);
-   - no `.rs`, `.toml`, `.lock` or sourcemap is present in `site/` or assets.
+## Verify
+
+- release `latest` resolves the new tag;
+- downloaded `Kaelis.exe` matches `SHA256SUMS.txt`;
+- live page shows the version and hydrated hashes;
+- `/downloads/Kaelis.exe` is 404 on Pages (binaries live on Releases);
+- no `.rs`, `.toml`, `.lock` or sourcemap is present in `site/` or assets.
 
 ## Pages
 

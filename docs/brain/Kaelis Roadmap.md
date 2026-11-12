@@ -1,6 +1,6 @@
 ---
 type: reference
-summary: Measured 0.4.9 candidates, maintenance and deferred Kaelis work.
+summary: Measured post-0.4.10 candidates, maintenance and deferred Kaelis work.
 project: Kaelis
 created: 2026-11-10
 last_touched: 2026-11-12
@@ -14,19 +14,20 @@ updated: 2026-11-12
 
 # Kaelis Roadmap
 
-## Next: 0.4.9
+## After 0.4.10
 
-0.4.9 is a correctness release: a clean no-Java Forge instance repairs its
-files, JVM and loader in order, and the macOS release build is pinned to Rust
-1.89.0. It does not claim a measured speed change. The measured candidates
-below remain open for the next pass, in order:
+0.4.10 is a visual and dead-weight cleanup: it removes the Instances `RUNNING`
+badge and root-path row, renames the startup switch, and deletes unreferenced
+root captures. It ran no benchmark and the Windows EXE is 17,154,048 B, one
+4 KiB page larger than 0.4.9. The measured candidates below remain open for the
+next pass, in order:
 
 1. **Startup path audit.** Find one allocation, disk read or synchronous call on
    the window-creation path; measure before/after with `bench-lite.ps1`.
 2. **First-frame work.** Verify the older-build sweep and settings read stay off
    the paint path; instrument rather than guess.
-3. **Binary/bundle size.** Check for duplicate native libraries or unused
-   features; record exact bytes.
+3. **Binary/bundle size.** Find an actual reduction, not a rounded compiler
+   page; record exact bytes against the 0.4.10 assets.
 
 Acceptance: a change with a repeatable improvement beyond host noise, or an
 honest "no change" and no bump.

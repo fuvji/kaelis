@@ -36,9 +36,9 @@ copy it into Obsidian with
 
 ## Current snapshot
 
-- Latest release: **v0.4.9** (2026-11-12).
-- Workspace: **0.4.9** — the clean no-Java Forge repair and the macOS
-  release-build pin.
+- Latest release: **v0.4.10** (2026-11-12).
+- Workspace: **0.4.10** — the Instances visual cleanup, clearer startup
+  label and dead source-asset removal.
 - Product page: https://fuvji.github.io/kaelis/
 - Idle memory: **18.9 MB**, down from 86.6 MB on 0.3.7 with the same harness.
 - Start-up: ~297 ms; CLI: ~63 ms; both flat within host noise.
