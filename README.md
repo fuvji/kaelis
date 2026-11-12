@@ -15,7 +15,7 @@ Native Rust for Windows, macOS, and Linux.</p>
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.4.8-70a5ff">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.4.9-70a5ff">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8">
   <img alt="Idle CPU" src="https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950">
   <img alt="License" src="https://img.shields.io/badge/license-proprietary-8b949e">
@@ -166,7 +166,7 @@ through Xbox Live → XSTS → Minecraft Services, so an account without Java
 Edition is refused at sign-in rather than at launch. The refresh token lives in
 the OS credential store; the access token stays in zeroising memory.
 
-## What's new in 0.4.8
+## What's new in 0.4.9
 
 - **A clean no-Java instance repairs in the right order.** A truly empty Forge
   1.20.1 root has no `versions/1.20.1/1.20.1.json` yet, so asking the runtime
@@ -179,7 +179,10 @@ the OS credential store; the access token stays in zeroising memory.
   and an ignored real-network test installs Java, vanilla 1.20.1 and Forge on
   a clean root and requires readiness to be clean.
 - **macOS release runner.** The release workflow now uses `macos-26-intel`; the
-  temporary manual macOS artifact workflow is removed.
+  temporary manual macOS artifact workflow is removed. Its universal build is
+  pinned to Rust 1.88.0: the GUI toolkit reaches `objc2` 0.4.1 through
+  `winit` 0.29, and that crate no longer compiles on the current stable
+  toolchain. The app itself is unchanged.
 - **No new performance claim.** This is a correctness release.
 
 ## What's new in 0.4.7

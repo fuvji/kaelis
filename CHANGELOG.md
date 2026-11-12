@@ -2,7 +2,7 @@
 
 Every released change, newest first. The product page keeps only the latest.
 
-## 0.4.8
+## 0.4.9
 
 - **Clean no-Java Forge instances repair in launch order.** The repair pass used
   to install a JVM first, but an empty instance has no
@@ -16,8 +16,10 @@ Every released change, newest first. The product page keeps only the latest.
   no-Java Forge instance, and an ignored network test installs Java, vanilla
   1.20.1 and Forge and requires `health::check` to be ready afterwards.
 - **Release runner.** macOS universal builds now run on `macos-26-intel`; the
-  temporary manual fallback workflow is removed. No performance number is
-  claimed for this correctness release.
+  temporary manual fallback workflow is removed. The build is pinned to Rust
+  1.88.0 because the GUI toolkit reaches `objc2` 0.4.1 through `winit` 0.29 and
+  that crate no longer compiles on the current stable toolchain. No performance
+  number is claimed for this correctness release.
 
 ## 0.4.7
 
