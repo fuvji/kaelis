@@ -2610,7 +2610,7 @@ name = "kaelis-gui"
 version = "0.4.11"
 dependencies = [
  "arboard",
- "base64 0.22.1",
+ "base64 0.23.1",
  "eframe",
  "egui",
  "fontdb",
