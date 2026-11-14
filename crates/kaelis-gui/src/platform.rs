@@ -467,13 +467,19 @@ pub(crate) fn clear_window_frame() -> bool {
 
 /// The header's minimize control on an overlay with no native title bar.
 ///
-/// It uses the deliberate tray-hide path rather than a taskbar minimize: the
-/// window leaves the taskbar, keeps the tray icon, and restores from either
-/// the tray click or its Show item. Windows does this with the native window
-/// handle; the other targets keep their native minimized state because a
-/// hidden viewport there can stop processing the restore.
-pub(crate) fn minimize_window(context: &egui::Context) {
-    hide_to_tray(context);
+/// It uses the deliberate tray-hide path when the tray installed: the window
+/// leaves the taskbar, keeps the tray icon, and restores from either the tray
+/// click or its Show item. Windows does this with the native window handle;
+/// the other targets keep their native minimized state because a hidden
+/// viewport there can stop processing the restore. Without a tray icon the
+/// ordinary minimize is the only safe fallback: hiding would strand the
+/// window with no visible restore control.
+pub(crate) fn minimize_window(context: &egui::Context, tray_available: bool) {
+    if tray_available {
+        hide_to_tray(context);
+    } else {
+        context.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+    }
 }
 
 /// Give back the pages the hidden launcher no longer needs.

@@ -6900,9 +6900,14 @@ impl KaelisApp {
                         if window_control(ui, control, tooltip).clicked() {
                             context.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
                         }
-                        if window_control(ui, WindowControl::Minimize, "Minimize to tray").clicked()
-                        {
-                            platform::minimize_window(context);
+                        let tray_available = self._tray.is_some();
+                        let minimize_tooltip = if tray_available {
+                            "Minimize to tray"
+                        } else {
+                            "Minimize"
+                        };
+                        if window_control(ui, WindowControl::Minimize, minimize_tooltip).clicked() {
+                            platform::minimize_window(context, tray_available);
                         }
                         // No status pill anywhere in the bar: a running game is
                         // already on its card and on Overview, and the strip
