@@ -17,7 +17,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 eframe = { version = "0.28", features = ["default_fonts", "glow", "wgpu"] }
 egui = "0.28"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "ico", "bmp"] }
-base64 = "0.22"
+base64 = "0.23"
 # Any picture from a browser, a screenshot tool, or an image editor can be
 # pasted as artwork without a file dialog.
 arboard = "3"
