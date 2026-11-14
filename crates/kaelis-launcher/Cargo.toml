@@ -16,7 +16,7 @@ kaelis-api = { path = "../kaelis-api" }
 kaelis-gui = { path = "../kaelis-gui" }
 eframe = { version = "0.28", features = ["default_fonts", "glow", "wgpu"] }
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream", "http2", "charset", "macos-system-configuration"] }
 serde_json = "1"
 
 [target.'cfg(windows)'.dependencies]

@@ -15,7 +15,7 @@ Native Rust for Windows, macOS, and Linux.</p>
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.4.10-70a5ff">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.4.11-70a5ff">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8">
   <img alt="Idle CPU" src="https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950">
   <img alt="License" src="https://img.shields.io/badge/license-proprietary-8b949e">
@@ -165,6 +165,22 @@ no Azure registration, no client id, no secret. Every sign-in is exchanged
 through Xbox Live → XSTS → Minecraft Services, so an account without Java
 Edition is refused at sign-in rather than at launch. The refresh token lives in
 the OS credential store; the access token stays in zeroising memory.
+
+## What's new in 0.4.11
+
+- **Minimize goes to the tray.** The header's minimize control now takes the
+  deliberate tray-hide path: the taskbar button leaves with the window, the
+  tray icon stays, and Show restores it. On non-Windows targets the native
+  minimized state remains because a hidden viewport there can stop processing
+  the restore.
+- **One TLS stack instead of two.** The HTTP clients built both rustls and the
+  platform TLS backend through reqwest's defaults. They now use rustls only,
+  while keeping HTTP/2, charset handling and macOS system-proxy support. The
+  0.4.11 package sizes are measured after the build.
+- **The 0.4.10/0.4.9 comparison is flat.** On the same Windows host and
+  `tools/bench.ps1` harness, three runs showed startup, private/working-set
+  memory and idle CPU within run-to-run noise. No speed or memory win is
+  claimed for 0.4.10.
 
 ## What's new in 0.4.10
 

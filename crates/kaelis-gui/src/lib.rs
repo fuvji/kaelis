@@ -6900,7 +6900,8 @@ impl KaelisApp {
                         if window_control(ui, control, tooltip).clicked() {
                             context.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized));
                         }
-                        if window_control(ui, WindowControl::Minimize, "Minimize").clicked() {
+                        if window_control(ui, WindowControl::Minimize, "Minimize to tray").clicked()
+                        {
                             platform::minimize_window(context);
                         }
                         // No status pill anywhere in the bar: a running game is

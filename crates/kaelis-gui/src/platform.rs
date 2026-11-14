@@ -467,11 +467,13 @@ pub(crate) fn clear_window_frame() -> bool {
 
 /// The header's minimize control on an overlay with no native title bar.
 ///
-/// It is an ordinary minimize on every platform: the window keeps its taskbar
-/// (or dock) entry, so it can be restored from the shell as well as from the
-/// tray. Hiding to the notification area remains an explicit tray action.
+/// It uses the deliberate tray-hide path rather than a taskbar minimize: the
+/// window leaves the taskbar, keeps the tray icon, and restores from either
+/// the tray click or its Show item. Windows does this with the native window
+/// handle; the other targets keep their native minimized state because a
+/// hidden viewport there can stop processing the restore.
 pub(crate) fn minimize_window(context: &egui::Context) {
-    context.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+    hide_to_tray(context);
 }
 
 /// Give back the pages the hidden launcher no longer needs.

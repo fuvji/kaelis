@@ -2,6 +2,21 @@
 
 Every released change, newest first. The product page keeps only the latest.
 
+## 0.4.11
+
+- **Minimize now hides to the tray.** The header button uses the same native
+  tray-hide path as the menu; the taskbar button leaves with the window and the
+  tray icon restores it. Non-Windows targets keep their native minimized state
+  because hiding the viewport there can prevent the restore from being handled.
+- **Removed the duplicate TLS backend.** The request clients compiled both
+  rustls and native-tls because reqwest's defaults were left on. They now use
+  rustls only while retaining HTTP/2, charset handling and macOS system-proxy
+  support. Package sizes are measured separately for this release.
+- **Measured baseline, no invented win.** The 0.4.9 and 0.4.10 Windows binaries
+  were run through the same `tools/bench.ps1` three-run harness on this host;
+  startup, memory and idle CPU were flat within noise. The 0.4.10 UI cleanup is
+  visual and source cleanup only.
+
 ## 0.4.10
 
 - **The Instances list is quieter.** The `RUNNING` badge and the technical
