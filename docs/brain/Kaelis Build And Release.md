@@ -3,14 +3,14 @@ type: reference
 summary: How to verify, version, tag, package, publish and sync Kaelis.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-12
+last_touched: 2026-11-14
 title: Kaelis Build And Release
 tags:
   - kaelis
   - release
   - build
 status: active
-updated: 2026-11-12
+updated: 2026-11-14
 ---
 
 # Kaelis Build And Release
@@ -28,9 +28,12 @@ Linux also needs `libgtk-3-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`,
 `libxkbcommon-dev`, `libwayland-dev`, `libx11-dev`.
 
 > [!warning] This Windows host
-> Local Rust linking is blocked because `dlltool.exe` is absent from the
-> installed GNU toolchain. CI (Windows/macOS/Linux) is the compile and test
-> evidence. Do not call a local build green when only `cargo fmt` ran.
+> Local linking needs the Winlibs PATH at
+> `/c/temp/kaelis-toolchain/mingw64/bin` and a `CARGO_TARGET_DIR` outside the
+> space-containing project path. With both, the 0.4.11 GNU release build
+> succeeded at 17,637,888 B. CI (Windows/macOS/Linux) remains the release
+> compile and test gate; do not call a local build green when only `cargo fmt`
+> ran.
 
 ## Version contract
 
@@ -39,7 +42,7 @@ Linux also needs `libgtk-3-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`,
 - `README.md` must carry `## What's new in <version>`; the release job lifts that
   exact section into the GitHub release body.
 - `CHANGELOG.md` carries the durable history.
-- Current line: **0.4.x**. Current: **0.4.10**. Next bump only when launcher
+- Current line: **0.4.x**. Current: **0.4.11**. Next bump only when launcher
   code changes.
 
 ## Release flow
@@ -57,6 +60,9 @@ Linux also needs `libgtk-3-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`,
    `upload-pages-artifact` step, re-run once; if it repeats, dispatch
    `pages.yml` again. A fresh run creates the missing artifact and succeeded
    for 0.4.10 after two failed attempts on the original run.
+6. 0.4.11 published all nine release assets from run 43601731015. The Windows
+   EXE is 17,088,000 B, 66,048 B below 0.4.10. Pages run 43702756319 deployed
+   site commit `4f8130f`; the live page and checksum file carry 0.4.11.
 
 ## Toolchain pin
 
@@ -67,9 +73,9 @@ stable; `uuid` 1.29 requires 1.89. Do not float to `stable` without upgrading
 same version.
 ## Verify
 
-- release `latest` resolves the new tag;
-- downloaded `Kaelis.exe` matches `SHA256SUMS.txt`;
-- live page shows the version and hydrated hashes;
+- release `latest` resolves the new tag (v0.4.11 verified);
+- downloaded `Kaelis.exe` and all six other artifacts match `SHA256SUMS.txt`;
+- live page shows the version and hydrated hashes (0.4.11 verified);
 - `/downloads/Kaelis.exe` is 404 on Pages (binaries live on Releases);
 - no `.rs`, `.toml`, `.lock` or sourcemap is present in `site/` or assets.
 
@@ -77,7 +83,8 @@ same version.
 
 Static site lives in `site/`. The workflow fetches release binaries only to hash
 them, then deletes the binaries before upload. `tools/hydrate-site.ps1` rewrites
-sizes/hashes. Keep the page dependency-free.
+sizes/hashes. `site/downloads/KAELIS-LINKS.txt` is generated and ignored; do not
+force-add it. Keep the page dependency-free.
 
 ## Brain sync
 

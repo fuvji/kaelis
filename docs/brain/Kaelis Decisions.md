@@ -3,30 +3,38 @@ type: reference
 summary: Durable Kaelis choices about versioning, performance claims, distribution and web.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-12
+last_touched: 2026-11-14
 title: Kaelis Decisions
 tags:
   - kaelis
   - decisions
 status: active
-updated: 2026-11-12
+updated: 2026-11-14
 ---
 
 # Kaelis Decisions
 
 ## Version line
 
-- 0.4.6 resumed the requested **0.4.x** numbering; 0.4.10 is the current release.
+- 0.4.6 resumed the requested **0.4.x** numbering; 0.4.11 is the current release.
 - 0.5.0 and 0.6.0 tags/releases remain published as history; do not delete them.
-- Next bump is **0.4.11** only when launcher code changes. A web-only pass does
+- Next bump is **0.4.12** only when launcher code changes. A web-only pass does
   not invent a version.
 - 0.4.10 removed UI chrome and dead source captures, but the Windows EXE grew
   one 4 KiB page. Treat that as a cleanup release, not a size or speed win.
+- 0.4.11 is a real size win: the Windows EXE is 17,088,000 B, 66,048 B below
+  0.4.10. It is **not** a speed win; startup and memory showed no repeatable
+  improvement, and the measured startup was slower in the published run.
 
 ## Performance claims
 
 - Same host, fixture, harness and median-of-three or no comparison.
-- Old `tools/bench.ps1` rows are not comparable with `bench-lite.ps1`.
+- `tools/bench.ps1` release rows and older `bench-lite.ps1` rows are separate
+  datasets; do not put them in one chart.
+- Startup variation on this host is large. Interleave builds in one session
+  before calling a regression; one 1,299 ms sample did not prove one.
+- Never zero retry, timeout, process-wait or safety timers to claim zero
+  latency. Measure real work instead.
 - Memory is the measured win; start-up and CLI are flat within noise.
 - No overclocking, no impossible latency claim, no synthetic competitor.
 
@@ -37,6 +45,16 @@ updated: 2026-11-12
   from the artifact before upload.
 - Release metadata (`KAELIS-LINKS.txt`, `SHA256SUMS.txt`) is copied into
   `site/downloads` so repo and live copies agree.
+
+## Window and TLS
+
+- On Windows, the header minimize control hides to the tray when a tray icon is
+  available. If tray installation failed, it uses ordinary taskbar minimize so
+  the window cannot become unrecoverable.
+- Non-Windows keeps native minimize; hiding a viewport there can block the
+  restore event.
+- Build one TLS stack, rustls. Do not re-enable reqwest defaults or native-tls;
+  keep HTTP/2, charset handling and macOS system-proxy support.
 
 ## Packaging
 

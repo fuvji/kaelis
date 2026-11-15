@@ -3,14 +3,14 @@ type: reference
 summary: Same-harness Kaelis measurements, honest claims and chart rules.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-10
+last_touched: 2026-11-14
 title: Kaelis Benchmark Protocol
 tags:
   - kaelis
   - benchmarks
   - performance
 status: active
-updated: 2026-11-10
+updated: 2026-11-14
 ---
 
 # Kaelis Benchmark Protocol
@@ -42,6 +42,24 @@ Measured 2026-11-10 on one Windows x64 host:
 difference between builds; call them flat/noise.
 
 Binary size: 16.44 / 16.43 / 16.45 MB — within 20 KB.
+
+## Release comparison (`tools/bench.ps1`)
+
+This committed harness is **not comparable** with the older `bench-lite` rows:
+3 runs, 5 s settle, 10 s CPU sample, empty and 200-mod fixtures. Do not put both
+datasets in one chart.
+
+| Release | CLI | Empty | Heavy | Private | Idle |
+|---|---:|---:|---:|---:|---:|
+| 0.4.9 | 62 ms | 446 ms | 434 ms | ~91.0 MB | 0.16 / 0.00% |
+| 0.4.10 | 62 ms | 549 ms | 424 ms | 90.6 / 91.8 MB | 0.16 / 0.31% |
+| 0.4.11 | 67 ms | 733 ms | 705 ms | 90.6 / 91.0 MB | 0.00 / 0.00% |
+
+0.4.9 and 0.4.10 were flat within run-to-run noise. 0.4.11 did not improve
+startup, memory or idle CPU; its published run was slower on startup. One empty
+sample was 1,299 ms and earlier runs also varied, so this is not yet proof of a
+regression. The real 0.4.11 win is binary size: 17,088,000 B, 66,048 B below
+0.4.10.
 
 ## Rules
 

@@ -176,7 +176,12 @@ the OS credential store; the access token stays in zeroising memory.
 - **One TLS stack instead of two.** The HTTP clients built both rustls and the
   platform TLS backend through reqwest's defaults. They now use rustls only,
   while keeping HTTP/2, charset handling and macOS system-proxy support. The
-  0.4.11 package sizes are measured after the build.
+  Windows EXE is 17,088,000 B, 66,048 B smaller than 0.4.10; the setup is
+  6,001,184 B.
+- **No speed win claimed.** The published 0.4.11 three-run comparison measured
+  733 ms empty and 705 ms heavy, 90.6/91.0 MB private and 0.00% idle; 0.4.10
+  measured 549/424 ms and 90.6/91.8 MB. Startup variance is high, but there is
+  no measured startup, memory or idle-CPU improvement to claim.
 - **The 0.4.10/0.4.9 comparison is flat.** On the same Windows host and
   `tools/bench.ps1` harness, three runs showed startup, private/working-set
   memory and idle CPU within run-to-run noise. No speed or memory win is

@@ -1,36 +1,42 @@
 ---
 type: reference
-summary: Measured post-0.4.10 candidates, maintenance and deferred Kaelis work.
+summary: Measured post-0.4.11 candidates, maintenance and deferred Kaelis work.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-12
+last_touched: 2026-11-14
 title: Kaelis Roadmap
 tags:
   - kaelis
   - roadmap
 status: active
-updated: 2026-11-12
+updated: 2026-11-14
 ---
 
 # Kaelis Roadmap
 
-## After 0.4.10
+## After 0.4.11
 
-0.4.10 is a visual and dead-weight cleanup: it removes the Instances `RUNNING`
-badge and root-path row, renames the startup switch, and deletes unreferenced
-root captures. It ran no benchmark and the Windows EXE is 17,154,048 B, one
-4 KiB page larger than 0.4.9. The measured candidates below remain open for the
-next pass, in order:
+0.4.11 ships two concrete changes: Windows header minimize hides to the tray,
+and reqwest builds only rustls. The Windows EXE is 17,088,000 B, 66,048 B below
+0.4.10. The published `tools/bench.ps1` run did **not** improve startup, private
+memory or idle CPU: 733 ms empty and 705 ms heavy versus 0.4.10's 549/424 ms,
+90.6/91.0 MB private versus 90.6/91.8 MB, and 0.00% idle both. One 1,299 ms
+empty sample makes the startup delta noisy, but there is no win to claim.
 
-1. **Startup path audit.** Find one allocation, disk read or synchronous call on
-   the window-creation path; measure before/after with `bench-lite.ps1`.
+1. **Interleaved startup audit.** Run 0.4.10 and 0.4.11 alternately in one
+   session, at least five runs each, and compare medians and p95. Investigate
+   the window-creation path only if the regression repeats; the 1,299 ms first
+   sample points at host noise or cache state.
 2. **First-frame work.** Verify the older-build sweep and settings read stay off
    the paint path; instrument rather than guess.
-3. **Binary/bundle size.** Find an actual reduction, not a rounded compiler
-   page; record exact bytes against the 0.4.10 assets.
+3. **Further binary size.** The TLS removal proved the approach; look for the
+   next real reduction and record exact bytes against the 0.4.11 assets.
+4. **Tray restore coverage.** The hide path compiled and the fallback is the
+   existing tray action, but native clicking was blocked here. Add a manual
+   Windows check to the release checklist.
 
 Acceptance: a change with a repeatable improvement beyond host noise, or an
-honest "no change" and no bump.
+honest "no change" and no version bump for performance alone.
 
 ## Maintenance
 

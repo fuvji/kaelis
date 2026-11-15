@@ -3,14 +3,14 @@ type: reference
 summary: Kaelis product page layout, vault graph, preview dialog, motion and benchmark lab.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-11
+last_touched: 2026-11-14
 title: Kaelis Web System
 tags:
   - kaelis
   - web
   - design
 status: active
-updated: 2026-11-11
+updated: 2026-11-14
 ---
 
 # Kaelis Web System
@@ -80,8 +80,11 @@ zero edge and a small 4 px value edge so length stays readable.
 - The artifact tile shows `EXE`, `DMG` or `APPIMAGE` and follows the same
   platform accent. Without JavaScript it stays on the static Windows fallback.
 - Windows setup, macOS ZIP and Linux `tar.gz` have their own hydrated size/hash
-  slots. The static fallbacks match the v0.4.10 release digests, not older
-  files that may sit in a developer's `site/downloads` folder.
+  slots. The static fallbacks match the v0.4.11 release digests, not older
+  files that may sit in a developer's `site/downloads` folder. The EXE fallback
+  is 16.3 MB and the DMG fallback is 16.7 MB.
+- 0.4.11 changed only the version, two size fallbacks and seven checksum
+  fallbacks; layout, motion and the benchmark lab are unchanged.
 - Each checksum row has a local Copy control with a transient Copied state.
 
 ## Preview viewer

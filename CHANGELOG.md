@@ -11,10 +11,15 @@ Every released change, newest first. The product page keeps only the latest.
 - **Removed the duplicate TLS backend.** The request clients compiled both
   rustls and native-tls because reqwest's defaults were left on. They now use
   rustls only while retaining HTTP/2, charset handling and macOS system-proxy
-  support. Package sizes are measured separately for this release.
-- **Measured baseline, no invented win.** The 0.4.9 and 0.4.10 Windows binaries
-  were run through the same `tools/bench.ps1` three-run harness on this host;
-  startup, memory and idle CPU were flat within noise. The 0.4.10 UI cleanup is
+  support. The Windows EXE is 17,088,000 B, 66,048 B below 0.4.10; the setup is
+  6,001,184 B. All seven release assets passed their published checksums.
+- **Measured, no invented win.** The published 0.4.11 binary ran through the same
+  `tools/bench.ps1` three-run harness: 67 ms CLI, 733 ms empty, 705 ms heavy,
+  90.6/91.0 MB private and 0.00% idle. 0.4.10 measured 549/424 ms and
+  90.6/91.8 MB. Startup variance is high, but 0.4.11 has no measured startup,
+  memory or idle-CPU improvement to claim.
+- **The 0.4.9/0.4.10 baseline is flat.** Three runs of each build showed
+  startup, memory and idle CPU within run-to-run noise. The 0.4.10 UI cleanup is
   visual and source cleanup only.
 
 ## 0.4.10

@@ -3,63 +3,72 @@ type: reference
 summary: Current Kaelis release, repo, site, dependency and open-item snapshot.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-12
+last_touched: 2026-11-14
 title: Kaelis Current State
 tags:
   - kaelis
   - state
 status: active
-updated: 2026-11-12
+updated: 2026-11-14
 ---
 
 # Kaelis Current State
 
 > [!info] Snapshot
-> Latest release **v0.4.10** (2026-11-12); product page live; workspace version
-> **0.4.10**. This is a visual and dead-weight cleanup: the Instances
-> `RUNNING` badge and root-path row are gone, the startup label is clearer,
-> and unreferenced source captures were removed. It makes no speed claim; the
-> Windows binary is one 4 KiB page larger than 0.4.9.
+> Latest release **v0.4.11** (2026-11-14); product page live; workspace version
+> **0.4.11**. The header minimize control now hides to the tray on Windows, and
+> the duplicate native-TLS stack is gone. The Windows EXE is 66,048 B smaller
+> than 0.4.10. Startup, private memory and idle CPU show no repeatable
+> improvement; the measured 0.4.11 startup was slower than 0.4.10 on this host.
 
 ## Repo
 
-- Branch `main`; site commit `408263e`.
-- Latest tag: `v0.4.10` at `f6f60be` (2026-11-12).
-- Release run 43301510867 green: Windows, macOS universal, Linux and Publish.
-- CI run 43298311378 green on Windows, Ubuntu, macOS and site assets; the
-  site-only follow-up also passed its available jobs before deployment.
+- Branch `main`; site commit `4f8130f`.
+- Latest tag: `v0.4.11` at `9b4889d` (2026-11-14).
+- Release run 43601731015 green: Windows, macOS universal, Linux and Publish.
+- CI run 43600634830 green on Windows, Ubuntu, macOS and site assets.
 - `v0.4.8` is a historical tag only: its release run failed before publishing,
-  and the tag must not be moved.
-- Release: https://github.com/fuvji/kaelis/releases/tag/v0.4.10
-- Windows release asset: `Kaelis.exe`, 17,154,048 B.
-- SHA-256: `a281ce87f71672201595362d9fe5555ac53e0bfeea1b5f177867da411d5c40df`.
-- Windows setup asset: `Kaelis-Setup.exe`, 6,023,423 B.
-- Setup SHA-256: `4d0f2b04a517ddac117eb98af3fa73183da039e3e1b1fddc33d16c952a00a5c6`.
-- macOS DMG: 17,571,949 B,
-  `5ff9a86c8880aa22115cf6ebbd9cde88dab6d202adb2c91f1db197374eabd8d7`.
-- macOS ZIP: 15,455,941 B,
-  `0c5756e6c1284397b1c7e829bee41134d215ff69b870e1f2d3ec093242c8250a`.
-- Linux `.deb` 8,438,386 B,
-  `41fa1ebc183b89b787b8faf5aa3f32fc42ce915e9b60775f8c5372cd8ecd2033`;
-  AppImage 11,151,864 B,
-  `608021f438c5f577fc5fb5546c3d1bd49adcc5b445badd28705ebf7ca6341237`;
-  `tar.gz` 11,131,387 B,
-  `e7aa8bb34f2df1af9ef8ca779e1cc458e7aa6d7b21d2b99f257d8d96f921cb1e`.
-- `site/downloads/SHA256SUMS.txt` and the page fallbacks are synced to v0.4.10;
-  all seven downloaded binaries verified against the release checksum sheet.
-- Removed the unreferenced root `screenshots/` and `media/` copies; `site/`
-  keeps the optimized images and film it actually serves. The Instances card
-  also lost its unused root-path string.
+  and no published tag may be moved.
+- Release: https://github.com/fuvji/kaelis/releases/tag/v0.4.11
+- Windows release asset: `Kaelis.exe`, 17,088,000 B; 66,048 B (64.5 KiB)
+  smaller than 0.4.10.
+- SHA-256: `93ffa58738da3e5879f83f35ecf04ef25a8b484a0373c87360c0ce58aa59f223`.
+- Windows setup asset: `Kaelis-Setup.exe`, 6,001,184 B, 22,239 B smaller.
+- Setup SHA-256: `5a252a9e3ebd17575559e2f1d3f783aa6b05450e0fc25d77666bf708e0d6e891`.
+- macOS DMG: 17,522,219 B (49,730 B smaller),
+  `662933b0d0661beb98d7dced8656d623d5966c049310ad82fb2f223e366c2b92`.
+- macOS ZIP: 15,412,119 B (43,822 B smaller),
+  `b3e83b0223681a3f96ade993f6b2307b9c9eca3a33dd052952471278967c8bf2`.
+- Linux `.deb` 8,413,550 B (24,836 B smaller),
+  `58eb46d999d5035bc06718a0dd4925dad8c98547a6d90c19d69cc99dcbc64c82`;
+  AppImage 11,094,520 B (57,344 B smaller),
+  `6f27bb24424eed1bc73681abba28b4074f7971624b2a96ba09a3a369b5b054f3`;
+  `tar.gz` 11,101,312 B (30,075 B smaller),
+  `8b79ea9e110c47891a9c9e9022fef51c766c03e79872ed1d8151e947ba184e18`.
+- `site/downloads/SHA256SUMS.txt` and all seven page hash slots are synced to
+  v0.4.11; every downloaded asset passed `sha256sum -c`.
+- The header minimize control calls `hide_to_tray` when a tray exists and falls
+  back to ordinary taskbar minimize when it does not. Non-Windows keeps the
+  native minimized state. CI compiled the path, but this host blocked synthetic
+  native cursor injection, so the control was not clicked in the published
+  build; the existing tray restore path is the tested fallback.
+- reqwest now builds one TLS stack: `default-features=false` with
+  `json,rustls-tls,stream,http2,charset,macos-system-configuration` in the API,
+  GUI and launcher crates. `native-tls`, OpenSSL and `schannel` left the graph.
+  `socket2` moved 0.4.11 → 0.4.10 because 0.4.11 is yanked.
+- Local GNU release build succeeded at 17,637,888 B under
+  `C:\temp\kaelis-target-0411`, 69,120 B below the equivalent 0.4.10 local
+  build; the published MSVC package shrank by 66,048 B.
 
 ## Site
 
 - https://fuvji.github.io/kaelis/
-- Pages run 43306427741 green from site commit `408263e`. The first two uploads
-  succeeded but `deploy-pages` saw no artifact; a fresh dispatch fixed it.
-- Live page returns 200 with `softwareVersion` and the footer at **v0.4.10**; the
-  EXE slot carries `a281ce87…`.
+- Pages run 43702756319 green from site commit `4f8130f`; the release Publish
+  job also dispatched run 43603899049 from `9b4889d`, green.
+- Live page returns 200 with `softwareVersion` and the footer at **v0.4.11**; the
+  EXE slot carries `93ffa587…`.
 - Live `downloads/SHA256SUMS.txt` is byte-identical to the release copy;
-  `downloads/Kaelis.exe` is 404 by design.
+  `downloads/Kaelis.exe` is 404 by design. `releases/latest` resolves v0.4.11.
 - Benchmark lab: 0.3.7 / 0.4.5 / 0.4.6, same harness.
 - Memory 86.6 → 18.9 MB (−78%); startup and CLI flat/noise.
 - Radius 6/10/14/20/28/999 px; static grain; transform-only aurora.
@@ -80,8 +89,9 @@ updated: 2026-11-12
 - The Windows ZIP is retired from current links and future releases. The
   optional per-user setup is restored as `Kaelis-Setup.exe` and hydrated from
   the release; 0.4.6 keeps its old artifacts as history.
-- Seven artifacts have size/hash slots; static fallbacks match the v0.4.10
-  release digests, not older local copies.
+- Seven artifacts have size/hash slots; static fallbacks match the v0.4.11
+  release digests, not older local copies. The EXE fallback is 16.3 MB and the
+  DMG fallback is 16.7 MB.
 - The Windows native frame is cleared through DWM attributes and the first clear
   is dark, so the undecorated window does not flash a pale edge.
 - The film poster is deferred until the film is within 300 px. In a 520×944
@@ -96,8 +106,8 @@ updated: 2026-11-12
 - `content-visibility: auto` remains only on below-fold sections; the graph
   removed its continuous dash paint loop and the aurora dropped `will-change`.
 - Local Chromium checks at 320, 390 and 1,440 px, plus the live page at 520 px,
-  showed no horizontal overflow before this release; the 0.4.10 site change only
-  replaced version and checksum text.
+  showed no horizontal overflow before this release; the 0.4.11 site change only
+  replaced version, two size fallbacks and checksum text.
 
 ## Loaders
 
@@ -140,9 +150,11 @@ updated: 2026-11-12
 - CI and release pin Rust **1.89.0**. `uuid` 1.29.2 requires 1.89, while
   `objc2` 0.4.1 (through `winit` 0.29) still builds on 1.89 and 1.90 but fails
   on the current stable 1.99. The workspace minimum remains 1.85.
-- 0.4.10 took the compatible `rustls-webpki` 0.103.16 → 0.103.17 patch.
-  0.4.7 picked up `errno` 0.3.15; `webbrowser` 1.2.7 is already current. Newer
-  major versions remain Dependabot work.
+- 0.4.11 removed `native-tls`, OpenSSL and `schannel` by using reqwest with
+  rustls only; HTTP/2, charset handling and macOS system-proxy support remain.
+  `socket2` is pinned at 0.4.10 because 0.4.11 is yanked. 0.4.10 took the
+  compatible `rustls-webpki` 0.103.16 → 0.103.17 patch. `webbrowser` 1.2.7 is
+  current; newer major versions remain Dependabot work.
 - `kaelis-api` asks `zip` for Deflated content only. `cargo tree` confirms
   `lzma-sys`, `bzip2-sys` and `zstd-sys` are out of its graph; `ring` remains
   only through rustls.
@@ -158,19 +170,22 @@ updated: 2026-11-12
 
 - Brain sync to the user's Obsidian vault (`01-Projects/Kaelis/Brain`) is
   pending; no vault path or `KAELIS_VAULT` is set.
-- v0.4.10 is published and its checksum, Pages hydration and live links are
-  verified.
+- v0.4.11 is published; all seven assets, the checksum sheet, Pages hydration,
+  the live version and the 404 for the Pages binary path are verified.
 - Review Dependabot major updates instead of merging them by default. Moving
   past Rust 1.89 requires upgrading `winit`/`eframe` away from `objc2` 0.4.1.
 - The clean-root no-Java Forge flow is covered by the stage-order test and the
   ignored network test; re-run the ignored test against any future loader
   change.
-- No post-0.4.10 benchmark was run; the 0.4.6 numbers remain the reference.
-  The Windows EXE grew one 4 KiB page, so do not claim a binary-size or speed
-  win for this cleanup. Root capture removal reduces the checked-out tree only;
-  old blobs remain in Git history.
-- Plan the first measured post-0.4.10 optimization; do not zero safety, retry
-  or process-wait timers just to make a latency claim.
+- **No startup, memory or idle-CPU win in 0.4.11.** `tools/bench.ps1` medians:
+  67 ms CLI, 733 ms empty, 705 ms heavy, 31.9/32.0 MB working set,
+  90.6/91.0 MB private, 0.00% idle. 0.4.10 measured 62 ms, 549 ms, 424 ms,
+  90.6/91.8 MB private. The 0.4.11 startup is slower in this run, but one empty
+  sample was 1,299 ms and earlier runs varied enough that this is not proof of a
+  code regression. The real 0.4.11 win is binary size: −66,048 B.
+- Plan an interleaved, same-session 0.4.10/0.4.11 startup audit before making a
+  regression or speed claim. Do not zero safety, retry, timeout or process-wait
+  timers to manufacture a latency result.
 
 ## Links
 
