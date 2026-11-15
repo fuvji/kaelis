@@ -10,7 +10,8 @@ Every released change, newest first. The product page keeps only the latest.
   edge that motivated the 0.4.2 opt-out does not come back. Windows 10 ignores
   the attribute and keeps its square corners.
 - **Visual-only change.** No performance or binary-size claim is made for this
-  release; no startup, memory or CPU behavior changed.
+  release; no startup, memory or CPU behavior changed. The Windows EXE stays at
+  17,088,000 B, and all seven 0.4.12 assets passed their published checksums.
 
 ## 0.4.11
 

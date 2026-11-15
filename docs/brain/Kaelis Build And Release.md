@@ -3,14 +3,14 @@ type: reference
 summary: How to verify, version, tag, package, publish and sync Kaelis.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-14
+last_touched: 2026-11-15
 title: Kaelis Build And Release
 tags:
   - kaelis
   - release
   - build
 status: active
-updated: 2026-11-14
+updated: 2026-11-15
 ---
 
 # Kaelis Build And Release
@@ -28,12 +28,10 @@ Linux also needs `libgtk-3-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`,
 `libxkbcommon-dev`, `libwayland-dev`, `libx11-dev`.
 
 > [!warning] This Windows host
-> Local linking needs the Winlibs PATH at
-> `/c/temp/kaelis-toolchain/mingw64/bin` and a `CARGO_TARGET_DIR` outside the
-> space-containing project path. With both, the 0.4.11 GNU release build
-> succeeded at 17,637,888 B. CI (Windows/macOS/Linux) remains the release
-> compile and test gate; do not call a local build green when only `cargo fmt`
-> ran.
+> Local release linking is not a supported gate: `gcc.exe` is absent, so
+> `cargo check` stops in `ring`'s build script, and `dlltool.exe` is missing
+> from the GNU toolchain. GitHub CI is the compile/test gate. Do not call a
+> local build green when only `cargo fmt` ran.
 
 ## Version contract
 
@@ -42,7 +40,7 @@ Linux also needs `libgtk-3-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`,
 - `README.md` must carry `## What's new in <version>`; the release job lifts that
   exact section into the GitHub release body.
 - `CHANGELOG.md` carries the durable history.
-- Current line: **0.4.x**. Current: **0.4.11**. Next bump only when launcher
+- Current line: **0.4.x**. Current: **0.4.12**. Next bump only when launcher
   code changes.
 
 ## Release flow
@@ -60,9 +58,10 @@ Linux also needs `libgtk-3-dev`, `libayatana-appindicator3-dev`, `libxdo-dev`,
    `upload-pages-artifact` step, re-run once; if it repeats, dispatch
    `pages.yml` again. A fresh run creates the missing artifact and succeeded
    for 0.4.10 after two failed attempts on the original run.
-6. 0.4.11 published all nine release assets from run 43601731015. The Windows
-   EXE is 17,088,000 B, 66,048 B below 0.4.10. Pages run 43702756319 deployed
-   site commit `4f8130f`; the live page and checksum file carry 0.4.11.
+6. 0.4.12 published all nine release assets from run 43704414850. The Windows
+   EXE remains 17,088,000 B. Pages run 43705936328 deployed commit `8d24eda`;
+   the live page and checksum file carry 0.4.12. The published window was found
+   with `corner_preference=2` and captured for the rounded-corner check.
 
 ## Toolchain pin
 
@@ -73,10 +72,12 @@ stable; `uuid` 1.29 requires 1.89. Do not float to `stable` without upgrading
 same version.
 ## Verify
 
-- release `latest` resolves the new tag (v0.4.11 verified);
+- release `latest` resolves the new tag (v0.4.12 verified);
 - downloaded `Kaelis.exe` and all six other artifacts match `SHA256SUMS.txt`;
-- live page shows the version and hydrated hashes (0.4.11 verified);
+- live page shows the version and hydrated hashes (0.4.12 verified);
 - `/downloads/Kaelis.exe` is 404 on Pages (binaries live on Releases);
+- on Windows 11, `DwmGetWindowAttribute(hwnd, 33)` returns 2 and the desktop
+  capture shows the rounded clip;
 - no `.rs`, `.toml`, `.lock` or sourcemap is present in `site/` or assets.
 
 ## Pages

@@ -3,50 +3,54 @@ type: reference
 summary: Current Kaelis release, repo, site, dependency and open-item snapshot.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-14
+last_touched: 2026-11-15
 title: Kaelis Current State
 tags:
   - kaelis
   - state
 status: active
-updated: 2026-11-14
+updated: 2026-11-15
 ---
 
 # Kaelis Current State
 
 > [!info] Snapshot
-> Latest release **v0.4.11** (2026-11-14); product page live; workspace version
-> **0.4.11**. The header minimize control now hides to the tray on Windows, and
-> the duplicate native-TLS stack is gone. The Windows EXE is 66,048 B smaller
-> than 0.4.10. Startup, private memory and idle CPU show no repeatable
-> improvement; the measured 0.4.11 startup was slower than 0.4.10 on this host.
+> Latest release **v0.4.12** (2026-11-15); product page live; workspace version
+> **0.4.12**. Windows 11's compositor rounds the borderless launcher again: the
+> published window reports `corner_preference=2` and a desktop capture shows the
+> clipped corners. This is a visual restoration only; the 0.4.11 tray minimize
+> and rustls-only client remain, with no new performance or size claim.
 
 ## Repo
 
-- Branch `main`; site commit `4f8130f`.
-- Latest tag: `v0.4.11` at `9b4889d` (2026-11-14).
-- Release run 43601731015 green: Windows, macOS universal, Linux and Publish.
-- CI run 43600634830 green on Windows, Ubuntu, macOS and site assets.
+- Branch `main`; release commit `8d24eda`; the site fallback sync follows it.
+- Latest tag: `v0.4.12` at `8d24eda` (2026-11-15).
+- Release run 43704414850 green: Windows, macOS universal, Linux and Publish.
+- CI run 43703348291 green on Windows, Ubuntu, macOS and site assets.
 - `v0.4.8` is a historical tag only: its release run failed before publishing,
   and no published tag may be moved.
-- Release: https://github.com/fuvji/kaelis/releases/tag/v0.4.11
-- Windows release asset: `Kaelis.exe`, 17,088,000 B; 66,048 B (64.5 KiB)
-  smaller than 0.4.10.
-- SHA-256: `93ffa58738da3e5879f83f35ecf04ef25a8b484a0373c87360c0ce58aa59f223`.
-- Windows setup asset: `Kaelis-Setup.exe`, 6,001,184 B, 22,239 B smaller.
-- Setup SHA-256: `5a252a9e3ebd17575559e2f1d3f783aa6b05450e0fc25d77666bf708e0d6e891`.
-- macOS DMG: 17,522,219 B (49,730 B smaller),
-  `662933b0d0661beb98d7dced8656d623d5966c049310ad82fb2f223e366c2b92`.
-- macOS ZIP: 15,412,119 B (43,822 B smaller),
-  `b3e83b0223681a3f96ade993f6b2307b9c9eca3a33dd052952471278967c8bf2`.
-- Linux `.deb` 8,413,550 B (24,836 B smaller),
-  `58eb46d999d5035bc06718a0dd4925dad8c98547a6d90c19d69cc99dcbc64c82`;
-  AppImage 11,094,520 B (57,344 B smaller),
-  `6f27bb24424eed1bc73681abba28b4074f7971624b2a96ba09a3a369b5b054f3`;
-  `tar.gz` 11,101,312 B (30,075 B smaller),
-  `8b79ea9e110c47891a9c9e9022fef51c766c03e79872ed1d8151e947ba184e18`.
+- Release: https://github.com/fuvji/kaelis/releases/tag/v0.4.12
+- Windows release asset: `Kaelis.exe`, 17,088,000 B, unchanged from 0.4.11.
+- SHA-256: `cc78b769ee3f3552754fe968f9a6fb10a99108f8ae7c9046613dfa85e92abe81`.
+- Windows setup asset: `Kaelis-Setup.exe`, 6,001,676 B.
+- Setup SHA-256: `44e394049a8c5af118e9e4a5f1c72fc4a6da858dbdbc4bc2bbab75f5bc00b256`.
+- macOS DMG: 17,522,794 B,
+  `c7a1c33aeb53f4b59b52fe8189166cc133d237e5b0ec60cd25d301c2435c7e70`.
+- macOS ZIP: 15,412,012 B,
+  `ddcb3e91f110f4f57d2a6db151bce1edc29ded793141fc392ef3b9805dd32ea9`.
+- Linux `.deb` 8,413,862 B,
+  `6b129ba6b83f16e9a796450c91e8993877b25e6d0db7b18fd1484085e08b3a72`;
+  AppImage 11,094,520 B,
+  `0bd6cfc9efab9eb46442c9cf8d496e58a5ea110d151356733f365696a2bc3ce2`;
+  `tar.gz` 11,099,849 B,
+  `b3e34acc58cc50358ce1ee35a52612bedb91ad5c8c5fc4272683282dbe92354c`.
 - `site/downloads/SHA256SUMS.txt` and all seven page hash slots are synced to
-  v0.4.11; every downloaded asset passed `sha256sum -c`.
+  v0.4.12; every downloaded asset passed `sha256sum -c`.
+- Rounded corners are restored through `DWMWCP_ROUND` (2), while the border
+  stays `DWMWA_COLOR_NONE` and the visible frame request stays zero. The published
+  1080×700 window reports `corner_preference=2`; a desktop capture at
+  `C:\temp\kaelis-ui\corners-0412.png` shows all four clipped corners. Windows
+  10 ignores the attribute and keeps square corners.
 - The header minimize control calls `hide_to_tray` when a tray exists and falls
   back to ordinary taskbar minimize when it does not. Non-Windows keeps the
   native minimized state. CI compiled the path, but this host blocked synthetic
@@ -56,19 +60,22 @@ updated: 2026-11-14
   `json,rustls-tls,stream,http2,charset,macos-system-configuration` in the API,
   GUI and launcher crates. `native-tls`, OpenSSL and `schannel` left the graph.
   `socket2` moved 0.4.11 → 0.4.10 because 0.4.11 is yanked.
-- Local GNU release build succeeded at 17,637,888 B under
-  `C:\temp\kaelis-target-0411`, 69,120 B below the equivalent 0.4.10 local
-  build; the published MSVC package shrank by 66,048 B.
+- 0.4.11 shipped the tray minimize and rustls-only client; its local GNU build
+  measured 17,637,888 B, but CI remains the release gate. 0.4.12 changes only
+  the DWM corner preference, so the published EXE size is unchanged.
+- 0.4.12 was checked visually on the published EXE. No new startup, memory or
+  idle-CPU benchmark was run; 0.4.11's `tools/bench.ps1` figures remain the
+  latest comparison.
 
 ## Site
 
 - https://fuvji.github.io/kaelis/
-- Pages run 43702756319 green from site commit `4f8130f`; the release Publish
-  job also dispatched run 43603899049 from `9b4889d`, green.
-- Live page returns 200 with `softwareVersion` and the footer at **v0.4.11**; the
-  EXE slot carries `93ffa587…`.
+- Pages run 43705936328 green from release commit `8d24eda`; the release
+  Publish job dispatched it after the 0.4.12 assets were uploaded.
+- Live page returns 200 with `softwareVersion` and the footer at **v0.4.12**; the
+  EXE slot carries `cc78b769…`.
 - Live `downloads/SHA256SUMS.txt` is byte-identical to the release copy;
-  `downloads/Kaelis.exe` is 404 by design. `releases/latest` resolves v0.4.11.
+  `downloads/Kaelis.exe` is absent by design. `releases/latest` resolves v0.4.12.
 - Benchmark lab: 0.3.7 / 0.4.5 / 0.4.6, same harness.
 - Memory 86.6 → 18.9 MB (−78%); startup and CLI flat/noise.
 - Radius 6/10/14/20/28/999 px; static grain; transform-only aurora.
@@ -89,13 +96,14 @@ updated: 2026-11-14
 - The Windows ZIP is retired from current links and future releases. The
   optional per-user setup is restored as `Kaelis-Setup.exe` and hydrated from
   the release; 0.4.6 keeps its old artifacts as history.
-- Seven artifacts have size/hash slots; static fallbacks match the v0.4.11
+- Seven artifacts have size/hash slots; static fallbacks match the v0.4.12
   release digests, not older local copies. The EXE fallback is 16.3 MB and the
   DMG fallback is 16.7 MB.
 - The Windows native border and visible frame are cleared through DWM
   attributes, while the Windows 11 rounded-corner preference is requested; the
   first clear is dark, so the undecorated window does not flash a pale edge.
-  Windows 10 keeps square corners.
+  The published 0.4.12 window reports preference 2 and the desktop capture
+  confirms the rounded clip. Windows 10 keeps square corners.
 - The film poster is deferred until the film is within 300 px. In a 520×944
   Chromium check, its 147,409 B was absent from the initial resource list and
   loaded after scrolling. The play control is a real MP4 link before JavaScript.
@@ -108,8 +116,8 @@ updated: 2026-11-14
 - `content-visibility: auto` remains only on below-fold sections; the graph
   removed its continuous dash paint loop and the aurora dropped `will-change`.
 - Local Chromium checks at 320, 390 and 1,440 px, plus the live page at 520 px,
-  showed no horizontal overflow before this release; the 0.4.11 site change only
-  replaced version, two size fallbacks and checksum text.
+  showed no horizontal overflow before this release; the 0.4.12 site change only
+  replaced version and checksum text.
 
 ## Loaders
 
@@ -171,9 +179,13 @@ updated: 2026-11-14
 ## Open
 
 - Brain sync to the user's Obsidian vault (`01-Projects/Kaelis/Brain`) is
-  pending; no vault path or `KAELIS_VAULT` is set.
-- v0.4.11 is published; all seven assets, the checksum sheet, Pages hydration,
-  the live version and the 404 for the Pages binary path are verified.
+  pending. `KAELIS_VAULT` is unset, and the `obsidian-vault` skill path
+  `/mnt/d/Obsidian Vault/AI Research` does not exist on this host.
+- `/loops` is absent and no Node/npx is installed, so the find-skills CLI could
+  not run; the available `find-skills` and `obsidian-vault` skills were read.
+- v0.4.12 is published; all seven assets, the checksum sheet, Pages hydration,
+  live version `0.4.12`, rounded-window preference and the 404 for the Pages
+  binary path are verified.
 - Review Dependabot major updates instead of merging them by default. Moving
   past Rust 1.89 requires upgrading `winit`/`eframe` away from `objc2` 0.4.1.
 - The clean-root no-Java Forge flow is covered by the stage-order test and the
@@ -185,6 +197,9 @@ updated: 2026-11-14
   90.6/91.8 MB private. The 0.4.11 startup is slower in this run, but one empty
   sample was 1,299 ms and earlier runs varied enough that this is not proof of a
   code regression. The real 0.4.11 win is binary size: −66,048 B.
+- **0.4.12 is visual-only and has no benchmark.** The EXE remains 17,088,000 B;
+  no startup, memory or CPU behavior changed. The rounded-corner check is a DWM
+  attribute read plus a desktop capture, not a performance claim.
 - Plan an interleaved, same-session 0.4.10/0.4.11 startup audit before making a
   regression or speed claim. Do not zero safety, retry, timeout or process-wait
   timers to manufacture a latency result.

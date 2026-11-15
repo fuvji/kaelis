@@ -173,9 +173,9 @@ the OS credential store; the access token stays in zeroising memory.
   invisible border and zero visible frame thickness stay, so the pale edge that
   prompted the 0.4.2 removal does not return. Windows 10 keeps its native square
   corners because the corner attribute does not exist there.
-- **Visual-only release.** No new performance claim: the 0.4.11 measurements
-  and binary-size comparison remain the latest ones until the 0.4.12 assets are
-  built.
+- **Visual-only release.** No new performance claim: this is a one-attribute
+  restoration. The Windows EXE stays at 17,088,000 B, and the 0.4.11 startup,
+  memory and idle figures remain the latest measured comparison.
 
 ## What's new in 0.4.11
 

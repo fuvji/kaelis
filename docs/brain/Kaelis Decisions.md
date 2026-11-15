@@ -3,28 +3,31 @@ type: reference
 summary: Durable Kaelis choices about versioning, performance claims, distribution and web.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-14
+last_touched: 2026-11-15
 title: Kaelis Decisions
 tags:
   - kaelis
   - decisions
 status: active
-updated: 2026-11-14
+updated: 2026-11-15
 ---
 
 # Kaelis Decisions
 
 ## Version line
 
-- 0.4.6 resumed the requested **0.4.x** numbering; 0.4.11 is the current release.
+- 0.4.6 resumed the requested **0.4.x** numbering; 0.4.12 is the current release.
 - 0.5.0 and 0.6.0 tags/releases remain published as history; do not delete them.
-- Next bump is **0.4.12** only when launcher code changes. A web-only pass does
+- Next bump is **0.4.13** only when launcher code changes. A web-only pass does
   not invent a version.
 - 0.4.10 removed UI chrome and dead source captures, but the Windows EXE grew
   one 4 KiB page. Treat that as a cleanup release, not a size or speed win.
 - 0.4.11 is a real size win: the Windows EXE is 17,088,000 B, 66,048 B below
   0.4.10. It is **not** a speed win; startup and memory showed no repeatable
   improvement, and the measured startup was slower in the published run.
+- 0.4.12 is visual-only: restore `DWMWCP_ROUND` while keeping the invisible
+  border and borderless edge. Do not describe it as a performance or size win;
+  the EXE is unchanged at 17,088,000 B.
 
 ## Performance claims
 
