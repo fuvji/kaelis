@@ -73,7 +73,8 @@ updated: 2026-11-14
 - No ad network; GitHub Sponsors only, labelled.
 - Single inline document; no font/framework/CDN dependency.
 - Rounded web geometry, transform-only aurora, static grain, reduced motion.
-  The native Windows frame is removed instead of rounded.
+  The native Windows border and visible frame are removed, but the Windows 11
+  rounded-corner preference stays; Windows 10 keeps square corners.
 - Sections paint without a reveal observer; the film poster is lazy.
 - Charts are honest: zero baseline, direct values, data table, flat labelled flat.
 

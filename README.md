@@ -15,7 +15,7 @@ Native Rust for Windows, macOS, and Linux.</p>
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.4.11-70a5ff">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.4.12-70a5ff">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8">
   <img alt="Idle CPU" src="https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950">
   <img alt="License" src="https://img.shields.io/badge/license-proprietary-8b949e">
@@ -165,6 +165,17 @@ no Azure registration, no client id, no secret. Every sign-in is exchanged
 through Xbox Live → XSTS → Minecraft Services, so an account without Java
 Edition is refused at sign-in rather than at launch. The refresh token lives in
 the OS credential store; the access token stays in zeroising memory.
+
+## What's new in 0.4.12
+
+- **Rounded window corners are back.** Windows 11's compositor now clips the
+  borderless launcher to the standard rounded-rectangle shape again. The
+  invisible border and zero visible frame thickness stay, so the pale edge that
+  prompted the 0.4.2 removal does not return. Windows 10 keeps its native square
+  corners because the corner attribute does not exist there.
+- **Visual-only release.** No new performance claim: the 0.4.11 measurements
+  and binary-size comparison remain the latest ones until the 0.4.12 assets are
+  built.
 
 ## What's new in 0.4.11
 

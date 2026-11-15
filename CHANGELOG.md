@@ -2,6 +2,16 @@
 
 Every released change, newest first. The product page keeps only the latest.
 
+## 0.4.12
+
+- **The compositor's rounded corners return.** Windows 11 now clips the
+  borderless launcher to the standard rounded-rectangle shape again. The native
+  border stays invisible and the visible frame thickness stays zero, so the pale
+  edge that motivated the 0.4.2 opt-out does not come back. Windows 10 ignores
+  the attribute and keeps its square corners.
+- **Visual-only change.** No performance or binary-size claim is made for this
+  release; no startup, memory or CPU behavior changed.
+
 ## 0.4.11
 
 - **Minimize now hides to the tray.** The header button uses the same native

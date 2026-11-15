@@ -407,15 +407,15 @@ pub(crate) fn hide_to_tray(context: &egui::Context) {
     trim_working_set();
 }
 
-/// Remove the native window frame, border and corner rounding.
+/// Remove the native window border and visible frame, keeping rounded corners.
 ///
 /// The launcher paints its own header and every pixel inside the window. DWM
-/// still draws a pale border and applies a rounded-corner clip to a resizable
-/// window, which reads as a white line across the top and a thick outer corner.
-/// Asking for no border, zero visible frame thickness and no rounding removes
-/// those compositor pixels without a transparent surface or a per-frame draw.
-/// Windows 10 ignores attributes it does not know, so a failed call is not an
-/// error.
+/// still draws a pale border and a visible frame around a resizable window;
+/// asking for no border and zero visible frame thickness removes those
+/// compositor pixels without a transparent surface or a per-frame draw. The
+/// corner preference asks for the same gently rounded clip as other desktop
+/// windows, while the border stays invisible. Windows 10 ignores the corner
+/// attribute and keeps its square corners; a failed call is not an error.
 ///
 /// Returns `true` once the launcher's window was found, so a caller can retry
 /// while the handle does not exist yet and stop after it does.
@@ -429,8 +429,8 @@ pub(crate) fn clear_window_frame() -> bool {
     const BORDER_COLOR: u32 = 34;
     /// `DWMWA_VISIBLE_FRAME_BORDER_THICKNESS` (Windows 11 22H2 and newer).
     const FRAME_THICKNESS: u32 = 37;
-    /// `DWMWCP_DONOTROUND`.
-    const NO_ROUNDING: i32 = 1;
+    /// `DWMWCP_ROUND`: the rounded-rectangle preference.
+    const ROUNDED: i32 = 2;
     /// `DWMWA_COLOR_NONE`: draw no border at all.
     const NO_BORDER: u32 = 0xFFFF_FFFE;
     /// No visible 1 px frame around the client area.
@@ -446,7 +446,7 @@ pub(crate) fn clear_window_frame() -> bool {
         let _ = DwmSetWindowAttribute(
             window,
             CORNER_PREFERENCE,
-            std::ptr::from_ref(&NO_ROUNDING).cast(),
+            std::ptr::from_ref(&ROUNDED).cast(),
             std::mem::size_of::<i32>() as u32,
         );
         let _ = DwmSetWindowAttribute(

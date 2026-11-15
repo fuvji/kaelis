@@ -92,8 +92,10 @@ updated: 2026-11-14
 - Seven artifacts have size/hash slots; static fallbacks match the v0.4.11
   release digests, not older local copies. The EXE fallback is 16.3 MB and the
   DMG fallback is 16.7 MB.
-- The Windows native frame is cleared through DWM attributes and the first clear
-  is dark, so the undecorated window does not flash a pale edge.
+- The Windows native border and visible frame are cleared through DWM
+  attributes, while the Windows 11 rounded-corner preference is requested; the
+  first clear is dark, so the undecorated window does not flash a pale edge.
+  Windows 10 keeps square corners.
 - The film poster is deferred until the film is within 300 px. In a 520×944
   Chromium check, its 147,409 B was absent from the initial resource list and
   loaded after scrolling. The play control is a real MP4 link before JavaScript.
