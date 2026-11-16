@@ -55,6 +55,9 @@ windows-sys = { version = "0.61", features = [
     # Rounded window corners and a frame-less edge come from DWM at
     # composition time, which costs the launcher nothing per frame.
     "Win32_Graphics_Dwm",
+    # Windows 10 has no DWM corner preference. A window region gives it the
+    # same rounded silhouette without a transparent surface.
+    "Win32_Graphics_Gdi",
     # The idle guard listens for foreground changes instead of polling.
     "Win32_UI_Accessibility",
     "Win32_UI_Shell",

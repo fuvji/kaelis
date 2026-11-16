@@ -31,6 +31,19 @@ static HIDDEN_FOR_GAME: AtomicBool = AtomicBool::new(false);
 #[cfg(windows)]
 static IDLE_MODE: AtomicBool = AtomicBool::new(false);
 
+/// Whether this Windows build ignored DWM's corner preference.
+///
+/// Windows 10 has no `DWMWA_WINDOW_CORNER_PREFERENCE`, so its launcher window
+/// would otherwise stay square. The fallback is a native window region, which
+/// the compositor clips without a transparent surface or a per-frame bitmap.
+#[cfg(windows)]
+static ROUND_REGION_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// Window size (and maximized state) already given a region. Reapplying the
+/// same region every frame would force needless compositor work.
+#[cfg(windows)]
+static ROUND_REGION_KEY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Drop this process to the bottom of the system, or bring it back.
 ///
 /// Every call here is a documented Windows power API, and each is reversed by
@@ -414,8 +427,12 @@ pub(crate) fn hide_to_tray(context: &egui::Context) {
 /// asking for no border and zero visible frame thickness removes those
 /// compositor pixels without a transparent surface or a per-frame draw. The
 /// corner preference asks for the same gently rounded clip as other desktop
-/// windows, while the border stays invisible. Windows 10 ignores the corner
-/// attribute and keeps its square corners; a failed call is not an error.
+/// windows, while the border stays invisible.
+///
+/// Windows 10 does not implement the corner preference. When DWM rejects it,
+/// [`maintain_rounded_region`] clips the window to a rounded native region so
+/// those systems do not fall back to square corners. A failed attribute is not
+/// an error; it selects the older supported path.
 ///
 /// Returns `true` once the launcher's window was found, so a caller can retry
 /// while the handle does not exist yet and stop after it does.
@@ -441,14 +458,16 @@ pub(crate) fn clear_window_frame() -> bool {
     };
     // SAFETY: `window` belongs to this process, and each pointer is valid for
     // the size the matching attribute expects. Unsupported attributes on older
-    // Windows builds return an error, which is intentionally ignored.
-    unsafe {
-        let _ = DwmSetWindowAttribute(
+    // Windows builds return an error, which selects the fallback below.
+    let corner = unsafe {
+        DwmSetWindowAttribute(
             window,
             CORNER_PREFERENCE,
             std::ptr::from_ref(&ROUNDED).cast(),
             std::mem::size_of::<i32>() as u32,
-        );
+        )
+    };
+    unsafe {
         let _ = DwmSetWindowAttribute(
             window,
             BORDER_COLOR,
@@ -462,7 +481,58 @@ pub(crate) fn clear_window_frame() -> bool {
             std::mem::size_of::<u32>() as u32,
         );
     }
+    if corner != 0 {
+        ROUND_REGION_ENABLED.store(true, Ordering::Relaxed);
+        ROUND_REGION_KEY.store(0, Ordering::Relaxed);
+    }
     true
+}
+
+/// Keep a Windows 10 window rounded as it is resized or restored from maximize.
+///
+/// This is a no-op when DWM accepted the Windows 11 corner preference. On
+/// Windows 10, `SetWindowRgn` gives the undecorated window the same rounded
+/// silhouette; the region is replaced only when the window size or maximized
+/// state changes. Maximized windows get a full rectangle so no screen edge is
+/// clipped. Called once per frame, but costs two cheap Win32 reads when idle.
+#[cfg(windows)]
+pub(crate) fn maintain_rounded_region(pixels_per_point: f32) {
+    use windows_sys::Win32::Foundation::RECT;
+    use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, CreateRoundRectRgn};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsZoomed, SetWindowRgn};
+
+    if !ROUND_REGION_ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    let Some(window) = main_window() else {
+        return;
+    };
+    // SAFETY: `window` is this process's live handle; `rect` is a plain output
+    // structure, and the region created below is handed to the window system.
+    unsafe {
+        let mut rect = RECT::default();
+        if GetWindowRect(window, &mut rect) == 0 {
+            return;
+        }
+        let width = rect.right.saturating_sub(rect.left);
+        let height = rect.bottom.saturating_sub(rect.top);
+        if width <= 0 || height <= 0 {
+            return;
+        }
+        let maximized = IsZoomed(window) != 0;
+        let key = ((width as u64) << 33) | ((height as u64) << 1) | if maximized { 1 } else { 0 };
+        if ROUND_REGION_KEY.load(Ordering::Relaxed) == key {
+            return;
+        }
+        let radius = (12.0 * pixels_per_point).round().clamp(8.0, 32.0) as i32;
+        let region = if maximized {
+            CreateRectRgn(0, 0, width, height)
+        } else {
+            CreateRoundRectRgn(0, 0, width + 1, height + 1, radius * 2, radius * 2)
+        };
+        let _ = SetWindowRgn(window, region, 1);
+        ROUND_REGION_KEY.store(key, Ordering::Relaxed);
+    }
 }
 
 /// The header's minimize control on an overlay with no native title bar.

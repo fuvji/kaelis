@@ -828,6 +828,12 @@ pub(crate) enum GuiEvent {
         instance_id: String,
         result: Result<PathBuf, String>,
     },
+    /// The mod loader for a freshly prepared instance is ready, or the reason
+    /// it could not be installed. Play stays disabled until this answers.
+    LoaderInstalled {
+        instance_id: String,
+        result: Result<String, String>,
+    },
     /// One line of a pre-launch repair pass, plus a download count when a
     /// phase has measurable progress.
     InstanceRepairProgress {
@@ -948,6 +954,7 @@ pub struct KaelisApp {
     selected_instance: Option<String>,
     installing_instance: Option<String>,
     installing_runtime: Option<String>,
+    installing_loader: Option<String>,
     new_instance_name: String,
     new_instance_version: String,
     new_instance_loader: String,
@@ -1402,6 +1409,7 @@ impl KaelisApp {
             selected_instance,
             installing_instance: None,
             installing_runtime: None,
+            installing_loader: None,
             // Screenshot fixtures can pre-fill the name to capture the
             // conflict state without automating keyboard input.
             new_instance_name: std::env::var("KAELIS_SCREENSHOT_NAME").unwrap_or_default(),
@@ -3930,7 +3938,10 @@ impl KaelisApp {
     }
 
     fn install_vanilla_instance(&mut self, context: egui::Context, instance: Instance) {
-        if self.installing_instance.is_some() || self.installing_runtime.is_some() {
+        if self.installing_instance.is_some()
+            || self.installing_runtime.is_some()
+            || self.installing_loader.is_some()
+        {
             self.set_status(
                 StatusKind::Warning,
                 "Wait for the current installation to finish.",
@@ -3991,7 +4002,10 @@ impl KaelisApp {
     }
 
     fn create_instance(&mut self, context: egui::Context) {
-        if self.installing_instance.is_some() || self.installing_runtime.is_some() {
+        if self.installing_instance.is_some()
+            || self.installing_runtime.is_some()
+            || self.installing_loader.is_some()
+        {
             self.set_status(
                 StatusKind::Warning,
                 "Wait for the current installation to finish.",
@@ -4043,7 +4057,10 @@ impl KaelisApp {
     }
 
     fn install_runtime_for_instance(&mut self, context: egui::Context, instance: Instance) {
-        if self.installing_instance.is_some() || self.installing_runtime.is_some() {
+        if self.installing_instance.is_some()
+            || self.installing_runtime.is_some()
+            || self.installing_loader.is_some()
+        {
             self.set_status(
                 StatusKind::Warning,
                 "Wait for the current installation to finish.",
@@ -4099,6 +4116,7 @@ impl KaelisApp {
         let loader = instance.loader.to_ascii_lowercase();
         if !matches!(loader.as_str(), "fabric" | "quilt" | "forge" | "neoforge")
             || kaelis_api::loader::load_for(&instance.root, &instance.mc_version, &loader).is_some()
+            || self.installing_loader.is_some()
         {
             return;
         }
@@ -4108,16 +4126,16 @@ impl KaelisApp {
             "neoforge" => "NeoForge",
             _ => "Fabric",
         };
-        // Forge and NeoForge install through a Java program, so there is
-        // nothing to do until the instance has a runtime. Play performs the
-        // same step after installing Java, so this only skips a redundant run.
+        // The Java install finishes before this is called. If the configured
+        // JVM disappeared in the meantime, report it instead of starting a
+        // loader installer that cannot run.
         let java = if matches!(loader.as_str(), "forge" | "neoforge") {
             match kaelis_api::runtime::resolve_java(&instance) {
                 Some(java) => Some(java),
                 None => {
                     self.set_status(
-                        StatusKind::Info,
-                        format!("{label} installs on the first Play, after Kaelis adds Java."),
+                        StatusKind::Error,
+                        format!("{label} needs Java, and no runtime could be found."),
                     );
                     return;
                 }
@@ -4125,33 +4143,46 @@ impl KaelisApp {
         } else {
             None
         };
+        // Own the whole sequence until the loader answers: Play and the install
+        // buttons stay disabled, so a second Forge installer cannot race this
+        // one on a freshly created instance.
+        self.installing_loader = Some(instance_id.clone());
+        self.set_status(StatusKind::Busy, format!("Installing {label}…"));
         let client = self.http.clone();
         let sender = self.sender.clone();
         let repaint = context;
         let game_version = instance.mc_version.clone();
         let root = instance.root.clone();
+        let task_instance_id = instance_id.clone();
         self.runtime.spawn(async move {
-            let message = if let Some(java) = java {
+            let result = if let Some(java) = java {
                 match kaelis_api::forge::install(&client, &root, &game_version, &loader, &java)
                     .await
                 {
-                    Ok(install) => format!(
+                    Ok(install) => Ok(format!(
                         "{label} {} installed for {} ({} libraries).",
                         install.loader_version, install.game_version, install.libraries
-                    ),
-                    Err(error) => format!("{label} loader install failed: {error}"),
+                    )),
+                    Err(error) => Err(format!("{label} loader install failed: {error}")),
                 }
             } else {
                 match kaelis_api::loader::provision(&client, &root, &game_version, &loader).await {
-                    Ok(Some(install)) => format!(
+                    Ok(Some(install)) => Ok(format!(
                         "{label} loader {} installed for {} ({} libraries).",
                         install.loader_version, install.game_version, install.libraries
-                    ),
-                    Ok(None) => return,
-                    Err(error) => format!("{label} loader install failed: {error}"),
+                    )),
+                    Ok(None) => Err(format!("No {label} build is available for {game_version}.")),
+                    Err(error) => Err(format!("{label} loader install failed: {error}")),
                 }
             };
-            send_event(&sender, &repaint, GuiEvent::Notice(message));
+            send_event(
+                &sender,
+                &repaint,
+                GuiEvent::LoaderInstalled {
+                    instance_id: task_instance_id,
+                    result,
+                },
+            );
         });
     }
 
@@ -4647,6 +4678,16 @@ impl KaelisApp {
     }
 
     fn launch_selected(&mut self, context: egui::Context) {
+        if self.installing_instance.is_some()
+            || self.installing_runtime.is_some()
+            || self.installing_loader.is_some()
+        {
+            self.set_status(
+                StatusKind::Warning,
+                "Wait for the current installation to finish.",
+            );
+            return;
+        }
         let Some(instance) = self.selected_instance().cloned() else {
             self.set_status(
                 StatusKind::Warning,
@@ -4939,9 +4980,9 @@ impl KaelisApp {
                         let id = outcome.instance.id.clone();
                         let imported = outcome.imported;
                         let mods = outcome.pack.mod_files;
-                        // Every loader Kaelis manages is provisioned end to
-                        // end; Forge and NeoForge install themselves on the
-                        // first Play once the instance has Java.
+                        // Every loader Kaelis manages is provisioned during
+                        // installation, after the version-matched Java runtime,
+                        // so the first Play is not also a download step.
                         let launchable = matches!(
                             loader.to_ascii_lowercase().as_str(),
                             "fabric" | "quilt" | "forge" | "neoforge" | "vanilla"
@@ -5616,9 +5657,9 @@ impl KaelisApp {
                     let succeeded = result.is_ok();
                     let (kind, text) = match result {
                         Ok(()) => (
-                            StatusKind::Success,
+                            StatusKind::Busy,
                             format!(
-                                "Vanilla Minecraft {} is installed and ready for Java.",
+                                "Minecraft {} is installed. Adding Java…",
                                 self.instances
                                     .iter()
                                     .find(|instance| instance.id == instance_id)
@@ -5636,7 +5677,14 @@ impl KaelisApp {
                     self.set_status(kind, text);
                     self.refresh_instance_cards();
                     if succeeded {
-                        self.provision_loader(context.clone(), instance_id.clone());
+                        if let Some(instance) = self
+                            .instances
+                            .iter()
+                            .find(|instance| instance.id == instance_id)
+                            .cloned()
+                        {
+                            self.install_runtime_for_instance(context.clone(), instance);
+                        }
                     }
                 }
             }
@@ -5661,6 +5709,7 @@ impl KaelisApp {
                 if self.installing_runtime.as_deref() == Some(instance_id.as_str()) {
                     self.installing_runtime = None;
                     self.install_progress = None;
+                    let installed = result.is_ok();
                     let (kind, text) = match result {
                         Ok(path) => {
                             let save_result = self
@@ -5697,6 +5746,61 @@ impl KaelisApp {
                         ),
                     };
                     self.set_status(kind, text);
+                    self.refresh_instance_cards();
+                    if installed {
+                        if let Some(instance) = self
+                            .instances
+                            .iter()
+                            .find(|instance| instance.id == instance_id)
+                            .cloned()
+                        {
+                            let loader = instance.loader.trim().to_ascii_lowercase();
+                            let needs_loader = !matches!(loader.as_str(), "" | "vanilla")
+                                && kaelis_api::loader::load_for(
+                                    &instance.root,
+                                    &instance.mc_version,
+                                    &loader,
+                                )
+                                .is_none();
+                            if needs_loader
+                                && matches!(
+                                    loader.as_str(),
+                                    "fabric" | "quilt" | "forge" | "neoforge"
+                                )
+                            {
+                                self.provision_loader(context.clone(), instance_id.clone());
+                            } else if needs_loader {
+                                self.set_status(
+                                    StatusKind::Warning,
+                                    format!(
+                                        "Java is installed, but {} needs its own loader installer.",
+                                        instance.loader
+                                    ),
+                                );
+                            } else {
+                                self.set_status(
+                                    StatusKind::Success,
+                                    format!("{} is ready.", instance.name),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            GuiEvent::LoaderInstalled {
+                instance_id,
+                result,
+            } => {
+                if self.installing_loader.as_deref() == Some(instance_id.as_str()) {
+                    self.installing_loader = None;
+                    self.install_progress = None;
+                    match result {
+                        Ok(message) => self.set_status(StatusKind::Success, message),
+                        Err(error) => self.set_status(
+                            StatusKind::Error,
+                            format!("{error}. Select Install / Repair to retry."),
+                        ),
+                    }
                     self.refresh_instance_cards();
                 }
             }
@@ -6839,6 +6943,7 @@ impl KaelisApp {
             || self.installing_job.is_some()
             || self.installing_instance.is_some()
             || self.installing_runtime.is_some()
+            || self.installing_loader.is_some()
             || self.repairing_mods
             || self.portable_busy
     }
@@ -7894,7 +7999,9 @@ impl KaelisApp {
                 let conflict = instance_name_conflict(&self.instances, &self.new_instance_name)
                     .map(|instance| name_conflict_text(self.new_instance_name.trim(), instance));
                 let name_taken = conflict.is_some();
-                let busy = self.installing_instance.is_some() || self.installing_runtime.is_some();
+                let busy = self.installing_instance.is_some()
+                    || self.installing_runtime.is_some()
+                    || self.installing_loader.is_some();
                 let ready = !self.new_instance_name.trim().is_empty()
                     && !name_taken
                     && !self.new_instance_version.trim().is_empty();
@@ -8142,8 +8249,9 @@ impl KaelisApp {
         {
             let cards = &self.instance_cards;
             let icons = &self.instance_icons;
-            let installing =
-                self.installing_instance.is_some() || self.installing_runtime.is_some();
+            let installing = self.installing_instance.is_some()
+                || self.installing_runtime.is_some()
+                || self.installing_loader.is_some();
             egui::ScrollArea::vertical().show(ui, |ui| {
                 for (index, instance) in self
                     .instances
@@ -11578,6 +11686,10 @@ impl eframe::App for KaelisApp {
                 context.request_repaint();
             }
         }
+        // Windows 11 rounds from DWM; Windows 10 needs the region fallback.
+        // The call is a no-op after DWM accepted the native corner preference.
+        #[cfg(windows)]
+        platform::maintain_rounded_region(context.pixels_per_point());
         Self::window_resize_grips(context);
         Self::paint_backdrop(context);
         self.show_header(context);

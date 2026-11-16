@@ -173,6 +173,17 @@ fn version_rank(name: &str) -> Vec<u32> {
 /// with a perfectly good managed runtime still failed with "program not
 /// found" on machines without a system JDK.
 pub fn managed_java(root: &Path) -> Option<PathBuf> {
+    managed_java_for_major(root, None)
+}
+
+/// The newest managed runtime matching `major`, or the newest of any major
+/// when none is requested.
+///
+/// Minecraft 1.19 needs Java 17 even when the machine also has a newer Java 21
+/// runtime. Choosing purely by version would hand the game a JVM it cannot
+/// run, so the version metadata's `javaVersion.majorVersion` is part of the
+/// selection whenever it is available.
+fn managed_java_for_major(root: &Path, major: Option<u32>) -> Option<PathBuf> {
     let mut best: Option<(Vec<u32>, PathBuf)> = None;
     for component in std::fs::read_dir(root.join("runtime")).ok()?.flatten() {
         if !component.path().is_dir() {
@@ -186,13 +197,38 @@ pub fn managed_java(root: &Path) -> Option<PathBuf> {
             if !is_executable(&java) {
                 continue;
             }
-            let rank = version_rank(&version.file_name().to_string_lossy());
+            let name = version.file_name().to_string_lossy();
+            if major.is_some_and(|major| java_major_hint(&name) != major) {
+                continue;
+            }
+            let rank = version_rank(&name);
             if best.as_ref().is_none_or(|(current, _)| rank > *current) {
                 best = Some((rank, java));
             }
         }
     }
     best.map(|(_, java)| java)
+}
+
+/// The Java major named by this instance's installed version metadata.
+fn required_java_major(instance: &Instance) -> Option<u32> {
+    let path = instance
+        .root
+        .join("versions")
+        .join(&instance.mc_version)
+        .join(format!("{}.json", instance.mc_version));
+    let bytes = std::fs::read(path).ok()?;
+    if bytes.len() > MAX_METADATA_BYTES {
+        return None;
+    }
+    let metadata: Value = serde_json::from_slice(&bytes).ok()?;
+    if metadata.get("id").and_then(Value::as_str) != Some(instance.mc_version.as_str()) {
+        return None;
+    }
+    metadata
+        .pointer("/javaVersion/majorVersion")
+        .and_then(Value::as_u64)
+        .and_then(|major| u32::try_from(major).ok())
 }
 
 /// Accept either a `java` executable or a JDK home directory in the editor.
@@ -278,6 +314,19 @@ fn java_search_roots() -> Vec<PathBuf> {
 /// Newest major version wins, so a machine with a leftover Java 8 next to a
 /// current JDK still launches modern Minecraft.
 pub fn system_java() -> Option<PathBuf> {
+    system_java_for_major(None)
+}
+
+/// A system JDK of exactly `major`, when one is installed.
+///
+/// This is the fallback for an older instance whose managed runtime could not
+/// be installed: Java 21 must not be handed to Minecraft 1.19 just because it
+/// is the newest JDK on the disk.
+pub fn system_java_for(major: u32) -> Option<PathBuf> {
+    system_java_for_major(Some(major))
+}
+
+fn system_java_for_major(required: Option<u32>) -> Option<PathBuf> {
     let mut best: Option<((u32, String), PathBuf)> = None;
     for root in java_search_roots() {
         let Ok(entries) = std::fs::read_dir(&root) else {
@@ -290,6 +339,9 @@ pub fn system_java() -> Option<PathBuf> {
             }
             let name = entry.file_name().to_string_lossy().into_owned();
             let major = java_major_hint(&name);
+            if required.is_some_and(|required| major != required) {
+                continue;
+            }
             for candidate in [
                 // Plain JDK layout.
                 directory.join("bin").join(java_binary_name()),
@@ -314,33 +366,38 @@ pub fn system_java() -> Option<PathBuf> {
 }
 
 /// Major version implied by an install directory name such as `jdk-21.0.5`,
-/// `temurin-17.jdk`, or `java-1.8.0-openjdk`. Returns 0 when no number exists.
+/// `temurin-17.jdk`, `java-1.8.0-openjdk`, or `jdk-1.8.0_202`.
+///
+/// The first number is the meaningful one; a leading `1` is the old `1.x`
+/// scheme, so its second number is the major (1.8 is Java 8). Returns 0 when
+/// no number exists.
 fn java_major_hint(name: &str) -> u32 {
-    let mut digits = String::new();
-    let mut best = 0;
-    for character in name.chars() {
-        if character.is_ascii_digit() {
-            digits.push(character);
-            continue;
-        }
-        if !digits.is_empty() {
-            best = best.max(digits.parse().unwrap_or(0));
-            digits.clear();
-        }
+    let mut numbers = name
+        .split(|character: char| !character.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .filter_map(|part| part.parse::<u32>().ok());
+    let first = numbers.next().unwrap_or(0);
+    if first == 1 {
+        numbers.next().unwrap_or(1)
+    } else {
+        first
     }
-    best.max(digits.parse().unwrap_or(0))
 }
 
-/// The Java this instance would actually start: the configured path, else its
-/// managed runtime, else `PATH`, else an installed system JDK.
+/// The Java this instance would actually start: the configured path, else a
+/// managed runtime of the version's required major, else an exact system JDK,
+/// then `PATH`, and finally whatever JVM exists.
 pub fn resolve_java(instance: &Instance) -> Option<PathBuf> {
+    let required = required_java_major(instance);
     instance
         .java_path
         .as_deref()
         .and_then(java_from_setting)
-        .or_else(|| managed_java(&instance.root))
+        .or_else(|| managed_java_for_major(&instance.root, required))
+        .or_else(|| required.and_then(system_java_for))
         .or_else(java_on_path)
         .or_else(system_java)
+        .or_else(|| managed_java(&instance.root))
 }
 
 fn validate_runtime_name(name: &str) -> bool {
@@ -411,7 +468,13 @@ where
         .pointer("/javaVersion/majorVersion")
         .and_then(Value::as_u64)
         .ok_or(RuntimeInstallError::Missing("javaVersion.majorVersion"))?;
+    let major = u32::try_from(major)
+        .map_err(|_| RuntimeInstallError::Invalid("javaVersion.majorVersion"))?;
     let major_prefix = format!("{major}.");
+    if let Some(java) = managed_java_for_major(&instance.root, Some(major)) {
+        progress(RuntimeInstallProgress::Complete);
+        return Ok(java);
+    }
 
     let catalog_bytes = fetch_json(client, RUNTIME_CATALOG_URL).await?;
     let catalog: Value = serde_json::from_slice(&catalog_bytes)?;
@@ -605,6 +668,59 @@ mod tests {
     }
 
     #[test]
+    fn selects_the_java_major_named_by_the_instance() {
+        static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "kaelis-java-major-{}-{}",
+            std::process::id(),
+            SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        for (component, version) in [
+            ("java-runtime-gamma", "17.0.8"),
+            ("java-runtime-delta", "21.0.5"),
+        ] {
+            let bin = root
+                .join("runtime")
+                .join(component)
+                .join(version)
+                .join("bin");
+            std::fs::create_dir_all(&bin).unwrap();
+            write_java_stub(&bin.join(java_binary_name())).unwrap();
+        }
+        let version_dir = root.join("versions").join("1.19");
+        std::fs::create_dir_all(&version_dir).unwrap();
+        std::fs::write(
+            version_dir.join("1.19.json"),
+            serde_json::json!({
+                "id": "1.19",
+                "javaVersion": { "component": "java-runtime-gamma", "majorVersion": 17 }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let instance = Instance::new("test", "Test", "1.19", "vanilla", root.clone());
+
+        assert_eq!(required_java_major(&instance), Some(17));
+        let found = managed_java_for_major(&root, Some(17)).expect("Java 17 runtime");
+        assert!(
+            found.to_string_lossy().contains("java-runtime-gamma")
+                && found.to_string_lossy().contains("17.0.8"),
+            "unexpected runtime: {}",
+            found.display()
+        );
+        assert_eq!(resolve_java(&instance), Some(found));
+        // The newest runtime is still available to versions that need it.
+        assert!(
+            managed_java(&root)
+                .expect("newest runtime")
+                .to_string_lossy()
+                .contains("21.0.5")
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn accepts_a_jdk_home_in_the_java_setting() {
         static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
         let home = std::env::temp_dir().join(format!(
@@ -627,6 +743,8 @@ mod tests {
         assert_eq!(java_major_hint("jdk-21.0.5"), 21);
         assert_eq!(java_major_hint("temurin-17.jdk"), 17);
         assert_eq!(java_major_hint("java-1.8.0-openjdk"), 8);
+        assert_eq!(java_major_hint("jdk-1.8.0_202"), 8);
+        assert_eq!(java_major_hint("jdk8u402"), 8);
         assert_eq!(java_major_hint("zulu25"), 25);
         assert_eq!(java_major_hint("latest"), 0);
     }
