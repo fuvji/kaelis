@@ -5676,15 +5676,14 @@ impl KaelisApp {
                     };
                     self.set_status(kind, text);
                     self.refresh_instance_cards();
-                    if succeeded {
-                        if let Some(instance) = self
+                    if succeeded
+                        && let Some(instance) = self
                             .instances
                             .iter()
                             .find(|instance| instance.id == instance_id)
                             .cloned()
-                        {
-                            self.install_runtime_for_instance(context.clone(), instance);
-                        }
+                    {
+                        self.install_runtime_for_instance(context.clone(), instance);
                     }
                 }
             }
@@ -5747,42 +5746,38 @@ impl KaelisApp {
                     };
                     self.set_status(kind, text);
                     self.refresh_instance_cards();
-                    if installed {
-                        if let Some(instance) = self
+                    if installed
+                        && let Some(instance) = self
                             .instances
                             .iter()
                             .find(|instance| instance.id == instance_id)
                             .cloned()
+                    {
+                        let loader = instance.loader.trim().to_ascii_lowercase();
+                        let needs_loader = !matches!(loader.as_str(), "" | "vanilla")
+                            && kaelis_api::loader::load_for(
+                                &instance.root,
+                                &instance.mc_version,
+                                &loader,
+                            )
+                            .is_none();
+                        if needs_loader
+                            && matches!(loader.as_str(), "fabric" | "quilt" | "forge" | "neoforge")
                         {
-                            let loader = instance.loader.trim().to_ascii_lowercase();
-                            let needs_loader = !matches!(loader.as_str(), "" | "vanilla")
-                                && kaelis_api::loader::load_for(
-                                    &instance.root,
-                                    &instance.mc_version,
-                                    &loader,
-                                )
-                                .is_none();
-                            if needs_loader
-                                && matches!(
-                                    loader.as_str(),
-                                    "fabric" | "quilt" | "forge" | "neoforge"
-                                )
-                            {
-                                self.provision_loader(context.clone(), instance_id.clone());
-                            } else if needs_loader {
-                                self.set_status(
-                                    StatusKind::Warning,
-                                    format!(
-                                        "Java is installed, but {} needs its own loader installer.",
-                                        instance.loader
-                                    ),
-                                );
-                            } else {
-                                self.set_status(
-                                    StatusKind::Success,
-                                    format!("{} is ready.", instance.name),
-                                );
-                            }
+                            self.provision_loader(context.clone(), instance_id.clone());
+                        } else if needs_loader {
+                            self.set_status(
+                                StatusKind::Warning,
+                                format!(
+                                    "Java is installed, but {} needs its own loader installer.",
+                                    instance.loader
+                                ),
+                            );
+                        } else {
+                            self.set_status(
+                                StatusKind::Success,
+                                format!("{} is ready.", instance.name),
+                            );
                         }
                     }
                 }
