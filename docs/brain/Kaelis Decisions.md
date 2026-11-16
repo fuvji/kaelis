@@ -3,20 +3,20 @@ type: reference
 summary: Durable Kaelis choices about versioning, performance claims, distribution and web.
 project: Kaelis
 created: 2026-11-10
-last_touched: 2026-11-15
+last_touched: 2026-11-16
 title: Kaelis Decisions
 tags:
   - kaelis
   - decisions
 status: active
-updated: 2026-11-15
+updated: 2026-11-16
 ---
 
 # Kaelis Decisions
 
 ## Version line
 
-- 0.4.6 resumed the requested **0.4.x** numbering; 0.4.12 is the current release.
+- 0.4.6 resumed the requested **0.4.x** numbering; 0.4.13 is the current release.
 - 0.5.0 and 0.6.0 tags/releases remain published as history; do not delete them.
 - Next bump is **0.4.13** only when launcher code changes. A web-only pass does
   not invent a version.
@@ -28,6 +28,9 @@ updated: 2026-11-15
 - 0.4.12 is visual-only: restore `DWMWCP_ROUND` while keeping the invisible
   border and borderless edge. Do not describe it as a performance or size win;
   the EXE is unchanged at 17,088,000 B.
+- 0.4.13 fixes the instance setup chain and adds the Windows 10 rounded-region
+  fallback. It is a correctness release; the interleaved benchmark disproved
+  the claimed 0.4.11/0.4.12 slowdown rather than inventing a speedup.
 
 ## Performance claims
 
@@ -36,6 +39,11 @@ updated: 2026-11-15
   datasets; do not put them in one chart.
 - Startup variation on this host is large. Interleave builds in one session
   before calling a regression; one 1,299 ms sample did not prove one.
+- The 0.4.13 nine-run interleaved comparison measured medians of 568.6 ms
+  (0.4.10), 508.3 ms (0.4.11) and 498.7 ms (0.4.12), with p95 of 692.6, 691.9
+  and 686.7 ms. The newer builds are not slower; the old 733 ms figure was
+  noise. Keep this dataset separate from the 0.3.7/0.4.5/0.4.6 bench-lite
+  table.
 - Never zero retry, timeout, process-wait or safety timers to claim zero
   latency. Measure real work instead.
 - Memory is the measured win; start-up and CLI are flat within noise.
@@ -48,6 +56,20 @@ updated: 2026-11-15
   from the artifact before upload.
 - Release metadata (`KAELIS-LINKS.txt`, `SHA256SUMS.txt`) is copied into
   `site/downloads` so repo and live copies agree.
+
+## Instances and Java
+
+- Instance setup runs one ordered chain: vanilla files, then the Java major the
+  installed version metadata names, then the selected loader. Do not defer Java
+  or Forge/NeoForge to the first Play.
+- Resolve managed and system JVMs by `javaVersion.majorVersion`; newest alone
+  is wrong for older Minecraft. 1.19 needs Java 17 even with Java 21 present,
+  and `1.8.0_x` / `8uNNN` folder names mean Java 8.
+- `installing_instance`, `installing_runtime` and `installing_loader` are
+  serialized UI states. Play is refused while any of them is active so two
+  loaders cannot install into the same root.
+- Reuse a matching managed runtime whose executable already exists; do not
+  redownload it on every Install Java press.
 
 ## Window and TLS
 
@@ -76,8 +98,9 @@ updated: 2026-11-15
 - No ad network; GitHub Sponsors only, labelled.
 - Single inline document; no font/framework/CDN dependency.
 - Rounded web geometry, transform-only aurora, static grain, reduced motion.
-  The native Windows border and visible frame are removed, but the Windows 11
-  rounded-corner preference stays; Windows 10 keeps square corners.
+  The native Windows border and visible frame are removed. Windows 11 keeps
+  the DWM rounded-corner preference; Windows 10 falls back to a DPI-scaled
+  `SetWindowRgn` region, refreshed on resize and removed while maximized.
 - Sections paint without a reveal observer; the film poster is lazy.
 - Charts are honest: zero baseline, direct values, data table, flat labelled flat.
 

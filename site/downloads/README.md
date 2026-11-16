@@ -72,7 +72,7 @@ manager and no FUSE requirement.
   packs, shaders, or saves directly.
 - Modpacks become their own instances, including the Fabric or Quilt loader they
   ask for.
-- Java is provisioned automatically on first play, matched to the game version.
+- Java is provisioned during instance installation, matched to the game version.
 - One account manager: Microsoft and offline identities side by side, each with
   its skin head, one click to switch.
 - `Updates` checks every installed mod in one pass and installs with SHA-1

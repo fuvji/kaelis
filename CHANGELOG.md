@@ -2,6 +2,28 @@
 
 Every released change, newest first. The product page keeps only the latest.
 
+## 0.4.13
+
+- **Instance setup now finishes itself.** Creating an instance installs the
+  version-matched Java runtime immediately after the game files, then installs
+  the selected Fabric, Quilt, Forge or NeoForge loader. Play stays disabled
+  until that answer arrives, so the first launch no longer starts a Java or
+  Forge download and a second installer cannot race the first.
+- **The version's Java major wins.** Managed and system JVMs are selected by
+  the `javaVersion.majorVersion` in the installed version metadata. Minecraft
+  1.19 gets Java 17 even when Java 21 is present, and host folders such as
+  `jdk-1.8.0_202` and `jdk8u402` resolve to Java 8. A matching managed runtime
+  is reused rather than downloaded again.
+- **Windows 10 now has rounded corners.** Windows 11 keeps its DWM rounded
+  clip. When DWM rejects that attribute on Windows 10, the borderless window is
+  clipped to a DPI-scaled native region, updated on resize and replaced with a
+  full rectangle while maximized.
+- **No startup slowdown.** Nine rotated, interleaved runs measured median
+  startup at 568.6 ms (0.4.10), 508.3 ms (0.4.11) and 498.7 ms (0.4.12), with
+  p95 at 692.6/691.9/686.7 ms. There is no repeatable 0.4.11/0.4.12 regression;
+  the earlier 733 ms figure was run-to-run variance. Retry, timeout and safety
+  timers are unchanged.
+
 ## 0.4.12
 
 - **The compositor's rounded corners return.** Windows 11 now clips the

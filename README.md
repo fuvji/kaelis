@@ -15,7 +15,7 @@ Native Rust for Windows, macOS, and Linux.</p>
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.4.12-70a5ff">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.4.13-70a5ff">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-2e70e8">
   <img alt="Idle CPU" src="https://img.shields.io/badge/idle%20CPU-0.00%25-3fb950">
   <img alt="License" src="https://img.shields.io/badge/license-proprietary-8b949e">
@@ -47,7 +47,7 @@ away.
 | **Required dependencies** | Every install resolves and downloads its dependency graph, on both catalogues. |
 | **Verified mod updates** | Newest compatible release per mod, installed only after its hash matches. |
 | **Keyless catalogue** | All of Modrinth and CurseForge. No API key, no account. |
-| **Managed Java** | The runtime the version names, installed on first play. |
+| **Managed Java** | The runtime the version names, installed with the instance and before the first Play. |
 | **Portable instances** | `.kaelis.zip` round trip, plus Prism/MultiMC, CurseForge, and `.mrpack` imports. |
 | **Realtime-priority games** | Every JVM is promoted at spawn — realtime where Windows grants it, high everywhere else — and the launcher holds a 0.5 ms timer for as long as it runs. |
 | **Runs in parallel** | Per-instance guards let different instances run at once. |
@@ -165,6 +165,27 @@ no Azure registration, no client id, no secret. Every sign-in is exchanged
 through Xbox Live → XSTS → Minecraft Services, so an account without Java
 Edition is refused at sign-in rather than at launch. The refresh token lives in
 the OS credential store; the access token stays in zeroising memory.
+
+## What's new in 0.4.13
+
+- **Java is installed with the instance.** Creating an instance now downloads
+  the runtime its version names immediately after the game files, then installs
+  the selected loader. Play waits until both finish, so the first launch no
+  longer turns into a Java or Forge download, or races a second loader
+  installer.
+- **Older versions get the right JVM.** The runtime is chosen by the version's
+  required Java major. Minecraft 1.19 gets Java 17 even when Java 21 is also
+  installed; Java 8 folder names such as `jdk-1.8.0_202` are recognised. A
+  second Install Java reuses the matching runtime instead of downloading it
+  again.
+- **Windows 10 gets rounded corners.** When DWM rejects Windows 11's corner
+  preference, the borderless window is clipped to a DPI-scaled rounded region,
+  refreshed on resize and released to a full rectangle when maximized. Windows
+  11 keeps the compositor path.
+- **No startup regression.** A nine-run interleaved comparison on one Windows
+  host measured median startup at 568.6 ms (0.4.10), 508.3 ms (0.4.11) and
+  498.7 ms (0.4.12), with p95 at 692.6/691.9/686.7 ms. The newer builds are not
+  slower; the earlier 733 ms observation was run-to-run noise.
 
 ## What's new in 0.4.12
 

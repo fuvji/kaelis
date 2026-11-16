@@ -197,7 +197,7 @@ fn managed_java_for_major(root: &Path, major: Option<u32>) -> Option<PathBuf> {
             if !is_executable(&java) {
                 continue;
             }
-            let name = version.file_name().to_string_lossy();
+            let name = version.file_name().to_string_lossy().into_owned();
             if major.is_some_and(|major| java_major_hint(&name) != major) {
                 continue;
             }
