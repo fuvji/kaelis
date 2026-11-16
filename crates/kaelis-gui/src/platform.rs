@@ -498,8 +498,8 @@ pub(crate) fn clear_window_frame() -> bool {
 #[cfg(windows)]
 pub(crate) fn maintain_rounded_region(pixels_per_point: f32) {
     use windows_sys::Win32::Foundation::RECT;
-    use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, CreateRoundRectRgn};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsZoomed, SetWindowRgn};
+    use windows_sys::Win32::Graphics::Gdi::{CreateRectRgn, CreateRoundRectRgn, SetWindowRgn};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsZoomed};
 
     if !ROUND_REGION_ENABLED.load(Ordering::Relaxed) {
         return;
